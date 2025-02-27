@@ -7,11 +7,17 @@
     "48": "icons/translate-48.png",
     "96": "icons/translate-96.png"
   },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{5adcf57a-5ad7-4206-9d5f-e2d8d9279a5c}"
+    }
+  },
   "permissions": [
     "storage",
     "activeTab",
     "<all_urls>",
-    "webRequest"
+    "webRequest",
+    "webRequestBlocking"
   ],
   "browser_action": {
     "default_icon": {
