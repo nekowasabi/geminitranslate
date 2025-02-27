@@ -1,6 +1,11 @@
 // Cache for translations to reduce API calls
 const translationCache = new Map();
 
+// Set up web accessible resources
+browser.runtime.onInstalled.addListener(() => {
+  console.log('Extension installed or updated');
+});
+
 // Listen for messages from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'translateText') {

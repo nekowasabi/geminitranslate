@@ -2,7 +2,7 @@
 
 A Firefox extension that uses the Google Gemini API to translate web pages while preserving their structure.
 
-![ScreenShot](screenshot.png)
+![ScreenShot](screenshot.png) ![ScreenShot](screenshot3.png) ![ScreenShot](screenshot2.png)
 
 
 ## Features
@@ -67,7 +67,7 @@ Ready to break language barriers? Let this extension do the heavy lifting while 
 
 Google Gemini API'sini kullanarak web sayfalarının yapısını koruyarak çeviri yapan bir Firefox eklentisi.
 
-![ScreenShot](screenshot.png)
+![ScreenShot](screenshot.png) ![ScreenShot](screenshot3.png) ![ScreenShot](screenshot2.png)
 
 ## Özellikler
 - **Kullanıcı API Anahtarı Yönetimi**: Kullanıcılar kendi Gemini API anahtarlarını popup arayüzü üzerinden girebilir ve bu anahtar yerel olarak saklanır.
