@@ -1,0 +1,33 @@
+{
+  "manifest_version": 2,
+  "name": "DoganayLab Gemini Translator",
+  "version": "1.0",
+  "description": "Translate web pages using Google Gemini API",
+  "icons": {
+    "48": "icons/translate-48.png",
+    "96": "icons/translate-96.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "<all_urls>",
+    "webRequest"
+  ],
+  "browser_action": {
+    "default_icon": {
+      "19": "icons/translate-19.png",
+      "38": "icons/translate-38.png"
+    },
+    "default_title": "DoganayLab Gemini Translator",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
