@@ -6,6 +6,24 @@ browser.runtime.onInstalled.addListener(() => {
   console.log('Extension installed or updated');
 });
 
+// Listen for keyboard shortcut command
+browser.commands.onCommand.addListener(async (command) => {
+  if (command === "translate-page") {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) {
+      // Get current target language from storage
+      const result = await browser.storage.local.get('targetLanguage');
+      const targetLanguage = result.targetLanguage || 'ja';
+      
+      // Send message to content script to translate the page
+      browser.tabs.sendMessage(tabs[0].id, {
+        action: 'translateText',
+        targetLanguage: targetLanguage
+      });
+    }
+  }
+});
+
 // Listen for messages from content script
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'translateText') {
@@ -15,6 +33,20 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return Promise.resolve({ status: 'acknowledged' });
   }
   return false;
+});
+
+// Listen for keyboard shortcut command
+browser.commands.onCommand.addListener(async (command) => {
+  if (command === "translate-page") {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) {
+      // Send message to content script to translate the page
+      browser.tabs.sendMessage(tabs[0].id, {
+        action: "translateText",
+        targetLanguage: "ja" // デフォルトで日本語に設定
+      });
+    }
+  }
 });
 
 // Function to translate text using Gemini API

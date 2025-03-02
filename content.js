@@ -59,9 +59,11 @@
       
       // Daha önce tanımlanmış renk değişkenlerini kullan
       selectionPopup.style.cssText = `
-        position: absolute;
-        min-width: 250px;
-        max-width: 300px;
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 50vw;
+        height: 100vh;
         background-color: ${bgColor};
         color: ${textColor};
         border-radius: 8px;
@@ -70,7 +72,7 @@
         z-index: 1000000;
         display: none;
         font-family: Arial, sans-serif;
-        font-size: 14px;
+        font-size: 24px;
       `;
 
       const closeButton = document.createElement('div');
@@ -96,7 +98,7 @@
         white-space: pre-wrap;
         color: ${textColor};
         font-weight: normal;
-        font-size: 14px;
+        font-size: 24px;
       `;
 
       selectionPopup.appendChild(content);
@@ -170,19 +172,6 @@
       // Show popup near the icon with improved positioning
       selectionPopup.style.display = 'block';
       
-      // İkon konumunu al
-      const iconTop = parseInt(selectionIcon.style.top);
-      const iconLeft = parseInt(selectionIcon.style.left);
-      
-      // Ekran sınırlarını kontrol et
-      const windowWidth = window.innerWidth;
-      const popupWidth = 250; // min-width değeri
-      
-      // Pencere sınırları dışına taşmayacak şekilde konumlandır
-      const popupLeft = Math.max(10, Math.min(windowWidth - popupWidth - 10, iconLeft - 150));
-      
-      selectionPopup.style.top = `${iconTop + 30}px`;
-      selectionPopup.style.left = `${popupLeft}px`;
 
       // Translate the text
       browser.runtime.sendMessage({
@@ -251,7 +240,7 @@
 
   // Listen for messages from popup
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'translate') {
+    if (message.action === 'translate' || message.action === 'translateText') {
       if (!translationInProgress) {
         translationInProgress = true;
         translatePage(message.targetLanguage)
@@ -275,6 +264,34 @@
 
   // Function to translate the page
   async function translatePage(targetLanguage) {
+    // Create and show the notification
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #4285f4;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      z-index: 999999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      animation: fadeInOut 3s ease-in-out forwards;
+    `;
+    notification.textContent = 'Start Translate';
+    document.body.appendChild(notification);
+
+    // Remove notification after animation
+    setTimeout(() => {
+      if (notification && notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 3000);
+
+    // Set translating flag
     isTranslating = true;
 
     // Get all text nodes in the document - more aggressive approach
@@ -749,12 +766,24 @@
 const style = document.createElement('style');
 style.textContent = `
   @keyframes fadeIn {
+    from { opacity: 0; transform: translate(-50%, -20px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  @keyframes fadeInOut {
+    0% { opacity: 0; transform: translate(-50%, -20px); }
+    20% { opacity: 1; transform: translate(-50%, 0); }
+    80% { opacity: 1; transform: translate(-50%, 0); }
+    100% { opacity: 0; transform: translate(-50%, -20px); }
+  }
+
+  @keyframes iconFadeIn {
     from { opacity: 0; transform: scale(0.8); }
     to { opacity: 1; transform: scale(1); }
   }
 
   #gemini-selection-icon {
-    animation: fadeIn 0.3s ease-in-out;
+    animation: iconFadeIn 0.3s ease-in-out;
   }
 
   #gemini-selection-icon:hover {
@@ -763,7 +792,7 @@ style.textContent = `
   }
   
   #gemini-selection-popup {
-    animation: fadeIn 0.3s ease-in-out;
+    animation: iconFadeIn 0.3s ease-in-out;
   }
 `;
 document.head.appendChild(style);

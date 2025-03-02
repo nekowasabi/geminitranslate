@@ -17,7 +17,8 @@
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "{6bdef68b-8e74-42c7-9f34-d7bfc5e8a4df}"
+      "id": "{c2c003ee-bd69-4b6d-a05e-cc9ad78c5fad}",
+      "strict_min_version": "42.0"
     }
   },
   "permissions": [
@@ -43,5 +44,13 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"]
     }
-  ]
+  ],
+  "commands": {
+    "translate-page": {
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "Translate Page"
+    }
+  }
 }
