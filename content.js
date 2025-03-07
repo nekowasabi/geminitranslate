@@ -23,7 +23,7 @@
       selectionIcon = document.createElement('div');
       selectionIcon.id = 'gemini-selection-icon';
       selectionIcon.style.cssText = `
-        position: absolute;
+        position: fixed;
         width: 30px;
         height: 30px;
         background-image: url(${browser.runtime.getURL('icons/translate-38.png')});
@@ -37,6 +37,9 @@
         padding: 3px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         animation: fadeIn 0.3s ease-in-out;
+        right: 20px;
+        top: 50%;
+        transform: translateY(-50%);
       `;
       
       if (isDarkMode) {
@@ -79,15 +82,26 @@
       const closeButton = document.createElement('div');
       closeButton.textContent = '×';
       closeButton.style.cssText = `
-        position: absolute;
-        top: 5px;
-        right: 10px;
+        position: fixed;
+        top: 10px;
+        right: 20px;
         cursor: pointer;
-        font-size: 20px;
+        font-size: 24px;
         color: ${isDarkMode ? '#ccc' : '#777'};
+        z-index: 1000001;
+        padding: 10px;
+        transition: color 0.3s ease;
       `;
       closeButton.addEventListener('click', function() {
         selectionPopup.style.display = 'none';
+      });
+      
+      // ホバー時の色変更を追加
+      closeButton.addEventListener('mouseover', function() {
+        this.style.color = isDarkMode ? '#fff' : '#333';
+      });
+      closeButton.addEventListener('mouseout', function() {
+        this.style.color = isDarkMode ? '#ccc' : '#777';
       });
 
       selectionPopup.appendChild(closeButton);
@@ -116,24 +130,10 @@
     const selection = window.getSelection();
     if (selection && selection.toString().trim().length > 1) {  // En az 2 karakter seçilmiş olsun
       lastSelectedText = selection.toString().trim();
-
-      if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        
-        // Icon konumunu sınırlar içinde tut
-        const iconLeft = Math.min(
-          window.scrollX + rect.right,
-          window.scrollX + window.innerWidth - 40
-        );
-        
-        selectionIcon.style.display = 'block';
-        selectionIcon.style.top = `${window.scrollY + rect.bottom + 5}px`;
-        selectionIcon.style.left = `${iconLeft}px`;
-        
-        // Z-index'i artır
-        selectionIcon.style.zIndex = '999999';
-      }
+      
+      // Simply display the icon at its fixed position
+      selectionIcon.style.display = 'block';
+      selectionIcon.style.zIndex = '999999';
     }
   }
 
@@ -211,19 +211,10 @@
   // Kaydırma sırasında ikonun ve popup'ın konumunu güncelle
   document.addEventListener('scroll', function() {
     if (selectionIcon && selectionIcon.style.display === 'block' && window.getSelection().toString().trim().length > 1) {
-      const selection = window.getSelection();
-      if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        
-        selectionIcon.style.top = `${window.scrollY + rect.bottom + 5}px`;
-        selectionIcon.style.left = `${window.scrollX + rect.right}px`;
-        
-        // Eğer popup açıksa konumunu da güncelle
-        if (selectionPopup && selectionPopup.style.display === 'block') {
-          selectionPopup.style.top = `${parseInt(selectionIcon.style.top) + 30}px`;
-          selectionPopup.style.left = `${parseInt(selectionIcon.style.left) - 150}px`;
-        }
+      // Keep the popup position updated if it's open
+      if (selectionPopup && selectionPopup.style.display === 'block') {
+        selectionPopup.style.top = '0';
+        selectionPopup.style.right = '0';
       }
     }
   }, { passive: true });
