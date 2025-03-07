@@ -69,10 +69,11 @@
         border-radius: 8px;
         box-shadow: 0 4px 15px ${shadowColor};
         padding: 12px;
+        overflow-y: auto;
         z-index: 1000000;
         display: none;
         font-family: Arial, sans-serif;
-        font-size: 24px;
+        font-size: 20px;
       `;
 
       const closeButton = document.createElement('div');
