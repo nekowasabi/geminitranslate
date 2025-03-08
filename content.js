@@ -215,7 +215,7 @@
 		const textNodes = getAllTextNodes(document.body);
 		console.log(`Found ${textNodes.length} text nodes to translate`);
 
-		const batches = createBatches(textNodes, 1600);
+		const batches = createBatches(textNodes, 800);
 		console.log(`Created ${batches.length} batches for translation`);
 
 		for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
