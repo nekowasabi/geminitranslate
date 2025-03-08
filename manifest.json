@@ -24,6 +24,7 @@
   "permissions": [
     "storage",
     "activeTab",
+    "clipboardRead",
     "<all_urls>",
     "webRequest",
     "webRequestBlocking"
@@ -51,6 +52,12 @@
         "default": "Alt+T"
       },
       "description": "Translate Page"
+    },
+    "translate-clipboard": {
+      "suggested_key": {
+        "default": "Alt+C"
+      },
+      "description": "Translate Clipboard Content"
     }
   }
 }

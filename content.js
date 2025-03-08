@@ -1,7 +1,8 @@
 (() => {
 	// 状態管理用変数
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
-	let isTranslating = false; // ページ全体翻訳中のフラグ
+	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
+let isTranslating = false; // ページ全体翻訳中のフラグ
 	const translationInProgress = false; // 翻訳処理進行中のフラグ
 
 	// UI要素関連変数
@@ -71,7 +72,7 @@
         top: 0;
         right: 0;
         width: 50vw;
-        height: 100vh;
+        height: 95vh;
         background-color: ${bgColor};
         color: ${textColor};
         border-radius: 8px;
@@ -179,7 +180,7 @@
 	}
 
 	// ページ全体翻訳関数
-	async function translatePage(targetLanguage) {
+	async function translatePage(targetLanguage, fontSize) {
 		/* ページ全体のテキストを翻訳
        - 進行状況通知バナーの表示
        - テキストノードの収集とバッチ処理
@@ -239,6 +240,10 @@
 
 						if (!originalContent.has(node)) {
 							originalContent.set(node, node.nodeValue);
+        if (node.parentElement) {
+          originalFontSizes.set(node.parentElement, window.getComputedStyle(node.parentElement).fontSize);
+          node.parentElement.style.fontSize = `${fontSize}px`;
+        }
 						}
 					}
 				}
@@ -282,7 +287,7 @@
 
 		await translateSpecialElements(targetLanguage);
 
-		setupMutationObserver(targetLanguage);
+		setupMutationObserver(targetLanguage, fontSize);
 
 		isTranslating = false;
 		console.log("Translation completed");
@@ -455,6 +460,14 @@
 			}
 		});
 
+  // フォントサイズを元に戻す
+  originalFontSizes.forEach((originalSize, element) => {
+    if (element instanceof Element) {
+      element.style.fontSize = originalSize;
+    }
+  });
+  originalFontSizes.clear();
+
 		if (window.translationObserver) {
 			window.translationObserver.disconnect();
 			window.translationObserver = null;
@@ -542,7 +555,7 @@
 	}
 
 	// DOM変更監視設定関数
-	function setupMutationObserver(targetLanguage) {
+	function setupMutationObserver(targetLanguage, fontSize = 16) {
 		/* 動的コンテンツ変更を検知して自動翻訳
        - 新しい要素追加を検出
        - 翻訳中は処理をスキップ
@@ -581,10 +594,10 @@
 						action: "newContentDetected",
 					})
 					.then(() => {
-						browser.storage.local.get(["targetLanguage"], (result) => {
+						browser.storage.local.get(["targetLanguage", "fontSize"], (result) => {
 							const currentTargetLanguage =
 								result.targetLanguage || targetLanguage || "tr";
-							translateNodes(newNodes, currentTargetLanguage);
+							translateNodes(newNodes, currentTargetLanguage, currentFontSize);
 						});
 					});
 			}
@@ -602,7 +615,7 @@
 	}
 
 	// 動的コンテンツ翻訳関数
-	async function translateNodes(nodes, targetLanguage) {
+	async function translateNodes(nodes, targetLanguage, fontSize = 16) {
 		/* 新規追加ノードの翻訳処理
        - バッチ分割とAPIリクエスト
        - 翻訳結果の適用
@@ -634,6 +647,10 @@
 
 						if (!originalContent.has(node)) {
 							originalContent.set(node, node.nodeValue);
+        if (node.parentElement) {
+          originalFontSizes.set(node.parentElement, window.getComputedStyle(node.parentElement).fontSize);
+          node.parentElement.style.fontSize = `${fontSize}px`;
+        }
 						}
 					}
 				}
@@ -703,7 +720,10 @@
 	createSelectionElements();
 	listenForDarkModeChanges();
 
-	// CSSアニメーション定義
+	// テキスト選択イベントリスナーを追加
+document.addEventListener('selectionchange', showSelectionIcon);
+
+// CSSアニメーション定義
 	const style = document.createElement("style");
 	style.textContent = `
     @keyframes fadeIn {
@@ -737,4 +757,37 @@
     }
   `;
 	document.head.appendChild(style);
+
+// メッセージハンドラを追加
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'translate') {
+    translatePage(message.targetLanguage, message.fontSize);
+    sendResponse({ status: 'started' });
+  } else if (message.action === 'translate-clipboard') {
+    // 先にUIを確実に初期化
+    if (!selectionPopup) {
+      createSelectionElements();
+    }
+    translateClipboardContent();
+    sendResponse({ status: 'started' });
+  } else if (message.action === 'reset') {
+    resetPage();
+    sendResponse({ status: 'reset' });
+  }
+  return true;
+});
+
+// クリップボードのテキストを翻訳する関数
+async function translateClipboardContent() {
+  try {
+    console.log('クリップボードの内容を読み取り中...');
+    const text = await navigator.clipboard.readText();
+    if (text && text.trim().length > 0) {
+      console.log('クリップボードのテキストを翻訳中:', text.trim());
+      showSelectionPopup(text.trim());
+    }
+  } catch (error) {
+    console.error('クリップボードの読み取りに失敗しました:', error);
+  }
+}
 })();

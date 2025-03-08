@@ -8,7 +8,7 @@ browser.runtime.onInstalled.addListener(() => {
 
 // Listen for keyboard shortcut command
 browser.commands.onCommand.addListener(async (command) => {
-  if (command === "translate-page") {
+  if (command === 'translate-page') {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
       // Get current target language from storage
@@ -19,6 +19,15 @@ browser.commands.onCommand.addListener(async (command) => {
       browser.tabs.sendMessage(tabs[0].id, {
         action: 'translateText',
         targetLanguage: targetLanguage
+      });
+    }
+  } else if (command === 'translate-clipboard') {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) {
+      browser.tabs.sendMessage(tabs[0].id, {
+        action: 'translate-clipboard'
+      }).catch(error => {
+        console.error('Error sending clipboard translation message:', error);
       });
     }
   }

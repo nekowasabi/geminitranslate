@@ -5,16 +5,21 @@ document.addEventListener('DOMContentLoaded', function() {
   const targetLanguageSelect = document.getElementById('targetLanguage');
   const translatePageButton = document.getElementById('translatePage');
   const resetPageButton = document.getElementById('resetPage');
+  const fontSizeInput = document.getElementById('fontSize');
   const statusMessage = document.getElementById('status');
 
-  // Load saved API key and target language
-  browser.storage.local.get(['apiKey', 'targetLanguage'], function(result) {
+  // Load saved settings
+  browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize'], function(result) {
     if (result.apiKey) {
       apiKeyInput.value = result.apiKey;
     }
     
     if (result.targetLanguage) {
       targetLanguageSelect.value = result.targetLanguage;
+    }
+    
+    if (result.fontSize) {
+      fontSizeInput.value = result.fontSize;
     }
   });
 
@@ -33,6 +38,25 @@ document.addEventListener('DOMContentLoaded', function() {
   
   targetLanguageSelect.addEventListener('blur', function() {
     this.parentElement.querySelector('label').style.color = '#4a5568';
+  });
+
+  fontSizeInput.addEventListener('focus', function() {
+    this.parentElement.querySelector('label').style.color = '#8E54E9';
+  });
+  
+  fontSizeInput.addEventListener('blur', function() {
+    this.parentElement.querySelector('label').style.color = '#4a5568';
+  });
+  
+  // Save font size when changed
+  fontSizeInput.addEventListener('change', function() {
+    const fontSize = parseInt(this.value, 10);
+    if (fontSize >= 8 && fontSize <= 32) {
+      browser.storage.local.set({ fontSize: fontSize });
+    } else {
+      this.value = fontSize < 8 ? 8 : 32;
+      browser.storage.local.set({ fontSize: parseInt(this.value, 10) });
+    }
   });
 
   // Save API key with animation
@@ -68,7 +92,7 @@ document.addEventListener('DOMContentLoaded', function() {
     translatePageButton.disabled = true;
     translatePageButton.innerHTML = '<span>Translating...</span>';
     
-    browser.storage.local.get(['apiKey', 'targetLanguage'], function(result) {
+    browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize'], function(result) {
       if (!result.apiKey) {
         showStatus('Please enter and save your API key first', 'error');
         translatePageButton.disabled = false;
@@ -77,13 +101,15 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       const targetLanguage = result.targetLanguage || 'tr';
+      const fontSize = result.fontSize || 16;
       
       browser.tabs.query({ active: true, currentWindow: true }, function(tabs) {
         browser.tabs.sendMessage(
           tabs[0].id,
           { 
             action: 'translate', 
-            targetLanguage: targetLanguage 
+            targetLanguage: targetLanguage,
+            fontSize: fontSize
           }
         ).then(response => {
           if (response && response.status === 'started') {
