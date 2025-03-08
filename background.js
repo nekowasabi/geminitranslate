@@ -44,20 +44,6 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-// Listen for keyboard shortcut command
-browser.commands.onCommand.addListener(async (command) => {
-  if (command === "translate-page") {
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tabs[0]) {
-      // Send message to content script to translate the page
-      browser.tabs.sendMessage(tabs[0].id, {
-        action: "translateText",
-        targetLanguage: "ja" // デフォルトで日本語に設定
-      });
-    }
-  }
-});
-
 // Function to translate text using Gemini API
 async function translateText(text, targetLanguage) {
   try {
