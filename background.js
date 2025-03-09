@@ -1,29 +1,28 @@
 // Cache for translations to reduce API calls
 const translationCache = new Map();
 
-// Set up web accessible resources
-browser.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed or updated');
-});
-
 // Listen for keyboard shortcut command
 browser.commands.onCommand.addListener(async (command) => {
+  console.log('Command received:', command);
   if (command === 'translate-page') {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
       // Get current target language from storage
       const result = await browser.storage.local.get('targetLanguage');
       const targetLanguage = result.targetLanguage || 'ja';
-      
+
       // Send message to content script to translate the page
       browser.tabs.sendMessage(tabs[0].id, {
-        action: 'translateText',
+        action: 'translate',
         targetLanguage: targetLanguage
+      }).catch(error => {
+        console.error('Error sending translation message:', error);
       });
     }
   } else if (command === 'translate-clipboard') {
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
+      console.log('Sending clipboard translation command');
       browser.tabs.sendMessage(tabs[0].id, {
         action: 'translate-clipboard'
       }).catch(error => {
