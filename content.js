@@ -2,7 +2,7 @@
 	// 状態管理用変数
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
-let isTranslating = false; // ページ全体翻訳中のフラグ
+	let isTranslating = false; // ページ全体翻訳中のフラグ
 	const translationInProgress = false; // 翻訳処理進行中のフラグ
 
 	// UI要素関連変数
@@ -213,10 +213,11 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 
 		isTranslating = true;
 
-		const textNodes = getAllTextNodes(document.body);
+		const textNodeData = getAllTextNodes(document.body);
+		const textNodes = textNodeData.map((item) => item.node);
 		console.log(`Found ${textNodes.length} text nodes to translate`);
 
-		const batches = createBatches(textNodes, 800);
+		const batches = createBatches(textNodeData, 800);
 		console.log(`Created ${batches.length} batches for translation`);
 
 		for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -240,10 +241,13 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 
 						if (!originalContent.has(node)) {
 							originalContent.set(node, node.nodeValue);
-        if (node.parentElement) {
-          originalFontSizes.set(node.parentElement, window.getComputedStyle(node.parentElement).fontSize);
-          node.parentElement.style.fontSize = `${fontSize}px`;
-        }
+							if (node.parentElement) {
+								originalFontSizes.set(
+									node.parentElement,
+									window.getComputedStyle(node.parentElement).fontSize,
+								);
+								node.parentElement.style.fontSize = `${fontSize}px`;
+							}
 						}
 					}
 				}
@@ -460,13 +464,13 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 			}
 		});
 
-  // フォントサイズを元に戻す
-  originalFontSizes.forEach((originalSize, element) => {
-    if (element instanceof Element) {
-      element.style.fontSize = originalSize;
-    }
-  });
-  originalFontSizes.clear();
+		// フォントサイズを元に戻す
+		originalFontSizes.forEach((originalSize, element) => {
+			if (element instanceof Element) {
+				element.style.fontSize = originalSize;
+			}
+		});
+		originalFontSizes.clear();
 
 		if (window.translationObserver) {
 			window.translationObserver.disconnect();
@@ -477,11 +481,26 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 	}
 
 	// テキストノード収集関数
+	// ビューポート内判定関数
+	function isInViewport(node) {
+		if (node.parentElement) {
+			const rect = node.parentElement.getBoundingClientRect();
+			return (
+				rect.top < window.innerHeight &&
+				rect.bottom > 0 &&
+				rect.left < window.innerWidth &&
+				rect.right > 0
+			);
+		}
+		return false;
+	}
+
 	function getAllTextNodes(node) {
 		/* ページ内のすべてのテキストノードを再帰的に収集
        - script/styleタグを除外
        - 非表示要素をフィルタリング
-       - 空白/数値のみのノードをスキップ */
+       - 空白/数値のみのノードをスキップ
+       - ビューポート内のテキストを優先 */
 		const textNodes = [];
 
 		if (node.nodeType === Node.ELEMENT_NODE) {
@@ -510,7 +529,10 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 		if (node.nodeType === Node.TEXT_NODE) {
 			const text = node.nodeValue.trim();
 			if (text) {
-				textNodes.push(node);
+				textNodes.push({
+					node: node,
+					priority: isInViewport(node) ? 1 : 0, // ビューポート内なら優先度高
+				});
 			}
 		}
 
@@ -529,12 +551,16 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 		/* テキストノードをAPI制限用にバッチ分割
        - 800文字単位でグループ化
        - ノードを分割せずにバッチング
+       - ビューポート内のテキストを優先
        - パフォーマンス最適化のため */
 		const batches = [];
 		let currentBatch = [];
 		let currentLength = 0;
 
-		for (const node of nodes) {
+		// 優先度（ビューポート内のテキスト）でソート
+		const sortedNodes = nodes.sort((a, b) => b.priority - a.priority);
+
+		for (const { node } of sortedNodes) {
 			const textLength = node.nodeValue.length;
 
 			if (currentLength + textLength > maxChars && currentBatch.length > 0) {
@@ -594,11 +620,18 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 						action: "newContentDetected",
 					})
 					.then(() => {
-						browser.storage.local.get(["targetLanguage", "fontSize"], (result) => {
-							const currentTargetLanguage =
-								result.targetLanguage || targetLanguage || "tr";
-							translateNodes(newNodes, currentTargetLanguage, currentFontSize);
-						});
+						browser.storage.local.get(
+							["targetLanguage", "fontSize"],
+							(result) => {
+								const currentTargetLanguage =
+									result.targetLanguage || targetLanguage || "tr";
+								translateNodes(
+									newNodes,
+									currentTargetLanguage,
+									currentFontSize,
+								);
+							},
+						);
 					});
 			}
 		});
@@ -619,13 +652,20 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 		/* 新規追加ノードの翻訳処理
        - バッチ分割とAPIリクエスト
        - 翻訳結果の適用
-       - オリジナルコンテンツの保存 */
+       - オリジナルコンテンツの保存
+       - ビューポート内のテキストを優先 */
 		if (nodes.length === 0) return;
+
+		// 優先度情報を追加
+		const nodesWithPriority = nodes.map((node) => ({
+			node: node,
+			priority: isInViewport(node) ? 1 : 0,
+		}));
 
 		isTranslating = true;
 		console.log(`Translating ${nodes.length} new nodes`);
 
-		const batches = createBatches(nodes, 800);
+		const batches = createBatches(nodesWithPriority, 800);
 
 		for (const batch of batches) {
 			try {
@@ -647,10 +687,13 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 
 						if (!originalContent.has(node)) {
 							originalContent.set(node, node.nodeValue);
-        if (node.parentElement) {
-          originalFontSizes.set(node.parentElement, window.getComputedStyle(node.parentElement).fontSize);
-          node.parentElement.style.fontSize = `${fontSize}px`;
-        }
+							if (node.parentElement) {
+								originalFontSizes.set(
+									node.parentElement,
+									window.getComputedStyle(node.parentElement).fontSize,
+								);
+								node.parentElement.style.fontSize = `${fontSize}px`;
+							}
 						}
 					}
 				}
@@ -721,9 +764,9 @@ let isTranslating = false; // ページ全体翻訳中のフラグ
 	listenForDarkModeChanges();
 
 	// テキスト選択イベントリスナーを追加
-document.addEventListener('selectionchange', showSelectionIcon);
+	document.addEventListener("selectionchange", showSelectionIcon);
 
-// CSSアニメーション定義
+	// CSSアニメーション定義
 	const style = document.createElement("style");
 	style.textContent = `
     @keyframes fadeIn {
@@ -758,36 +801,36 @@ document.addEventListener('selectionchange', showSelectionIcon);
   `;
 	document.head.appendChild(style);
 
-// メッセージハンドラを追加
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'translate') {
-    translatePage(message.targetLanguage, message.fontSize);
-    sendResponse({ status: 'started' });
-  } else if (message.action === 'translate-clipboard') {
-    // 先にUIを確実に初期化
-    if (!selectionPopup) {
-      createSelectionElements();
-    }
-    translateClipboardContent();
-    sendResponse({ status: 'started' });
-  } else if (message.action === 'reset') {
-    resetPage();
-    sendResponse({ status: 'reset' });
-  }
-  return true;
-});
+	// メッセージハンドラを追加
+	browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		if (message.action === "translate") {
+			translatePage(message.targetLanguage, message.fontSize);
+			sendResponse({ status: "started" });
+		} else if (message.action === "translate-clipboard") {
+			// 先にUIを確実に初期化
+			if (!selectionPopup) {
+				createSelectionElements();
+			}
+			translateClipboardContent();
+			sendResponse({ status: "started" });
+		} else if (message.action === "reset") {
+			resetPage();
+			sendResponse({ status: "reset" });
+		}
+		return true;
+	});
 
-// クリップボードのテキストを翻訳する関数
-async function translateClipboardContent() {
-  try {
-    console.log('クリップボードの内容を読み取り中...');
-    const text = await navigator.clipboard.readText();
-    if (text && text.trim().length > 0) {
-      console.log('クリップボードのテキストを翻訳中:', text.trim());
-      showSelectionPopup(text.trim());
-    }
-  } catch (error) {
-    console.error('クリップボードの読み取りに失敗しました:', error);
-  }
-}
+	// クリップボードのテキストを翻訳する関数
+	async function translateClipboardContent() {
+		try {
+			console.log("クリップボードの内容を読み取り中...");
+			const text = await navigator.clipboard.readText();
+			if (text && text.trim().length > 0) {
+				console.log("クリップボードのテキストを翻訳中:", text.trim());
+				showSelectionPopup(text.trim());
+			}
+		} catch (error) {
+			console.error("クリップボードの読み取りに失敗しました:", error);
+		}
+	}
 })();
