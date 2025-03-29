@@ -72,7 +72,8 @@ async function translateText(text, targetLanguage) {
 		}
 
 		// Prepare the prompt for translation
-		const prompt = `Translate the following text to ${getLanguageName(targetLanguage)}. 
+		const prompt = `Always translate the following text to ${getLanguageName(targetLanguage)}, regardless of the original language. 
+Even if the text is in English, translate it to ${getLanguageName(targetLanguage)}. Never keep the original text as-is.
 Keep the same formatting and preserve all special characters. 
 Only return the translated text without any explanations or additional text.
 If you see "[SPLIT]" markers, keep them exactly as they are in your response.

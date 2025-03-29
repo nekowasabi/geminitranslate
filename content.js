@@ -144,39 +144,57 @@
 	}
 
 	// 翻訳ポップアップ表示関数
-	function showSelectionPopup(text) {
-		/* 選択テキストの翻訳結果を表示
-       - ストレージからターゲット言語を取得
-       - 翻訳APIを呼び出して結果を表示
-       - エラーハンドリングとユーザーフィードバック */
+	async function showSelectionPopup(text) {
 		if (!text || text.length === 0) return;
 		if (!selectionPopup) {
 			createSelectionElements();
 		}
 
-		browser.storage.local.get(["targetLanguage"], (result) => {
-			const targetLanguage = result.targetLanguage || "tr";
+		const contentDiv = document.getElementById("gemini-selection-content");
+		contentDiv.textContent = "Translating...";
+		contentDiv.style.color = isDarkMode ? "#fff" : "#333";
 
-			const contentDiv = document.getElementById("gemini-selection-content");
-			contentDiv.textContent = "Translating...";
-			contentDiv.style.color = isDarkMode ? "#fff" : "#333";
+		selectionPopup.style.display = "block";
 
-			selectionPopup.style.display = "block";
-
-			browser.runtime
-				.sendMessage({
-					action: "translateText",
-					text: text,
-					targetLanguage: targetLanguage,
-				})
-				.then((response) => {
-					contentDiv.textContent = response;
-				})
-				.catch((error) => {
-					contentDiv.textContent = "Translation error. Please try again.";
-					console.error("Translation error:", error);
+		try {
+			const targetLanguage = await new Promise((resolve) => {
+				browser.storage.local.get(["targetLanguage"], (result) => {
+					resolve(result.targetLanguage || "tr");
 				});
-		});
+			});
+
+			// テキストをバッチ処理用に分割
+			const batches = [];
+			const chunkSize = 800;
+			for (let i = 0; i < text.length; i += chunkSize) {
+				batches.push(text.substring(i, i + chunkSize));
+			}
+
+			const translatedParts = [];
+
+			for (let i = 0; i < batches.length; i++) {
+				const response = await browser.runtime.sendMessage({
+					action: "translateText",
+					text: batches[i],
+					targetLanguage: targetLanguage,
+				});
+
+				translatedParts.push(response);
+
+				// 進捗状況を更新
+				contentDiv.textContent =
+					`Translating... ${Math.round(((i + 1) / batches.length) * 100)}%\n` +
+					translatedParts.join("");
+
+				// バッチ間の遅延を追加
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			}
+
+			contentDiv.textContent = translatedParts.join("");
+		} catch (error) {
+			contentDiv.textContent = "Translation error. Please try again.";
+			console.error("Translation error:", error);
+		}
 	}
 
 	// ページ全体翻訳関数
