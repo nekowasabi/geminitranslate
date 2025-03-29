@@ -165,31 +165,33 @@
 
 			// テキストをバッチ処理用に分割
 			const batches = [];
-			const chunkSize = 800;
+			const chunkSize = 2000;
 			for (let i = 0; i < text.length; i += chunkSize) {
 				batches.push(text.substring(i, i + chunkSize));
 			}
 
-			const translatedParts = [];
+			let lastUpdate = 0;
+			const updateProgress = (current, total) => {
+				const now = Date.now();
+				if (now - lastUpdate > 500) {
+					contentDiv.textContent = `翻訳中... ${Math.round((current / total) * 100)}%`;
+					lastUpdate = now;
+				}
+			};
 
-			for (let i = 0; i < batches.length; i++) {
+			const batchPromises = batches.map(async (batch, index) => {
 				const response = await browser.runtime.sendMessage({
 					action: "translateText",
-					text: batches[i],
+					text: batch,
 					targetLanguage: targetLanguage,
 				});
 
-				translatedParts.push(response);
+				updateProgress(index + 1, batches.length);
+				await new Promise((resolve) => setTimeout(resolve, 200));
+				return response;
+			});
 
-				// 進捗状況を更新
-				contentDiv.textContent =
-					`Translating... ${Math.round(((i + 1) / batches.length) * 100)}%\n` +
-					translatedParts.join("");
-
-				// バッチ間の遅延を追加
-				await new Promise((resolve) => setTimeout(resolve, 500));
-			}
-
+			const translatedParts = await Promise.all(batchPromises);
 			contentDiv.textContent = translatedParts.join("");
 		} catch (error) {
 			contentDiv.textContent = "Translation error. Please try again.";
