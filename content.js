@@ -1,7 +1,7 @@
 (() => {
 	// 状態管理用変数
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
-	const CONCURRENCY_LIMIT = 5; // 並列処理の最大数
+	const CONCURRENCY_LIMIT = 10; // 並列処理の最大数
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
 	let isTranslating = false; // ページ全体翻訳中のフラグ
 	const translationInProgress = false; // 翻訳処理進行中のフラグ
@@ -120,6 +120,10 @@
         color: ${textColor};
         font-weight: normal;
         font-size: 24px;
+        user-select: text;
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
       `;
 
 			selectionPopup.appendChild(content);
@@ -533,55 +537,65 @@
 		return false;
 	}
 
-	function getAllTextNodes(node) {
-		/* ページ内のすべてのテキストノードを再帰的に収集
-       - script/styleタグを除外
+	function getAllTextNodes(rootNode) {
+		/* ページ内のすべてのテキストノードをTreeWalkerを使用して収集
+       - script/styleタグなどを除外
        - 非表示要素をフィルタリング
        - 空白/数値のみのノードをスキップ
        - ビューポート内のテキストを優先 */
-		const textNodes = [];
+		const textNodesData = [];
+		const walker = document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, {
+			acceptNode: (node) => {
+				// 親要素が除外対象タグかチェック
+				const parent = node.parentElement;
+				if (parent) {
+					const tagName = parent.tagName.toLowerCase();
+					if (
+						tagName === "script" ||
+						tagName === "style" ||
+						tagName === "noscript" ||
+						tagName === "iframe" ||
+						tagName === "code" ||
+						tagName === "pre"
+					) {
+						return NodeFilter.FILTER_REJECT;
+					}
 
-		if (node.nodeType === Node.ELEMENT_NODE) {
-			const tagName = node.tagName.toLowerCase();
-			if (
-				tagName === "script" ||
-				tagName === "style" ||
-				tagName === "noscript" ||
-				tagName === "iframe" ||
-				tagName === "code" ||
-				tagName === "pre"
-			) {
-				return textNodes;
-			}
+					// 親要素が表示されているかチェック
+					const style = window.getComputedStyle(parent);
+					if (
+						style.display === "none" ||
+						style.visibility === "hidden" ||
+						Number.parseFloat(style.opacity) === 0
+					) {
+						return NodeFilter.FILTER_SKIP;
+					}
+				}
 
-			const style = window.getComputedStyle(node);
-			if (
-				style.display === "none" ||
-				style.visibility === "hidden" ||
-				Number.parseFloat(style.opacity) === 0
-			) {
-				return textNodes;
-			}
+				// テキスト内容をチェック
+				const text = node.nodeValue.trim();
+				if (
+					!text ||
+					/^\s*$/.test(text) ||
+					/^\d+$/.test(text) ||
+					text.length <= 1
+				) {
+					return NodeFilter.FILTER_SKIP;
+				}
+
+				return NodeFilter.FILTER_ACCEPT;
+			},
+		});
+
+		let node;
+		while ((node = walker.nextNode())) {
+			textNodesData.push({
+				node: node,
+				priority: isInViewport(node) ? 1 : 0,
+			});
 		}
 
-		if (node.nodeType === Node.TEXT_NODE) {
-			const text = node.nodeValue.trim();
-			if (text) {
-				textNodes.push({
-					node: node,
-					priority: isInViewport(node) ? 1 : 0, // ビューポート内なら優先度高
-				});
-			}
-		}
-
-		if (node.childNodes && node.childNodes.length > 0) {
-			for (let i = 0; i < node.childNodes.length; i++) {
-				const childNodes = getAllTextNodes(node.childNodes[i]);
-				textNodes.push(...childNodes);
-			}
-		}
-
-		return textNodes;
+		return textNodesData;
 	}
 
 	// バッチ作成関数
