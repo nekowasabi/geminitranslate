@@ -1,6 +1,7 @@
 (() => {
 	// 状態管理用変数
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
+	const CONCURRENCY_LIMIT = 5; // 並列処理の最大数
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
 	let isTranslating = false; // ページ全体翻訳中のフラグ
 	const translationInProgress = false; // 翻訳処理進行中のフラグ
@@ -240,8 +241,8 @@
 		const batches = createBatches(textNodeData, 800);
 		console.log(`Created ${batches.length} batches for translation`);
 
-		for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-			const batch = batches[batchIndex];
+		// バッチ翻訳処理をカプセル化する非同期関数
+		const translateBatch = async (batch, batchIndex) => {
 			try {
 				const textsToTranslate = [];
 				const nodeIndices = [];
@@ -272,7 +273,7 @@
 					}
 				}
 
-				if (textsToTranslate.length === 0) continue;
+				if (textsToTranslate.length === 0) return;
 
 				const combinedText = textsToTranslate.join("\n[SPLIT]\n");
 
@@ -292,7 +293,11 @@
 					for (let i = 0; i < translatedPieces.length; i++) {
 						if (i < nodeIndices.length) {
 							const nodeIndex = nodeIndices[i];
-							if (nodeIndex < batch.length) {
+							if (
+								nodeIndex < batch.length &&
+								batch[nodeIndex] &&
+								batch[nodeIndex].nodeValue !== undefined
+							) {
 								batch[nodeIndex].nodeValue = translatedPieces[i];
 							}
 						}
@@ -301,11 +306,24 @@
 			} catch (error) {
 				console.error(`Error translating batch ${batchIndex + 1}:`, error);
 			}
+		};
 
-			await new Promise((resolve) => setTimeout(resolve, 500));
+		// バッチをチャンクに分割して並列処理
+		for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
+			const chunk = batches.slice(i, i + CONCURRENCY_LIMIT);
+			console.log(
+				`Processing chunk ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`,
+			);
 
-			if (batchIndex % 5 === 4) {
-				await new Promise((resolve) => setTimeout(resolve, 1500));
+			// チャンク内のバッチを並列で翻訳
+			const promises = chunk.map((batch, index) =>
+				translateBatch(batch, i + index),
+			);
+			await Promise.all(promises);
+
+			// APIレート制限のための遅延（最後のチャンクの後には不要）
+			if (i + CONCURRENCY_LIMIT < batches.length) {
+				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
 		}
 
