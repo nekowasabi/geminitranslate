@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', function() {
+  // Display extension version
+  document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
   const apiKeyInput = document.getElementById('apiKey');
   const saveApiKeyButton = document.getElementById('saveApiKey');
   const apiKeySavedMessage = document.getElementById('apiKeySaved');
