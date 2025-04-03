@@ -7,7 +7,7 @@ A Firefox extension that uses the Google Gemini API to translate web pages while
 
 ## Features
 - **User API Key Management**: Users can enter their own Gemini API keys through the popup interface, and these keys are stored locally.
-- **Free Translation Using Google's Free API**: Translate for free by utilizing Google's free API. Unlike other AI translation extensions available in extension stores, you can enjoy translation at no cost.
+- **Free Translation via Google's API**: Get free translations using Google's Gemini API. This provides cost-free translation unlike many other AI translation extensions.
 - **Full Page Translation**: Translates all text on the page while maintaining its layout.
 - **Language Selection**: Allows users to choose the target language for translation.
 - **Revert to Original Content**: Users can switch the page back to its original content.
@@ -63,7 +63,7 @@ Ready to break language barriers? Let this extension do the heavy lifting while 
 
 
 
-# Gemini Çevirmen Firefox Eklentisi
+## Türkçe (Turkish)
 
 Google Gemini API'sini kullanarak web sayfalarının yapısını koruyarak çeviri yapan bir Firefox eklentisi.
 
@@ -96,7 +96,7 @@ Google Gemini API'sini kullanarak web sayfalarının yapısını koruyarak çevi
 3. Hedef dili seçin
 4. Mevcut sayfayı çevirmek için "Sayfayı Çevir" düğmesine tıklayın
 5. Orijinal içeriği geri yüklemek için "Orijinale Sıfırla" düğmesine tıklayın
-6. Çeviri biraz yavaş olabilir sekmeyi terketmemeye gayret edin eğer tam sayfa çeviri alamadıysanız tekrardan Sayfayı çevir butonuna tıklayın önceki kısım önbelleğe alındığı için API isteği göndermeyecek sadece kalan kısmı çevirecektir.
+6. Çeviri biraz yavaş olabilir. Sekmeyi terk etmemeye gayret edin. Eğer tam sayfa çeviri alamadıysanız tekrar "Sayfayı Çevir" butonuna tıklayın. Önceki kısım önbelleğe alındığı için API isteği göndermeyecek, sadece kalan kısmı çevirecektir.
 
 ## Gemini API Anahtarı Alma
 
