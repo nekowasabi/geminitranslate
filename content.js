@@ -865,6 +865,34 @@
 			}
 			translateClipboardContent();
 			sendResponse({ status: "started" });
+		} else if (message.action === "translate-selection") {
+			if (!selectionPopup) {
+				createSelectionElements();
+			}
+
+			// ポップアップ内容を初期化
+			const contentDiv = document.getElementById("gemini-selection-content");
+			if (contentDiv) {
+				contentDiv.textContent = "";
+			}
+			selectionPopup.style.display = "none";
+
+			// 最新の選択範囲を取得
+			const selection = window.getSelection();
+			const selectedText = selection ? selection.toString().trim() : "";
+
+			if (selectedText.length > 1) {
+				// 翻訳開始
+				showSelectionPopup(selectedText);
+			} else {
+				// 選択がなければ通知
+				if (contentDiv) {
+					contentDiv.textContent = "テキストを選択してください";
+				}
+				selectionPopup.style.display = "block";
+			}
+
+			sendResponse({ status: "started" });
 		} else if (message.action === "reset") {
 			resetPage();
 			sendResponse({ status: "reset" });
