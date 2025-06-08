@@ -197,7 +197,9 @@
 			});
 
 			const translatedParts = await Promise.all(batchPromises);
-			contentDiv.textContent = translatedParts.join("");
+			// Remove any remaining [SPLIT] markers from the translated text
+			const cleanedTranslation = translatedParts.join("").replace(/\[SPLIT\]/g, '');
+			contentDiv.textContent = cleanedTranslation;
 		} catch (error) {
 			contentDiv.textContent = "Translation error. Please try again.";
 			console.error("Translation error:", error);
@@ -302,7 +304,9 @@
 								batch[nodeIndex] &&
 								batch[nodeIndex].nodeValue !== undefined
 							) {
-								batch[nodeIndex].nodeValue = translatedPieces[i];
+								// Remove any remaining [SPLIT] markers from the translated text
+								const cleanedText = translatedPieces[i].replace(/\[SPLIT\]/g, '');
+								batch[nodeIndex].nodeValue = cleanedText;
 							}
 						}
 					}
@@ -468,11 +472,14 @@
 							}
 
 							if (element.isTextContent) {
-								element.element.textContent = translatedPieces[i];
+								// Remove any remaining [SPLIT] markers from the translated text
+								const cleanedText = translatedPieces[i].replace(/\[SPLIT\]/g, '');
+								element.element.textContent = cleanedText;
 							} else {
 								element.element.setAttribute(
 									element.attribute,
-									translatedPieces[i],
+									// Remove any remaining [SPLIT] markers from the translated text
+									translatedPieces[i].replace(/\[SPLIT\]/g, ''),
 								);
 							}
 						}
@@ -767,7 +774,9 @@
 						if (i < nodeIndices.length) {
 							const nodeIndex = nodeIndices[i];
 							if (nodeIndex < batch.length) {
-								batch[nodeIndex].nodeValue = translatedPieces[i];
+								// Remove any remaining [SPLIT] markers from the translated text
+								const cleanedText = translatedPieces[i].replace(/\[SPLIT\]/g, '');
+								batch[nodeIndex].nodeValue = cleanedText;
 							}
 						}
 					}
