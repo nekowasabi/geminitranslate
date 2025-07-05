@@ -8,10 +8,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const translatePageButton = document.getElementById('translatePage');
   const resetPageButton = document.getElementById('resetPage');
   const fontSizeInput = document.getElementById('fontSize');
+  const lineHeightInput = document.getElementById('lineHeight');
   const statusMessage = document.getElementById('status');
 
   // Load saved settings
-  browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize'], function(result) {
+  browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize', 'lineHeight'], function(result) {
     if (result.apiKey) {
       apiKeyInput.value = result.apiKey;
     }
@@ -22,6 +23,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (result.fontSize) {
       fontSizeInput.value = result.fontSize;
+    }
+    
+    if (result.lineHeight) {
+      lineHeightInput.value = result.lineHeight;
     }
   });
 
@@ -47,6 +52,14 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   
   fontSizeInput.addEventListener('blur', function() {
+    this.parentElement.querySelector('label').style.color = '#4a5568';
+  });
+
+  lineHeightInput.addEventListener('focus', function() {
+    this.parentElement.querySelector('label').style.color = '#8E54E9';
+  });
+  
+  lineHeightInput.addEventListener('blur', function() {
     this.parentElement.querySelector('label').style.color = '#4a5568';
   });
   
