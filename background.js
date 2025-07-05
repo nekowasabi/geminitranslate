@@ -5,13 +5,17 @@ const translationCache = new Map();
 async function handleTranslatePage() {
 	const tabs = await browser.tabs.query({ active: true, currentWindow: true });
 	if (tabs[0]) {
-		const result = await browser.storage.local.get("targetLanguage");
+		const result = await browser.storage.local.get(["targetLanguage", "fontSize", "lineHeight"]);
 		const targetLanguage = result.targetLanguage || "ja";
+		const fontSize = result.fontSize || 16;
+		const lineHeight = result.lineHeight || 4;
 
 		browser.tabs
 			.sendMessage(tabs[0].id, {
 				action: "translate",
 				targetLanguage: targetLanguage,
+				fontSize: fontSize,
+				lineHeight: lineHeight,
 			})
 			.catch((error) => {
 				console.error("Error sending translation message:", error);
