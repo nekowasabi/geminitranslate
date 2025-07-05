@@ -74,6 +74,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  // Save line height when changed
+  lineHeightInput.addEventListener('change', function() {
+    const lineHeight = parseInt(this.value, 10);
+    if (lineHeight >= 0 && lineHeight <= 20) {
+      browser.storage.local.set({ lineHeight: lineHeight });
+    } else {
+      this.value = lineHeight < 0 ? 0 : 20;
+      browser.storage.local.set({ lineHeight: parseInt(this.value, 10) });
+    }
+  });
+
   // Save API key with animation
   saveApiKeyButton.addEventListener('click', function() {
     const apiKey = apiKeyInput.value.trim();
@@ -107,7 +118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     translatePageButton.disabled = true;
     translatePageButton.innerHTML = '<span>Translating...</span>';
     
-    browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize'], function(result) {
+    browser.storage.local.get(['apiKey', 'targetLanguage', 'fontSize', 'lineHeight'], function(result) {
       if (!result.apiKey) {
         showStatus('Please enter and save your API key first', 'error');
         translatePageButton.disabled = false;
@@ -117,6 +128,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       const targetLanguage = result.targetLanguage || 'tr';
       const fontSize = result.fontSize || 16;
+      const lineHeight = result.lineHeight || 4;
       
       browser.tabs.query({ active: true, currentWindow: true }, function(tabs) {
         browser.tabs.sendMessage(
@@ -124,7 +136,8 @@ document.addEventListener('DOMContentLoaded', function() {
           { 
             action: 'translate', 
             targetLanguage: targetLanguage,
-            fontSize: fontSize
+            fontSize: fontSize,
+            lineHeight: lineHeight
           }
         ).then(response => {
           if (response && response.status === 'started') {
