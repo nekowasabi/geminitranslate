@@ -3,6 +3,7 @@
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
 	const CONCURRENCY_LIMIT = 10; // 並列処理の最大数
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
+	const originalLineHeights = new Map(); // 翻訳前の行間を保持するMap
 	let isTranslating = false; // ページ全体翻訳中のフラグ
 	const translationInProgress = false; // 翻訳処理進行中のフラグ
 
@@ -120,6 +121,7 @@
         color: ${textColor};
         font-weight: normal;
         font-size: 24px;
+        line-height: 1.6;
         user-select: text;
         -webkit-user-select: text;
         -moz-user-select: text;
@@ -158,6 +160,13 @@
 		const contentDiv = document.getElementById("gemini-selection-content");
 		contentDiv.textContent = "Translating...";
 		contentDiv.style.color = isDarkMode ? "#fff" : "#333";
+		
+		// 保存された行間設定を適用
+		browser.storage.local.get(["lineHeight"], (result) => {
+			const lineHeight = result.lineHeight || 4;
+			const currentFontSize = 24; // selectionPopupのデフォルトフォントサイズ
+			contentDiv.style.lineHeight = `${currentFontSize + lineHeight}px`;
+		});
 
 		selectionPopup.style.display = "block";
 
@@ -200,19 +209,34 @@
 			// Remove any remaining [SPLIT] markers from the translated text
 			const cleanedTranslation = translatedParts.join("").replace(/\[SPLIT\]/g, '');
 			contentDiv.textContent = cleanedTranslation;
+			
+			// 翻訳完了後にも行間設定を適用
+			browser.storage.local.get(["lineHeight"], (result) => {
+				const lineHeight = result.lineHeight || 4;
+				const currentFontSize = 24;
+				contentDiv.style.lineHeight = `${currentFontSize + lineHeight}px`;
+			});
 		} catch (error) {
 			contentDiv.textContent = "Translation error. Please try again.";
 			console.error("Translation error:", error);
+			
+			// エラー表示の際にも行間設定を適用
+			browser.storage.local.get(["lineHeight"], (result) => {
+				const lineHeight = result.lineHeight || 4;
+				const currentFontSize = 24;
+				contentDiv.style.lineHeight = `${currentFontSize + lineHeight}px`;
+			});
 		}
 	}
 
 	// ページ全体翻訳関数
-	async function translatePage(targetLanguage, fontSize) {
+	async function translatePage(targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* ページ全体のテキストを翻訳
        - 進行状況通知バナーの表示
        - テキストノードの収集とバッチ処理
        - API制限回避のための遅延処理
        - 動的コンテンツ監視のセットアップ */
+		console.log("translatePage実行:", { targetLanguage, fontSize, lineHeight });
 		const notification = document.createElement("div");
 		notification.style.cssText = `
       position: fixed;
@@ -273,7 +297,18 @@
 									node.parentElement,
 									window.getComputedStyle(node.parentElement).fontSize,
 								);
+								originalLineHeights.set(
+									node.parentElement,
+									window.getComputedStyle(node.parentElement).lineHeight,
+								);
+								console.log("スタイル適用:", {
+									element: node.parentElement.tagName,
+									fontSize: fontSize,
+									lineHeight: lineHeight,
+									calculatedLineHeight: fontSize + lineHeight
+								});
 								node.parentElement.style.fontSize = `${fontSize}px`;
+								node.parentElement.style.lineHeight = `${fontSize + lineHeight}px`;
 							}
 						}
 					}
@@ -337,7 +372,7 @@
 
 		await translateSpecialElements(targetLanguage);
 
-		setupMutationObserver(targetLanguage, fontSize);
+		setupMutationObserver(targetLanguage, fontSize, lineHeight);
 
 		isTranslating = false;
 		console.log("Translation completed");
@@ -520,6 +555,14 @@
 			}
 		});
 		originalFontSizes.clear();
+		
+		// 行間を元に戻す
+		originalLineHeights.forEach((originalLineHeight, element) => {
+			if (element instanceof Element) {
+				element.style.lineHeight = originalLineHeight;
+			}
+		});
+		originalLineHeights.clear();
 
 		if (window.translationObserver) {
 			window.translationObserver.disconnect();
@@ -640,7 +683,7 @@
 	}
 
 	// DOM変更監視設定関数
-	function setupMutationObserver(targetLanguage, fontSize = 16) {
+	function setupMutationObserver(targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* 動的コンテンツ変更を検知して自動翻訳
        - 新しい要素追加を検出
        - 翻訳中は処理をスキップ
@@ -680,7 +723,7 @@
 					})
 					.then(() => {
 						browser.storage.local.get(
-							["targetLanguage", "fontSize"],
+							["targetLanguage", "fontSize", "lineHeight"],
 							(result) => {
 								const currentTargetLanguage =
 									result.targetLanguage || targetLanguage || "tr";
@@ -688,6 +731,7 @@
 									newNodes,
 									currentTargetLanguage,
 									currentFontSize,
+									result.lineHeight || 4,
 								);
 							},
 						);
@@ -707,7 +751,7 @@
 	}
 
 	// 動的コンテンツ翻訳関数
-	async function translateNodes(nodes, targetLanguage, fontSize = 16) {
+	async function translateNodes(nodes, targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* 新規追加ノードの翻訳処理
        - バッチ分割とAPIリクエスト
        - 翻訳結果の適用
@@ -751,7 +795,18 @@
 									node.parentElement,
 									window.getComputedStyle(node.parentElement).fontSize,
 								);
+								originalLineHeights.set(
+									node.parentElement,
+									window.getComputedStyle(node.parentElement).lineHeight,
+								);
+								console.log("スタイル適用:", {
+									element: node.parentElement.tagName,
+									fontSize: fontSize,
+									lineHeight: lineHeight,
+									calculatedLineHeight: fontSize + lineHeight
+								});
 								node.parentElement.style.fontSize = `${fontSize}px`;
+								node.parentElement.style.lineHeight = `${fontSize + lineHeight}px`;
 							}
 						}
 					}
@@ -865,7 +920,12 @@
 	// メッセージハンドラを追加
 	browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (message.action === "translate") {
-			translatePage(message.targetLanguage, message.fontSize);
+			console.log("翻訳開始:", {
+				targetLanguage: message.targetLanguage,
+				fontSize: message.fontSize,
+				lineHeight: message.lineHeight
+			});
+			translatePage(message.targetLanguage, message.fontSize, message.lineHeight);
 			sendResponse({ status: "started" });
 		} else if (message.action === "translate-clipboard") {
 			// 先にUIを確実に初期化
@@ -897,6 +957,13 @@
 				// 選択がなければ通知
 				if (contentDiv) {
 					contentDiv.textContent = "テキストを選択してください";
+					
+					// 通知表示の際にも行間設定を適用
+					browser.storage.local.get(["lineHeight"], (result) => {
+						const lineHeight = result.lineHeight || 4;
+						const currentFontSize = 24;
+						contentDiv.style.lineHeight = `${currentFontSize + lineHeight}px`;
+					});
 				}
 				selectionPopup.style.display = "block";
 			}
