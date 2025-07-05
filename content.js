@@ -207,7 +207,9 @@
 
 			const translatedParts = await Promise.all(batchPromises);
 			// Remove any remaining [SPLIT] markers from the translated text
-			const cleanedTranslation = translatedParts.join("").replace(/\[SPLIT\]/g, '');
+			let cleanedTranslation = translatedParts.join("").replace(/\[SPLIT\]/g, '');
+			// Add line breaks around Discord message separators for better readability
+			cleanedTranslation = cleanedTranslation.replace(/\s*—\s*/g, '\n—\n');
 			contentDiv.textContent = cleanedTranslation;
 			
 			// 翻訳完了後にも行間設定を適用
