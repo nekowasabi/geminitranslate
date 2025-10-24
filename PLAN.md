@@ -98,22 +98,22 @@ ${text}
 #### sub1 openrouter.jsファイルの作成
 @target: openrouter.js
 @ref: /home/takets/repos/read-aloud-tab/src/shared/services/openrouter.ts
-- [ ] OpenRouterClientクラスを作成
+- [x] OpenRouterClientクラスを作成
   - コンストラクタ: apiKey, model, provider（オプション）を受け取る
   - endpoint: 'https://openrouter.ai/api/v1/chat/completions'
-- [ ] translate()メソッドを実装
+- [x] translate()メソッドを実装
   - content: 翻訳するテキスト
   - targetLanguage: 翻訳先言語
   - maxTokens: 最大トークン数（デフォルト4000）
   - 現在のプロンプト形式を維持
   - provider指定がある場合はリクエストに含める
-- [ ] testConnection()メソッドを実装
+- [x] testConnection()メソッドを実装
   - 簡単なテストリクエストを送信
   - 成功/失敗を返す
-- [ ] _makeRequest()プライベートメソッドを実装
+- [x] _makeRequest()プライベートメソッドを実装
   - Authorization: Bearer ${apiKey}
   - Content-Type: application/json
-- [ ] _handleErrorResponse()メソッドを実装
+- [x] _handleErrorResponse()メソッドを実装
   - 401: 無効なAPIキー
   - 429: レート制限
   - 500番台: サーバーエラー
@@ -121,52 +121,52 @@ ${text}
 ### process2 background.jsの書き換え
 #### sub1 Gemini API関連コードの削除
 @target: background.js
-- [ ] Gemini APIのエンドポイント呼び出しコードを削除（121行目）
-- [ ] Gemini API固有の処理を削除
+- [x] Gemini APIのエンドポイント呼び出しコードを削除（121行目）
+- [x] Gemini API固有の処理を削除
 
 #### sub2 OpenRouter APIへの移行
 @target: background.js
 @ref: openrouter.js
-- [ ] openrouter.jsをインポート
-- [ ] translateText()関数を書き換え
+- [x] openrouter.jsをインポート
+- [x] translateText()関数を書き換え
   - storageからopenRouterApiKey, openRouterModel, openRouterProviderを取得
   - OpenRouterClientインスタンスを生成
   - translate()メソッドを呼び出し
   - キャッシュ機構は維持
-- [ ] エラーハンドリングを更新
+- [x] エラーハンドリングを更新
   - OpenRouterのエラー形式に対応
 
 ### process3 ポップアップUIの拡張
 #### sub1 popup.htmlの更新
 @target: popup/popup.html
-- [ ] APIキー入力欄のラベルを「OpenRouter API Key」に変更
-- [ ] モデル選択ドロップダウンを追加
+- [x] APIキー入力欄のラベルを「OpenRouter API Key」に変更
+- [x] モデル選択ドロップダウンを追加
   - デフォルトオプション:
     - google/gemini-2.0-flash-exp:free（無料、推奨）
     - google/gemini-flash-1.5-8b
     - anthropic/claude-3.5-sonnet
     - カスタムモデル入力オプション
-- [ ] プロバイダー設定入力欄を追加（オプション）
+- [x] プロバイダー設定入力欄を追加（オプション）
   - プレースホルダー: "Optional: DeepInfra, Together, etc."
-- [ ] 接続テストボタンを追加
+- [x] 接続テストボタンを追加
   - ラベル: "Test Connection"
 
 #### sub2 popup.jsの更新
 @target: popup/popup.js
-- [ ] 設定読み込み処理を更新
+- [x] 設定読み込み処理を更新
   - openRouterApiKey, openRouterModel, openRouterProviderを読み込み
   - 既存のapiKeyがある場合は移行案内を表示
-- [ ] 設定保存処理を更新
+- [x] 設定保存処理を更新
   - openRouterApiKey, openRouterModel, openRouterProviderを保存
-- [ ] モデル選択の変更イベントハンドラを追加
-- [ ] プロバイダー入力の変更イベントハンドラを追加
-- [ ] 接続テストボタンのイベントハンドラを追加
+- [x] モデル選択の変更イベントハンドラを追加
+- [x] プロバイダー入力の変更イベントハンドラを追加
+- [x] 接続テストボタンのイベントハンドラを追加
   - OpenRouterClientのtestConnection()を呼び出し
   - 結果をユーザーに表示
 
 #### sub3 popup.cssの調整（必要に応じて）
 @target: popup/popup.css
-- [ ] 新規追加したUI要素のスタイルを調整
+- [x] 新規追加したUI要素のスタイルを調整
   - モデル選択ドロップダウン
   - プロバイダー入力欄
   - 接続テストボタン
@@ -174,15 +174,15 @@ ${text}
 ### process4 content.jsの調整
 #### sub1 エラーメッセージの更新
 @target: content.js
-- [ ] エラーメッセージを確認
+- [x] エラーメッセージを確認
   - OpenRouter APIに関連するエラーメッセージに更新（必要に応じて）
   - 基本的にはbackground.jsからのエラーをそのまま表示
 
 ### process5 manifest.jsonの更新
 @target: manifest.json
-- [ ] descriptionを更新
+- [x] descriptionを更新
   - "Translate web pages using OpenRouter API" または類似の説明
-- [ ] versionを更新（メジャーバージョンアップ推奨: 2.0.0）
+- [x] versionを更新（メジャーバージョンアップ推奨: 2.0.0）
 
 ### process10 ユニットテスト
 #### sub1 OpenRouterクライアントのテスト
@@ -208,13 +208,7 @@ ${text}
   - 各種エラー時の挙動確認
 
 ### process50 フォローアップ
-#### sub1 既存ユーザーへの移行案内
-- [ ] 初回起動時の移行案内を実装
-  - 既存のapiKeyが存在し、openRouterApiKeyが存在しない場合
-  - 「OpenRouter APIへの移行が必要です」というメッセージを表示
-  - 設定画面へのリンクを提供
-
-#### sub2 ドキュメント更新
+#### sub1 ドキュメント更新
 - [ ] README.mdの更新
   - OpenRouter API使用に関する説明
   - 推奨モデルの記載

@@ -1,3 +1,6 @@
+// Import OpenRouter client
+import { OpenRouterClient } from './openrouter.js';
+
 // Cache for translations to reduce API calls
 const translationCache = new Map();
 
@@ -74,7 +77,7 @@ browser.commands.onCommand.addListener(async (command) => {
 });
 
 // Listen for messages from content script
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+browser.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
 	if (message.action === "translateText") {
 		return translateText(message.text, message.targetLanguage);
 	} else if (message.action === "newContentDetected") {
@@ -84,7 +87,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	return false;
 });
 
-// Function to translate text using Gemini API
+// Function to translate text using OpenRouter API
 async function translateText(text, targetLanguage) {
 	try {
 		// Check cache first
@@ -94,88 +97,48 @@ async function translateText(text, targetLanguage) {
 			return Promise.resolve(translationCache.get(cacheKey));
 		}
 
-		// Get API key from storage
-		const result = await browser.storage.local.get("apiKey");
-		const apiKey = result.apiKey;
+		// Get API settings from storage
+		const result = await browser.storage.local.get([
+			"openRouterApiKey",
+			"openRouterModel",
+			"openRouterProvider"
+		]);
+
+		const apiKey = result.openRouterApiKey;
+		const model = result.openRouterModel || "google/gemini-2.0-flash-exp:free";
+		const provider = result.openRouterProvider || null;
 
 		if (!apiKey) {
-			throw new Error("API key not found");
+			throw new Error("OpenRouter API key not found");
 		}
-
-		// Prepare the prompt for translation
-		const prompt = `Always translate the following text to ${getLanguageName(targetLanguage)}, regardless of the original language. 
-Even if the text is in English, translate it to ${getLanguageName(targetLanguage)}. Never keep the original text as-is.
-Keep the same formatting and preserve all special characters. 
-Only return the translated text without any explanations or additional text.
-If you see "[SPLIT]" markers, keep them exactly as they are in your response.
-Maintain HTML tags if present.
-
-${text}`;
 
 		console.log(
-			`Sending translation request to Gemini API (text length: ${text.length})`,
+			`Sending translation request to OpenRouter API (text length: ${text.length})`,
 		);
 
-		// Make API request
-		const response = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
-			{
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					contents: [
-						{
-							parts: [{ text: prompt }],
-						},
-					],
-					generationConfig: {
-						temperature: 0.2,
-						topP: 0.8,
-						topK: 40,
-					},
-				}),
-			},
+		// Create OpenRouter client
+		const client = new OpenRouterClient(apiKey, model, provider);
+
+		// Translate using OpenRouter
+		const translatedText = await client.translate(
+			text,
+			getLanguageName(targetLanguage),
+			4000
 		);
 
-		if (!response.ok) {
-			const errorData = await response.json();
-			console.error("API error response:", errorData);
-			throw new Error(
-				`API error: ${errorData.error?.message || response.statusText}`,
-			);
-		}
-
-		const data = await response.json();
-
-		// Extract translated text from response
-		if (
-			data.candidates &&
-			data.candidates.length > 0 &&
-			data.candidates[0].content &&
-			data.candidates[0].content.parts &&
-			data.candidates[0].content.parts.length > 0
-		) {
-			const translatedText = data.candidates[0].content.parts[0].text;
-
-			// Store in cache (limit cache size to prevent memory issues)
-			if (translationCache.size > 200) {
-				// Remove oldest entries (20% of cache)
-				const keysToRemove = Math.floor(translationCache.size * 0.2);
-				const keys = Array.from(translationCache.keys());
-				for (let i = 0; i < keysToRemove; i++) {
-					translationCache.delete(keys[i]);
-				}
+		// Store in cache (limit cache size to prevent memory issues)
+		if (translationCache.size > 200) {
+			// Remove oldest entries (20% of cache)
+			const keysToRemove = Math.floor(translationCache.size * 0.2);
+			const keys = Array.from(translationCache.keys());
+			for (let i = 0; i < keysToRemove; i++) {
+				translationCache.delete(keys[i]);
 			}
-			translationCache.set(cacheKey, translatedText);
-
-			console.log("Translation successful");
-			return translatedText;
-		} else {
-			console.error("Invalid response format from API:", data);
-			throw new Error("Invalid response format from API");
 		}
+		translationCache.set(cacheKey, translatedText);
+
+		console.log("Translation successful");
+		return translatedText;
 	} catch (error) {
 		console.error("Translation error:", error);
 		return Promise.reject(error);
@@ -221,3 +184,11 @@ function getLanguageName(langCode) {
 
 	return languages[langCode] || "Turkish";
 }
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+	module.exports = { translateText };
+}
+
+// Export for ES modules (Jest)
+export { translateText };
