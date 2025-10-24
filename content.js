@@ -5,6 +5,7 @@
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
 	const originalLineHeights = new Map(); // 翻訳前の行間を保持するMap
 	let isTranslating = false; // ページ全体翻訳中のフラグ
+	const translationInProgress = false; // 翻訳処理進行中のフラグ
 
 	// UI要素関連変数
 	let selectionIcon = null; // 選択テキスト翻訳用アイコン
@@ -133,7 +134,7 @@
 	}
 
 	// テキスト選択時のアイコン表示処理
-	function showSelectionIcon(_e) {
+	function showSelectionIcon(e) {
 		/* ユーザーが2文字以上選択した時に翻訳アイコンを表示
        - 選択テキストのトリミングと保存
        - アイコンの位置計算と表示更新 */
@@ -684,7 +685,7 @@
 	}
 
 	// DOM変更監視設定関数
-	function setupMutationObserver(targetLanguage, _fontSize = 16, _lineHeight = 4) {
+	function setupMutationObserver(targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* 動的コンテンツ変更を検知して自動翻訳
        - 新しい要素追加を検出
        - 翻訳中は処理をスキップ
@@ -728,7 +729,6 @@
 							(result) => {
 								const currentTargetLanguage =
 									result.targetLanguage || targetLanguage || "tr";
-								const currentFontSize = result.fontSize || 16;
 								translateNodes(
 									newNodes,
 									currentTargetLanguage,
@@ -859,7 +859,9 @@
 			const darkModeMediaQuery = window.matchMedia(
 				"(prefers-color-scheme: dark)",
 			);
-			darkModeMediaQuery.addEventListener("change", (_e) => {
+			darkModeMediaQuery.addEventListener("change", (e) => {
+				const isDarkMode = e.matches;
+
 				if (selectionIcon) {
 					document.body.removeChild(selectionIcon);
 					selectionIcon = null;
