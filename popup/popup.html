@@ -10,10 +10,32 @@
     <h1>DoganayLab API Translate App <span id="version"></span></h1>
     
     <div class="form-group">
-      <label for="apiKey">Gemini API Key:</label>
-      <input type="password" id="apiKey" placeholder="Enter your API key">
+      <label for="apiKey">OpenRouter API Key:</label>
+      <input type="password" id="apiKey" placeholder="Enter your OpenRouter API key">
       <button id="saveApiKey">Save</button>
       <div id="apiKeySaved" class="success-message hidden">API key saved!</div>
+    </div>
+
+    <div class="form-group">
+      <label for="modelSelect">AI Model:</label>
+      <select id="modelSelect">
+        <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free, Recommended)</option>
+        <option value="google/gemini-flash-1.5-8b">Gemini Flash 1.5 8B</option>
+        <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+        <option value="custom">Custom Model...</option>
+      </select>
+      <input type="text" id="customModel" placeholder="e.g., openai/gpt-4" style="display:none; margin-top:8px;">
+    </div>
+
+    <div class="form-group">
+      <label for="providerInput">Provider (Optional):</label>
+      <input type="text" id="providerInput" placeholder="e.g., DeepInfra, Together">
+      <small style="color:#666; font-size: 0.85em;">Leave empty for auto-routing</small>
+    </div>
+
+    <div class="form-group">
+      <button id="testConnection" class="secondary-button">Test Connection</button>
+      <div id="connectionStatus" class="status-message hidden"></div>
     </div>
     
     <div class="form-group">
@@ -56,7 +78,7 @@
     <div id="status" class="status-message hidden"></div>
     
     <div class="info-section">
-      <p class="info-text">This extension translates web pages using Google's Gemini API. Your API key is stored locally and is only sent to Google's servers.</p>
+      <p class="info-text">This extension translates web pages using OpenRouter API, supporting multiple AI models including Gemini and Claude. Your API key is stored locally.</p>
     </div>
   </div>
   <script src="popup.js"></script>
