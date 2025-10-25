@@ -1,0 +1,38 @@
+# Development files
+__tests__/**
+node_modules/**
+.git/**
+.gitignore
+
+# Documentation
+*.md
+
+# Package management
+package.json
+package-lock.json
+
+# AI workspace
+ai/**
+
+# Build artifacts
+web-ext-artifacts/**
+
+# Test and coverage
+tests/**
+coverage/**
+
+# Config files
+jest.config.js
+eslint.config.js
+vite.config.ts
+tsconfig.json
+tailwind.config.js
+postcss.config.js
+
+# IDE and system files
+.vscode/**
+.DS_Store
+
+# Other development files
+deno.lock
+*.old

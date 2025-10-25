@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:ext": "web-ext build",
+    "build:chrome": "bash build-chrome.sh",
+    "clean:chrome": "rm -rf dist-chrome",
     "lint": "eslint .",
+    "lint:ext": "web-ext lint",
     "preview": "vite preview",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"

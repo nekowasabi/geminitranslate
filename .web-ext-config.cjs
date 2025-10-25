@@ -1,0 +1,37 @@
+module.exports = {
+  ignoreFiles: [
+    '__tests__',
+    'node_modules',
+    '.git',
+    '.gitignore',
+    '*.md',
+    'package.json',
+    'package-lock.json',
+    'ai',
+    'web-ext-artifacts',
+    'dist-chrome',
+    'tests',
+    'coverage',
+    'jest.config.js',
+    'eslint.config.js',
+    'vite.config.ts',
+    'tsconfig.json',
+    'tailwind.config.js',
+    'postcss.config.js',
+    '.vscode',
+    '.DS_Store',
+    'deno.lock',
+    '*.old',
+    'screenshot.png',
+    'screenshot2.png',
+    '.web-ext-config.js',
+    '.web-ext-config.cjs',
+    'convert-manifest-v3.cjs',
+    'add-chrome-polyfill.cjs',
+    'build-chrome.sh'
+  ],
+  build: {
+    overwriteDest: true,
+  },
+  verbose: false
+};
