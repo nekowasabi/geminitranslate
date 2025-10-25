@@ -230,6 +230,78 @@
 		}
 	}
 
+	// 進捗バナー作成関数
+	function createProgressBanner() {
+		/* 翻訳進捗を表示するバナーを作成
+       - 固定位置（ページ上部中央）に表示
+       - 初期テキストは「翻訳中... 0%」
+       - 既存の通知バナーと同じスタイルを使用 */
+		const BANNER_CLASS = 'gemini-progress-banner';
+		const BANNER_BACKGROUND_COLOR = '#4285f4';
+		const BANNER_Z_INDEX = '999999';
+
+		const banner = document.createElement('div');
+		banner.className = BANNER_CLASS;
+		banner.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: ${BANNER_BACKGROUND_COLOR};
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      z-index: ${BANNER_Z_INDEX};
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    `;
+		banner.textContent = '翻訳中... 0%';
+		return banner;
+	}
+
+	// 進捗状態管理オブジェクトを作成
+	function createProgressState() {
+		/* 進捗更新のスロットル管理用の状態を作成
+       - lastUpdateTime: 最後に更新した時刻を保持 */
+		return {
+			lastUpdateTime: 0
+		};
+	}
+
+	// 進捗更新関数
+	function updateProgress(banner, state, processed, total) {
+		/* バナーの進捗表示を更新（500msスロットル付き）
+       - 500ms経過していない場合は更新をスキップ
+       - パーセンテージを計算して表示
+       - ゼロ除算を回避 */
+		const PROGRESS_UPDATE_INTERVAL = 500; // 500ms間隔
+		const now = Date.now();
+
+		if (now - state.lastUpdateTime < PROGRESS_UPDATE_INTERVAL) {
+			return; // スロットル中
+		}
+
+		const percentage = total === 0 ? 0 : Math.round((processed / total) * 100);
+		banner.textContent = `翻訳中... ${percentage}%`;
+		state.lastUpdateTime = now;
+	}
+
+	// 進捗バナー非表示関数
+	function hideProgressBanner(banner) {
+		/* 進捗バナーを「翻訳完了」表示に変更し、3秒後に削除
+       - 完了メッセージの表示
+       - 3秒後の自動削除処理 */
+		const COMPLETION_DISPLAY_DURATION = 3000; // 3秒間表示
+
+		banner.textContent = '翻訳完了';
+		setTimeout(() => {
+			if (banner && banner.parentNode) {
+				banner.parentNode.removeChild(banner);
+			}
+		}, COMPLETION_DISPLAY_DURATION);
+	}
+
 	// ページ全体翻訳関数
 	async function translatePage(targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* ページ全体のテキストを翻訳
@@ -272,11 +344,30 @@
 		const batches = createBatches(textNodeData, 800);
 		console.log(`Created ${batches.length} batches for translation`);
 
-		// バッチ翻訳処理をカプセル化する非同期関数
-		const translateBatch = async (batch, batchIndex) => {
-			try {
-				const textsToTranslate = [];
-				const nodeIndices = [];
+		// エッジケース: バッチが0の場合は進捗バナーを表示しない
+		if (batches.length === 0) {
+			console.log("No batches to translate");
+			isTranslating = false;
+			return;
+		}
+
+		// 既存の進捗バナーを削除（重複防止）
+		const existingBanner = document.querySelector('.gemini-progress-banner');
+		if (existingBanner) {
+			existingBanner.remove();
+		}
+
+		// 進捗バナーの作成と表示
+		const progressBanner = createProgressBanner();
+		document.body.appendChild(progressBanner);
+		const progressState = createProgressState();
+
+		try {
+			// バッチ翻訳処理をカプセル化する非同期関数
+			const translateBatch = async (batch, batchIndex) => {
+				try {
+					const textsToTranslate = [];
+					const nodeIndices = [];
 
 				for (let i = 0; i < batch.length; i++) {
 					const node = batch[i];
@@ -347,13 +438,13 @@
 						}
 					}
 				}
-			} catch (error) {
-				console.error(`Error translating batch ${batchIndex + 1}:`, error);
-			}
-		};
+				} catch (error) {
+					console.error(`Error translating batch ${batchIndex + 1}:`, error);
+				}
+			};
 
-		// バッチをチャンクに分割して並列処理
-		for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
+			// バッチをチャンクに分割して並列処理
+			for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
 			const chunk = batches.slice(i, i + CONCURRENCY_LIMIT);
 			console.log(
 				`Processing chunk ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`,
@@ -365,18 +456,33 @@
 			);
 			await Promise.all(promises);
 
+			// 進捗を更新（処理済みバッチ数を計算）
+			const processedBatches = Math.min(i + CONCURRENCY_LIMIT, batches.length);
+			updateProgress(progressBanner, progressState, processedBatches, batches.length);
+
 			// APIレート制限のための遅延（最後のチャンクの後には不要）
 			if (i + CONCURRENCY_LIMIT < batches.length) {
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
 		}
 
-		await translateSpecialElements(targetLanguage);
+			await translateSpecialElements(targetLanguage);
 
-		setupMutationObserver(targetLanguage, fontSize, lineHeight);
+			setupMutationObserver(targetLanguage, fontSize, lineHeight);
 
-		isTranslating = false;
-		console.log("Translation completed");
+			// 進捗バナーを完了表示に変更し、3秒後に削除
+			hideProgressBanner(progressBanner);
+
+			isTranslating = false;
+			console.log("Translation completed");
+		} catch (error) {
+			console.error("Translation error:", error);
+			// エラー発生時は進捗バナーを即座に削除
+			if (progressBanner && progressBanner.parentNode) {
+				progressBanner.parentNode.removeChild(progressBanner);
+			}
+			isTranslating = false;
+		}
 	}
 
 	// 特殊要素翻訳関数
