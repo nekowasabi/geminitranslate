@@ -9,10 +9,10 @@ const backgroundPath = path.join(distDir, 'background.js');
 
 console.log('🔗 Merging background.js modules...');
 
-// Validate files exist
+// Check if openrouter.js exists (may already be merged)
 if (!fs.existsSync(openrouterPath)) {
-  console.error(`❌ Error: ${openrouterPath} not found`);
-  process.exit(1);
+  console.log('ℹ️  openrouter.js not found - skipping merge (already merged or not needed)');
+  process.exit(0);
 }
 
 if (!fs.existsSync(backgroundPath)) {
