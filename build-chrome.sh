@@ -61,7 +61,7 @@ if [ ! -d "web-ext-artifacts" ]; then
   handle_error "web-ext-artifacts directory not created"
 fi
 
-ZIP_FILE=$(ls web-ext-artifacts/doganaylab_api_translate_app-*.zip 2>/dev/null | head -n 1)
+ZIP_FILE=$(ls -t web-ext-artifacts/doganaylab_api_translate_app-*.zip 2>/dev/null | head -n 1)
 if [ -z "$ZIP_FILE" ]; then
   handle_error "No zip file found in web-ext-artifacts/"
 fi
