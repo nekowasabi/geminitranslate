@@ -184,12 +184,13 @@ document.addEventListener('DOMContentLoaded', function() {
     showConnectionStatus('Connecting to OpenRouter...', 'info');
 
     try {
-      // Import OpenRouterClient dynamically
-      const module = await import('../openrouter.js');
-      const OpenRouterClient = module.OpenRouterClient;
-      const client = new OpenRouterClient(apiKey, model, provider);
-
-      const result = await client.testConnection();
+      // Send test connection request to background script
+      const result = await browser.runtime.sendMessage({
+        action: 'testConnection',
+        apiKey: apiKey,
+        model: model,
+        provider: provider
+      });
 
       if (result.success) {
         showConnectionStatus('✓ ' + result.message, 'success');
