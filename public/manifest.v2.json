@@ -1,0 +1,69 @@
+{
+  "manifest_version": 2,
+  "name": "DoganayLab API Translate App",
+  "version": "3.0.0",
+  "description": "Translate web pages using OpenRouter API with support for multiple AI models",
+  "icons": {
+    "19": "icons/translate-19.png",
+    "38": "icons/translate-38.png",
+    "48": "icons/translate-48.png",
+    "96": "icons/translate-96.png"
+  },
+  "web_accessible_resources": [
+    "icons/translate-19.png",
+    "icons/translate-38.png",
+    "icons/translate-48.png",
+    "icons/translate-96.png"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{d2c003ee-bd69-4b6d-a05e-cc9ad78c5faf}",
+      "strict_min_version": "58.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "clipboardRead",
+    "<all_urls>"
+  ],
+  "browser_action": {
+    "default_icon": {
+      "19": "icons/translate-19.png",
+      "38": "icons/translate-38.png"
+    },
+    "default_title": "DoganayLab API Translate App",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "commands": {
+    "translate-page": {
+      "suggested_key": {
+        "default": "Alt+W"
+      },
+      "description": "Translate Page"
+    },
+    "translate-clipboard": {
+      "suggested_key": {
+        "default": "Alt+C"
+      },
+      "description": "Translate Clipboard Content"
+    },
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Alt+Y",
+        "mac": "Alt+Y"
+      },
+      "description": "Translate selected text in popup"
+    }
+  }
+}

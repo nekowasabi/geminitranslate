@@ -1,172 +1,672 @@
-# title: Chrome拡張機能のポップアップ動作修正
+# title: DoganayLab API Translate App v3.0 - TypeScript + React リアーキテクチャ
 
 ## 概要
-- Firefox用に開発された拡張機能（manifest v2）をChrome対応（manifest v3）に変換した際、ポップアップのボタンが無反応になる問題を解決する
-- WebExtension Polyfillを導入し、Firefox専用の`browser` APIをChromeの`chrome` APIに自動変換する
+- 既存のPlain JavaScript実装をTypeScript + React + Webpack 5へフルリアーキテクチャすることで、保守性・拡張性・型安全性を向上させた翻訳拡張機能を実現する
+- Chrome (Manifest V3) と Firefox (Manifest V2) の両ブラウザに対応し、単一コードベースで自動切替を実現
+- OpenRouter APIを活用したページ翻訳・選択テキスト翻訳・クリップボード翻訳機能を提供
 
 ### goal
-- ユーザーがChromeでポップアップを開き、APIキーの保存・モデル選択・翻訳機能のテストが正常に動作すること
-- CustomModel選択時にモデル名入力用のテキストボックスが正しく表示されること
+- ユーザーが任意のWebページでAlt+Wを押すだけで、ページ全体を目的言語に翻訳できる
+- テキストを選択してAlt+Yを押すと、選択範囲のみを翻訳してフローティングUIで表示
+- Alt+Cでクリップボードの内容を翻訳
+- モダンなReact UIで設定を簡単に管理
+- Chrome/Firefoxどちらでも同じ体験を提供
 
 ## 必須のルール
 - 必ず `CLAUDE.md` を参照し、ルールを守ること
+- `ARCHITECTURE.md` の設計方針に従うこと
+- 一時ファイルは `tmp/claude/` ディレクトリを使用すること
 
 ## 開発のゴール
-- popup.jsとbackground.jsでFirefox専用の`browser` APIが使用されている問題を解決
-- ChromeとFirefoxの両方で動作する拡張機能を実現
-- ビルドプロセスの自動化により、開発者がブラウザごとの差異を意識せずに開発できる環境を構築
+- **フル実装**: 全機能 + テスト + ドキュメントを完備
+- **TypeScript 100%移行**: 型安全性の確保
+- **テストカバレッジ80%以上**: Jest + React Testing Library
+- **クロスブラウザ対応**: Webpack自動切替によるChrome/Firefox両対応
+- **2ヶ月での段階的実装**: 余裕を持った開発スケジュール
 
 ## 実装仕様
 
-### 問題の詳細
-**現象:**
-1. ポップアップ画面のボタン（Save, Test Connection, Translate等）を押しても無反応
-2. CustomModelを選択してもモデル名入力用のテキストボックスが表示されない
+### 前提条件
+- **既存実装**: Firefox (Manifest V2) は完全動作中、Chrome (Manifest V3) は未動作
+- **ビルドツール**: Webpack 5 を使用（read-aloud-tab実績あり）
+- **技術スタック**: TypeScript 5.x, React 18, Tailwind CSS, Jest + RTL
+- **既存依存関係**: React, TypeScript, Jest, Tailwind は package.json に導入済み
 
-**根本原因:**
-- popup.jsが14箇所で`browser` APIを使用（Chrome未サポート）
-  - 3行目: `browser.runtime.getManifest()`
-  - 22行目以降: `browser.storage.local.get/set()`
-  - 188行目: `browser.runtime.sendMessage()`
-  - 254, 287行目: `browser.tabs.query/sendMessage()`
-
-- background.jsも複数箇所で`browser` APIを使用
-  - 170, 191, 205行目: `browser.tabs.query()`
-  - 222行目: `browser.commands.onCommand`
-  - 241行目: `browser.runtime.onMessage`
-
-**技術的背景:**
-- Firefoxの`browser` API: Promise-based（非同期処理が簡潔）
-- Chromeの`chrome` API: Callback-based（コールバック地獄）
-- WebExtension Polyfill: Firefoxの優れたAPIをChromeで利用可能にするラッパー
-
-### 解決策
-Mozilla公式のWebExtension Polyfillを導入し、`browser` APIを自動的に`chrome` APIに変換する。
+### アーキテクチャ概要
+```
+├── Background Layer (Service Worker/Background Script)
+│   ├── Translation Engine (翻訳エンジン本体)
+│   ├── OpenRouter API Client
+│   └── Message/Command Handler
+├── Content Layer (DOM操作)
+│   ├── DOM Manipulator
+│   ├── Selection Handler
+│   └── Floating UI
+├── UI Layer (React)
+│   ├── Popup UI (クイック翻訳)
+│   └── Options UI (詳細設定)
+└── Shared Layer (共通基盤)
+    ├── BrowserAdapter (Chrome/Firefox API統一)
+    ├── StorageManager (型安全Storage)
+    └── MessageBus (メッセージング抽象化)
+```
 
 ## 生成AIの学習用コンテキスト
 
-### HTMLファイル
-- popup/popup.html
-  - polyfillスクリプトの挿入位置を確認
+### アーキテクチャ設計書
+- `ARCHITECTURE.md`
+  - 全体設計、コンポーネント仕様、データフロー、クロスブラウザ戦略を参照
 
-### JavaScriptファイル
-- popup/popup.js
-  - `browser` API使用箇所の確認
-- background.js
-  - `browser` API使用箇所の確認
+### 既存実装（参考用）
+- `background.js` (Firefox動作中の実装)
+- `content.js` (Firefox動作中の実装)
+- `popup/popup.js` (既存Popup実装)
+- `manifest.json` (現行Manifest V2)
 
-### 設定ファイル
-- manifest.json
-  - background scriptsの設定確認
-- build-chrome.sh
-  - ビルドプロセスの自動化
+### ビルド設定
+- `package.json` (既存依存関係確認)
+- `jest.config.js` (テスト設定)
+- `eslint.config.js` (Lint設定)
 
 ## Process
 
-### process1 WebExtension Polyfillのダウンロード
-@target: popup/browser-polyfill.min.js
-@ref: https://unpkg.com/webextension-polyfill@0.10.0/dist/browser-polyfill.min.js
-- [x] Mozilla公式のpolyfillをダウンロード
-  ```bash
-  curl -o popup/browser-polyfill.min.js https://unpkg.com/webextension-polyfill@0.10.0/dist/browser-polyfill.min.js
-  ```
-- [x] ファイルサイズ・内容を確認
-- [x] .gitignoreに追加するか検討（推奨: リポジトリにコミット）
+### process0: 基盤整備 (Week 1-2)
+#### sub0.1: プロジェクト構造整備
+@target: プロジェクトルート
+- [x] `src/` ディレクトリ構造作成
+  - `src/background/`, `src/content/`, `src/popup/`, `src/options/`, `src/shared/`
+- [x] 既存JSファイルを `src/legacy/` に退避（参照用として保持）
+- [x] `public/` ディレクトリ作成
+  - `manifest.v2.json`, `manifest.v3.json`, `icons/`, `popup.html`, `options.html`
 
-### process2 popup.htmlの修正
-@target: popup/popup.html
-@ref: popup/browser-polyfill.min.js
-- [x] 84行目の`<script src="popup.js"></script>`の前にpolyfillを追加
-  ```html
-  <script src="browser-polyfill.min.js"></script>
-  <script src="popup.js"></script>
-  ```
-- [x] ブラウザで動作確認
-  - F12でコンソールエラーが消えることを確認
-  - 各ボタンの動作確認
+#### sub0.2: Webpack 5環境構築
+@target: `webpack/webpack.common.js`, `webpack/webpack.chrome.js`, `webpack/webpack.firefox.js`
+@ref: read-aloud-tab の Webpack 設定（参考）
+- [x] Webpack関連パッケージインストール
+  - `webpack`, `webpack-cli`, `webpack-merge`, `ts-loader`
+  - `copy-webpack-plugin`, `html-webpack-plugin`
+  - `css-loader`, `style-loader`, `postcss-loader`
+- [x] 共通設定作成 (`webpack.common.js`)
+  - TypeScript loader設定
+  - CSS/Tailwind loader設定
+  - Path alias設定 (`@/`, `@shared/`, `@background/`, `@content/`)
+- [x] Chrome専用設定 (`webpack.chrome.js`)
+  - Service Worker用エントリポイント
+  - manifest.v3.json コピー
+  - offscreen.html コピー
+  - 出力先: `dist-chrome/`
+- [x] Firefox専用設定 (`webpack.firefox.js`)
+  - Background Script用エントリポイント
+  - manifest.v2.json コピー
+  - 出力先: `dist-firefox/`
+- [x] package.json スクリプト追加
+  - `build:chrome`, `build:firefox`, `build:all`
+  - `dev:chrome`, `dev:firefox` (watch mode)
 
-### process3 background.jsのpolyfill対応
-@target: background.js, manifest.json
-@ref: popup/browser-polyfill.min.js
-- [x] 現在の簡易polyfill（`var browser = chrome`）の問題点を確認
-- [x] Manifest v3のservice worker制約を調査
-  - service workerでは複数スクリプトの配列が使えない
-  - importScripts()またはバンドルが必要
-- [x] 2つの選択肢を検討:
-  1. background.jsの先頭にpolyfillコードを直接埋め込む
-  2. importScripts('browser-polyfill.min.js')を使用
-- [x] 選択したアプローチを実装
+#### sub0.3: TypeScript環境設定
+@target: `tsconfig.json`
+- [x] tsconfig.json 作成
+  - `strict: true`, `target: ES2020`, `module: ESNext`
+  - Path alias設定（Webpackと同期）
+  - `include: ["src/**/*"]`, `exclude: ["node_modules", "dist-*"]`
+- [x] 型定義ファイル作成
+  - `src/types/chrome.d.ts` (Chrome API型定義)
+  - `src/types/browser.d.ts` (Firefox API型定義)
+  - `src/shared/types/index.ts` (共通型定義)
 
-### process4 ビルドスクリプトの自動化
-@target: build-chrome.sh
-@ref: convert-manifest-v3.cjs, add-chrome-polyfill.cjs
-- [x] polyfillファイルをdist-chromeにコピーする処理を追加
-- [x] popup/popup.htmlへのpolyfill挿入を自動化
-  - sedコマンドまたはNode.jsスクリプトで実装
-- [x] background.jsへのpolyfill適用を自動化
-- [x] 動作確認: `npm run build:chrome`で完全なChrome用パッケージが生成されることを確認
+#### sub0.4: Manifest準備
+@target: `public/manifest.v2.json`, `public/manifest.v3.json`
+@ref: `manifest.json` (既存), `ARCHITECTURE.md` (仕様)
+- [x] manifest.v2.json作成（Firefox用）
+  - 既存manifest.jsonベース
+  - `browser_specific_settings` 設定
+  - `background.scripts: ["background.js"]`
+  - `browser_action` 設定
+- [x] manifest.v3.json作成（Chrome用）
+  - `manifest_version: 3`
+  - `background.service_worker: "background.js"`
+  - `action` 設定（browser_actionから変更）
+  - `host_permissions` 設定
+  - offscreen API権限追加
+- [x] アイコン、HTML準備
+  - `public/popup.html`, `public/options.html`
+  - `public/offscreen.html` (Chrome専用)
+  - `public/icons/` コピー
 
-### process5 content.jsの互換性確認
-@target: content.js
-- [ ] content.js内で`browser` APIが使用されているか調査
-- [ ] 使用されている場合、polyfillの適用方法を検討
-  - content_scriptsはmanifest.jsonで配列指定可能
-  - polyfillを先に読み込む設定を追加
+**検証基準**:
+- [x] `npm run build:chrome` が成功し、`dist-chrome/manifest.json` がV3
+- [x] `npm run build:firefox` が成功し、`dist-firefox/manifest.json` がV2
+- [x] 両ディストリビューションに必要なファイルが全て生成
 
-### process10 ユニットテスト
-- [ ] ポップアップ画面の動作テスト
-  - [ ] APIキーの保存・読み込み
-  - [ ] モデル選択（特にCustomModel）
-  - [ ] Test Connection機能
-- [ ] background.jsの通信テスト
-  - [ ] コマンドリスナーの動作確認
-  - [ ] content.jsとのメッセージング確認
-- [ ] Firefoxでの動作確認（リグレッションテスト）
-  - [ ] polyfill追加後もFirefoxで正常動作すること
+---
 
-### process50 フォローアップ
+### process1: Shared Layer実装 (Week 3-4)
 
-### process100 リファクタリング
-- [ ] add-chrome-polyfill.cjsの改善
-  - 現在の簡易的な変数宣言を正式なpolyfillに置き換え
-- [ ] ビルドスクリプトの最適化
-  - エラーハンドリングの追加
-  - ログ出力の改善
+#### sub1.1: BrowserAdapter実装
+@target: `src/shared/adapters/BrowserAdapter.ts`
+@ref: `ARCHITECTURE.md` (L1095-L1180)
+- [x] BrowserAdapter クラス作成
+  - Chrome/Firefox API判定ロジック
+  - `storage` プロパティ（get, set, remove）
+  - `runtime` プロパティ（sendMessage, onMessage, getManifest, openOptionsPage）
+  - `tabs` プロパティ（query, sendMessage）
+  - `commands` プロパティ（onCommand）
+  - `isChrome`, `isFirefox`, `manifestVersion` プロパティ
+- [x] Promise化されたAPI提供
+  - callback形式をPromise化
+  - 型安全なレスポンス定義
 
-### process200 ドキュメンテーション
-- [x] PLAN.mdに調査結果と実装手順を記録
-- [ ] README.mdにChrome対応の手順を追加
-  - 開発者向け: ビルド方法
-  - ユーザー向け: インストール方法
-- [ ] CHANGELOG.mdにChrome対応を記載
-  - 変更内容: WebExtension Polyfill導入
-  - 影響: Chrome/Edgeでの動作サポート
+#### sub1.2: StorageManager実装
+@target: `src/shared/storage/StorageManager.ts`, `src/shared/storage/types.ts`
+@ref: `ARCHITECTURE.md` (L216-L217)
+- [x] Storage型定義作成 (`types.ts`)
+  - `StorageKeys`, `StorageData` 型定義
+  - デフォルト値定義
+- [x] StorageManager クラス作成
+  - `get<T>(keys)` メソッド（型安全）
+  - `set(data)` メソッド
+  - `remove(keys)` メソッド
+  - デフォルト値自動マージ
+- [ ] マイグレーション機能
+  - `migrate()` メソッド
+  - V2→V3スキーマ変換
 
-## 検証方法
+#### sub1.3: MessageBus実装
+@target: `src/shared/messages/MessageBus.ts`, `src/shared/messages/types.ts`
+@ref: `ARCHITECTURE.md` (L218-L220)
+- [x] メッセージ型定義作成 (`types.ts`)
+  - `MessageType` enum定義
+  - 各メッセージのペイロード型定義
+- [x] MessageBus クラス作成
+  - `send<T>(message)` メソッド（Promise化）
+  - `sendToTab<T>(tabId, message)` メソッド
+  - `listen(callback, filter?)` メソッド
+  - `unlisten(listener)` メソッド
+  - 型安全なメッセージルーティング
 
-### 修正前の症状
-1. ブラウザコンソール（F12）で "browser is not defined" エラーが表示される
-2. ポップアップのボタンをクリックしても何も起こらない
-3. CustomModel選択時にテキストボックスが表示されない
+#### sub1.4: Utils実装
+@target: `src/shared/utils/logger.ts`, `src/shared/utils/retry.ts`, `src/shared/utils/languageDetector.ts`
+@ref: `ARCHITECTURE.md` (L622, L1043-L1074)
+- [x] logger.ts作成
+  - `log`, `warn`, `error` メソッド
+  - 環境別出力制御（dev/prod）
+- [x] retry.ts作成
+  - `retry<T>(fn, options)` 関数
+  - Exponential backoff実装
+  - リトライ回数制御
+- [x] languageDetector.ts作成
+  - `detectLanguage(text)` 関数
+  - ブラウザ言語取得
 
-### 修正後の期待動作
-1. ブラウザコンソールにエラーが表示されない
-2. "Save"ボタンをクリック → "API key saved!"のメッセージが表示される
-3. モデル選択で"Custom Model..."を選択 → テキストボックスが表示される
-4. "Test Connection"ボタンをクリック → 接続テストが実行され結果が表示される
-5. "Translate"系ボタンが正常に動作する
+#### sub1.5: Constants定義
+@target: `src/shared/constants/languages.ts`, `src/shared/constants/models.ts`, `src/shared/constants/config.ts`
+@ref: `ARCHITECTURE.md` (L225-L228)
+- [x] languages.ts作成
+  - サポート言語リスト定義
+  - 言語コード→言語名マッピング
+- [x] models.ts作成
+  - OpenRouter対応モデルリスト
+  - モデル設定（デフォルトモデル等）
+- [x] config.ts作成
+  - API_ENDPOINT定義
+  - CONCURRENCY_LIMIT定義
+  - CACHE_TTL定義
 
-## リスクと緩和策
+#### sub1.6: Shared Layerテスト
+@target: `tests/unit/shared/`
+@ref: `ARCHITECTURE.md` (L1510-L1611)
+- [x] BrowserAdapter.test.ts作成
+  - Chrome/Firefox判定テスト
+  - Storage API ラッパーテスト
+- [x] StorageManager.test.ts作成
+  - get/set/removeテスト
+  - デフォルト値マージテスト
+- [x] retry.test.ts作成
+  - リトライロジックテスト
+  - Exponential backoffテスト
 
-### リスク1: Manifest v3の破壊的変更
-- **影響**: webRequest APIの制限により一部機能が動作しない可能性
-- **緩和策**: まずpolyfillのみ追加してv2のまま動作確認、その後v3移行を検討
+**検証基準**:
+- [x] `npm test -- shared` が全てパス
+- [x] テストカバレッジ80%以上
+- [x] Chrome/Firefox両方で import が成功
 
-### リスク2: CDN依存によるオフライン動作不可
-- **影響**: インターネット接続なしでpolyfillが読み込めない
-- **緩和策**: ローカルにpolyfillファイルを配置（推奨）
+---
 
-### リスク3: Service Worker化によるストレージアクセス変更
-- **影響**: Manifest v3のbackground service workerは永続的でない
-- **緩和策**: 段階的移行、まずv2でpolyfill動作確認
+### process2: Background Layer実装 (Week 5-6)
 
+#### sub2.1: OpenRouter APIクライアント
+@target: `src/background/apiClient.ts`
+@ref: `ARCHITECTURE.md` (L619-L706), `background.js` (既存実装)
+- [x] OpenRouterClient クラス作成
+  - `initialize()` メソッド（設定読み込み）
+  - `translate(texts[], targetLanguage)` メソッド
+  - `buildPrompt()` メソッド
+  - `parseResponse()` メソッド
+  - `testConnection()` メソッド
+- [x] エラーハンドリング
+  - API キー未設定エラー
+  - HTTP エラー処理
+  - レート制限対応
+
+#### sub2.2: TranslationEngine実装
+@target: `src/background/translationEngine.ts`
+@ref: `ARCHITECTURE.md` (L546-L609), `background.js` (既存実装)
+- [x] TranslationEngine クラス作成
+  - `translateBatch(texts[], targetLanguage)` メソッド
+  - 3層キャッシュ管理（Memory/Session/Local）
+  - `clearCache()` メソッド
+- [x] バッチ処理実装
+  - BATCH_SIZE = 10
+  - キャッシュチェック→未キャッシュのみ翻訳
+- [x] リトライロジック統合
+  - `retry()` ユーティリティ使用
+  - maxRetries: 3, exponential backoff
+
+#### sub2.3: MessageHandler実装
+@target: `src/background/messageHandler.ts`
+@ref: `ARCHITECTURE.md` (L176, L472-L507)
+- [x] MessageHandler クラス作成
+  - `handle(message, sender, sendResponse)` メソッド
+  - アクション別ルーティング
+    - `translate`: ページ翻訳
+    - `translateSelection`: 選択翻訳
+    - `translateClipboard`: クリップボード翻訳
+    - `requestTranslation`: 翻訳リクエスト
+- [x] TranslationEngine と連携
+
+#### sub2.4: CommandHandler実装
+@target: `src/background/commandHandler.ts`
+@ref: `ARCHITECTURE.md` (L176, L496-L499)
+- [x] CommandHandler クラス作成
+  - `handle(command)` メソッド
+  - コマンド別処理
+    - `translate-page`: Alt+W
+    - `translate-selection`: Alt+Y
+    - `translate-clipboard`: Alt+C
+- [x] Content Scriptへのメッセージ送信
+
+#### sub2.5: Chrome Service Worker対応
+@target: `src/background/service.ts`, `src/background/keepAlive.ts`, `public/offscreen.html`
+@ref: `ARCHITECTURE.md` (L471-L507, L1186-L1244)
+- [x] service.ts作成（Chrome用エントリポイント）
+  - BackgroundService クラス
+  - MessageHandler, CommandHandler, KeepAlive 統合
+  - `chrome.runtime.onMessage` リスナー設定
+  - `chrome.commands.onCommand` リスナー設定
+- [x] keepAlive.ts作成
+  - KeepAlive クラス
+  - Offscreen Document作成
+  - 20秒毎のping処理
+- [x] offscreen.html作成
+  - Keep-alive用の空HTML
+  - Service Worker接続維持スクリプト
+
+#### sub2.6: Firefox Background Script
+@target: `src/background/background.ts`
+@ref: `ARCHITECTURE.md` (L509-L537)
+- [x] background.ts作成（Firefox用エントリポイント）
+  - BackgroundScript クラス
+  - MessageHandler, CommandHandler 統合
+  - `browser.runtime.onMessage` リスナー設定
+  - `browser.commands.onCommand` リスナー設定
+  - Keep-Alive不要（Persistent Background）
+
+#### sub2.7: Background Layerテスト
+@target: `tests/unit/background/`
+@ref: `ARCHITECTURE.md` (L1510-L1550)
+- [x] apiClient.test.ts作成
+  - translate() テスト
+  - エラーハンドリングテスト
+  - testConnection() テスト
+- [x] translationEngine.test.ts作成
+  - キャッシュ動作テスト
+  - バッチ処理テスト
+  - リトライテスト
+- [x] messageHandler.test.ts作成
+  - ルーティングテスト
+  - 各アクション処理テスト
+
+**検証基準**:
+- [x] `npm test -- background` が全てパス
+- [x] OpenRouter API との通信成功
+- [x] キャッシュが正常動作
+- [x] Chrome/Firefoxでビルド成功
+
+---
+
+### process3: Content Layer実装 (Week 7-8)
+
+#### sub3.1: DOMManipulator実装
+@target: `src/content/domManipulator.ts`
+@ref: `ARCHITECTURE.md` (L809-L863), `content.js` (既存実装)
+- [ ] DOMManipulator クラス作成
+  - `extractTextNodes()` メソッド
+    - TreeWalker使用
+    - SCRIPT/STYLE/NOSCRIPT/IFRAME除外
+    - 空テキスト除外
+  - `applyTranslations(nodes[], translations[])` メソッド
+  - `reset()` メソッド（元テキストに戻す）
+  - WeakMapで元テキスト保持
+
+#### sub3.2: SelectionHandler実装
+@target: `src/content/selectionHandler.ts`
+@ref: `ARCHITECTURE.md` (L182, L719)
+- [ ] SelectionHandler クラス作成
+  - `enable()` メソッド（選択イベントリスナー設定）
+  - `translateCurrent(targetLanguage)` メソッド
+  - `getSelection()` ラッパー
+- [ ] Floating UI と連携
+
+#### sub3.3: ClipboardHandler実装
+@target: `src/content/clipboardHandler.ts`
+@ref: `ARCHITECTURE.md` (L183, L720)
+- [ ] ClipboardHandler クラス作成
+  - `read()` メソッド（clipboard API使用）
+  - `showTranslation(translation)` メソッド
+- [ ] 翻訳結果表示UI
+
+#### sub3.4: MutationObserver実装
+@target: `src/content/mutationObserver.ts`
+@ref: `ARCHITECTURE.md` (L184, L749-L750)
+- [ ] MutationObserverManager クラス作成
+  - `observe(target)` メソッド
+  - 動的コンテンツ検出
+  - 自動翻訳適用
+
+#### sub3.5: FloatingUI実装
+@target: `src/content/floatingUI.ts`
+@ref: `ARCHITECTURE.md` (L192, L350, L418-L420)
+- [ ] FloatingUI クラス作成
+  - `show(translation, position)` メソッド
+  - `hide()` メソッド
+  - コピーボタン実装
+  - ダークモード対応
+  - ポジショニングロジック
+
+#### sub3.6: Content Script統合
+@target: `src/content/index.ts`
+@ref: `ARCHITECTURE.md` (L717-L806), `content.js` (既存実装)
+- [ ] ContentScript クラス作成
+  - 全コンポーネント初期化
+  - メッセージリスナー設定
+  - アクション別処理
+    - `translate`: ページ翻訳
+    - `translateSelection`: 選択翻訳
+    - `translateClipboard`: クリップボード翻訳
+    - `reset`: リセット
+
+#### sub3.7: Content Layerテスト
+@target: `tests/unit/content/`
+@ref: `ARCHITECTURE.md` (L1553-L1610)
+- [ ] domManipulator.test.ts作成
+  - extractTextNodes() テスト
+  - applyTranslations() テスト
+  - reset() テスト
+- [ ] selectionHandler.test.ts作成
+  - 選択検出テスト
+  - 翻訳実行テスト
+- [ ] floatingUI.test.ts作成
+  - 表示/非表示テスト
+  - ポジショニングテスト
+
+**検証基準**:
+- [ ] `npm test -- content` が全てパス
+- [ ] Wikipedia等でページ翻訳成功
+- [ ] 選択翻訳動作
+- [ ] クリップボード翻訳動作
+
+---
+
+### process4: UI Layer実装（React化） (Week 9-10)
+
+#### sub4.1: Popup UI実装
+@target: `src/popup/`, `public/popup.html`
+@ref: `ARCHITECTURE.md` (L866-L985), `popup/popup.js` (既存実装)
+- [ ] ディレクトリ構造作成
+  - `src/popup/index.tsx`, `App.tsx`
+  - `src/popup/components/` (QuickTranslate, LanguageSelector, StatusIndicator, ApiKeyWarning)
+  - `src/popup/hooks/` (useTranslation, useSettings)
+- [ ] App.tsx作成
+  - メインレイアウト
+  - コンポーネント統合
+  - Context API で設定管理
+- [ ] QuickTranslate.tsx作成
+  - Translate Pageボタン
+  - Reset to Originalボタン
+  - ボタン無効化ロジック
+- [ ] LanguageSelector.tsx作成
+  - 言語ドロップダウン
+  - 選択言語の保存
+- [ ] StatusIndicator.tsx作成
+  - 翻訳状態表示（idle/translating/success/error）
+  - プログレス表示
+- [ ] ApiKeyWarning.tsx作成
+  - API キー未設定警告バナー
+- [ ] useTranslation.ts作成
+  - `translate()` 関数
+  - `reset()` 関数
+  - ステート管理
+- [ ] useSettings.ts作成
+  - 設定読み込み
+  - 設定更新
+- [ ] popup.html作成
+  - Reactマウント用div
+  - Webpack HtmlWebpackPlugin連携
+
+#### sub4.2: Options UI実装
+@target: `src/options/`, `public/options.html`
+@ref: `ARCHITECTURE.md` (L200-L210)
+- [ ] ディレクトリ構造作成
+  - `src/options/index.tsx`, `App.tsx`
+  - `src/options/components/` (ApiSettings, ModelSelector, LanguageSettings, AppearanceSettings, ConnectionTest)
+  - `src/options/hooks/` (useSettings)
+- [ ] App.tsx作成
+  - タブレイアウト
+  - セクション分割
+- [ ] ApiSettings.tsx作成
+  - API キー入力フィールド
+  - 保存ボタン
+  - セキュリティ注意書き
+- [ ] ModelSelector.tsx作成
+  - モデル選択ドロップダウン
+  - Provider選択（Optional）
+- [ ] LanguageSettings.tsx作成
+  - ターゲット言語選択
+  - フォントサイズ調整
+  - 行高調整
+- [ ] AppearanceSettings.tsx作成
+  - UI設定
+  - ダークモード切替
+- [ ] ConnectionTest.tsx作成
+  - テスト翻訳実行ボタン
+  - 接続結果表示
+- [ ] options.html作成
+  - Reactマウント用div
+
+#### sub4.3: HTML/CSS統合
+@target: `src/styles/globals.css`, `tailwind.config.js`
+@ref: `ARCHITECTURE.md` (L234-L236)
+- [ ] tailwind.config.js作成
+  - content設定（src/**/*.tsx）
+  - カスタムテーマ設定
+  - 拡張機能用カラーパレット
+- [ ] globals.css作成
+  - Tailwind directives
+  - カスタムスタイル
+  - ダークモード対応
+- [ ] Webpack CSS loader設定確認
+
+#### sub4.4: UI Layerテスト
+@target: `tests/unit/popup/`, `tests/unit/options/`
+@ref: `ARCHITECTURE.md` (L1510-L1611)
+- [ ] React Testing Library設定
+- [ ] QuickTranslate.test.tsx作成
+  - ボタンクリックテスト
+  - 無効化状態テスト
+- [ ] LanguageSelector.test.tsx作成
+  - 言語選択テスト
+  - 保存処理テスト
+- [ ] useTranslation.test.ts作成
+  - translate() テスト
+  - reset() テスト
+  - ステート変化テスト
+
+**検証基準**:
+- [ ] `npm test -- popup` が全てパス
+- [ ] `npm test -- options` が全てパス
+- [ ] Popup/Optionsが正常表示
+- [ ] 設定変更が正常動作
+- [ ] Tailwindスタイルが正しく適用
+
+---
+
+### process5: 統合・最適化・ドキュメント (Week 11-12)
+
+#### sub5.1: 統合テスト
+@target: `tests/integration/`
+@ref: `ARCHITECTURE.md` (L1613-L1667)
+- [ ] translation-flow.test.ts作成
+  - ページ翻訳フロー全体テスト
+  - Background→Content→DOM更新の一連の流れ
+- [ ] settings-sync.test.ts作成
+  - Popup/Options間の設定同期テスト
+  - Storage変更の反映テスト
+- [ ] cross-browser.test.ts作成
+  - Chrome/Firefox両方でのモック実行
+
+#### sub5.2: パフォーマンス最適化
+@target: `src/background/translationEngine.ts`, `src/content/domManipulator.ts`, `webpack/*.js`
+@ref: `ARCHITECTURE.md` (L1809-L1962)
+- [ ] キャッシュ戦略最適化
+  - LRU eviction実装
+  - Cache TTL調整
+- [ ] バッチサイズ動的調整
+  - ページサイズに応じたBATCH_SIZE変更
+- [ ] メモリリーク対策
+  - WeakMap使用確認
+  - イベントリスナークリーンアップ
+- [ ] Webpackバンドルサイズ最適化
+  - Tree-shaking確認
+  - Code-splitting設定
+  - minimize設定
+
+#### sub5.3: マイグレーション実装
+@target: `src/background/migration.ts`
+@ref: `ARCHITECTURE.md` (L1720-L1806)
+- [ ] MigrationManager クラス作成
+  - `migrate()` メソッド
+  - `runMigrations(fromVersion)` メソッド
+  - `migrateV2ToV3()` メソッド
+  - `showMigrationNotice()` メソッド
+- [ ] V2→V3データ移行
+  - `apiKey` → `openRouterApiKey`
+  - デフォルトモデル設定
+  - スキーマバージョン管理
+- [ ] Extension ID保持
+  - `{d2c003ee-bd69-4b6d-a05e-cc9ad78c5faf}` 継続使用
+
+#### sub5.4: ドキュメント整備
+@target: `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`
+- [ ] README.md更新
+  - インストール手順
+  - 使い方（スクリーンショット付き）
+  - 開発環境セットアップ
+  - ビルド手順
+- [ ] CHANGELOG.md作成
+  - v3.0.0の変更点
+  - Breaking Changes
+  - マイグレーションガイド
+- [ ] CONTRIBUTING.md作成
+  - 開発者向けガイド
+  - コーディング規約
+  - PR手順
+
+#### sub5.5: E2Eテスト（手動）
+- [ ] Chrome動作確認
+  - ページ翻訳（Wikipedia等）
+  - 選択翻訳
+  - クリップボード翻訳
+  - 設定変更
+- [ ] Firefox動作確認
+  - 同上
+- [ ] バグ修正
+
+#### sub5.6: リリース準備
+@target: `manifest.v2.json`, `manifest.v3.json`, `package.json`
+- [ ] バージョン番号更新（3.0.0）
+- [ ] manifest.json最終確認
+- [ ] ビルド最終実行
+  - `npm run build:all`
+- [ ] パッケージ作成
+  - Chrome Web Store用ZIP
+  - Firefox Add-ons用ZIP
+
+**検証基準**:
+- [ ] 全テストパス（ユニット+統合）
+- [ ] Chrome/Firefox両方で安定動作
+- [ ] ドキュメント完備
+- [ ] パッケージサイズ確認（1MB以下推奨）
+
+---
+
+### process10: ユニットテスト
+@ref: `ARCHITECTURE.md` (L1500-L1611)
+- 各Processのsub項目で個別に実装
+- テストカバレッジ目標: 80%以上
+- Jest + React Testing Library使用
+
+### process50: フォローアップ
+（実装後に仕様変更などが発生した場合は、ここにProcessを追加する）
+
+### process100: リファクタリング
+- [ ] コードレビュー実施
+- [ ] ESLint警告解消
+- [ ] 型定義の厳密化
+- [ ] パフォーマンス改善
+- [ ] コメント・ドキュメント追加
+
+### process200: ドキュメンテーション
+- [x] `ARCHITECTURE.md` 作成済み
+- [ ] `README.md` 更新
+- [ ] `CHANGELOG.md` 作成
+- [ ] `CONTRIBUTING.md` 作成
+- [ ] API仕様書作成（OpenRouter連携部分）
+- [ ] ユーザーガイド作成
+
+---
+
+## マイルストーン
+
+| Week | フェーズ | 検証基準 |
+|------|---------|---------|
+| 2 | Phase 0完了 | Webpackビルド成功 |
+| 4 | Phase 1完了 | Shared Layerテスト全パス |
+| 6 | Phase 2完了 | 翻訳エンジン動作確認 |
+| 8 | Phase 3完了 | ページ翻訳動作 |
+| 10 | Phase 4完了 | React UI完成 |
+| 12 | Phase 5完了 | リリース準備完了 |
+
+## 成功基準
+- ✅ Chrome/Firefox両対応（自動切替）
+- ✅ TypeScript 100%移行
+- ✅ テストカバレッジ80%以上
+- ✅ 全機能動作（ページ/選択/クリップボード翻訳）
+- ✅ React UIモダン化
+- ✅ ドキュメント完備
+- ✅ パフォーマンス: 1000ノード翻訳3秒以内
+
+## リスク管理
+
+### 技術的リスク
+1. **Chrome Service Worker制約**
+   - 対策: Offscreen Document + Keep-Alive実装
+2. **Webpack設定複雑化**
+   - 対策: read-aloud-tab参考、段階的構築
+3. **テストカバレッジ不足**
+   - 対策: Phase毎にテスト実装を義務化
+
+### スケジュールリスク
+1. **想定外のバグ**
+   - 対策: Week 13-16を予備期間として確保
+2. **API変更**
+   - 対策: OpenRouter API安定版使用

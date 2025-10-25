@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Background Keep-Alive</title>
+</head>
+<body>
+  <script>
+    // Keep-alive for Chrome Service Worker
+    // This script maintains a connection to prevent the service worker from being terminated
+    chrome.runtime.connect({ name: 'keepAlive' });
+
+    console.log('Offscreen document loaded - Service Worker keep-alive active');
+  </script>
+</body>
+</html>

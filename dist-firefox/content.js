@@ -1,0 +1,1 @@
+(()=>{"use strict";console.log("DoganayLab Translate - Content Script initialized"),("undefined"!=typeof chrome&&chrome.runtime?chrome:browser).runtime.onMessage.addListener((e,o,t)=>(console.log("Content script received message:",e),t&&t({status:"ok"}),!0))})();
