@@ -50,7 +50,7 @@ if [ ! -f "popup/browser-polyfill.min.js" ]; then
 fi
 
 # Build with web-ext
-echo "📦 Step 1/6: Building with web-ext..."
+echo "📦 Step 1/7: Building with web-ext..."
 if ! npm run build:ext; then
   handle_error "web-ext build failed"
 fi
@@ -69,13 +69,13 @@ echo "   ✓ Found: $(basename "$ZIP_FILE")"
 
 # Create dist-chrome directory
 echo ""
-echo "📂 Step 2/6: Creating dist-chrome directory..."
+echo "📂 Step 2/7: Creating dist-chrome directory..."
 mkdir -p dist-chrome
 echo "   ✓ Directory created"
 
 # Extract zip to dist-chrome
 echo ""
-echo "📦 Step 3/6: Extracting to dist-chrome/..."
+echo "📦 Step 3/7: Extracting to dist-chrome/..."
 if ! unzip -o "$ZIP_FILE" -d dist-chrome > /dev/null 2>&1; then
   handle_error "Failed to extract zip file"
 fi
@@ -92,19 +92,35 @@ fi
 
 # Convert manifest to v3
 echo ""
-echo "🔄 Step 4/6: Converting manifest.json to v3..."
+echo "🔄 Step 4/7: Converting manifest.json to v3..."
 if ! node convert-manifest-v3.cjs dist-chrome/manifest.json; then
   handle_error "Manifest v3 conversion failed"
 fi
 echo "   ✓ Manifest converted to v3"
 
+# Fix popup.html
+echo ""
+echo "🔧 Step 5/7: Fixing popup.html..."
+if ! node fix-popup-html.cjs dist-chrome/popup/popup.html; then
+  handle_error "Failed to fix popup.html"
+fi
+echo "   ✓ popup.html fixed"
+
 # Add Chrome compatibility polyfill
 echo ""
-echo "🔌 Step 5/6: Adding WebExtension Polyfill..."
+echo "🔌 Step 6/7: Adding WebExtension Polyfill..."
 if ! node add-chrome-polyfill.cjs dist-chrome/background.js; then
   handle_error "Failed to add polyfill to background.js"
 fi
 echo "   ✓ Polyfill added to background.js"
+
+# Merge background.js modules for Service Worker compatibility
+echo ""
+echo "🔗 Step 6.5/7: Merging background.js modules..."
+if ! node merge-background-modules.cjs dist-chrome; then
+  handle_error "Failed to merge background.js modules"
+fi
+echo "   ✓ Modules merged into background.js"
 
 # Copy polyfill files for content scripts and popup
 echo ""
@@ -121,7 +137,7 @@ echo "   ✓ Copied to dist-chrome/popup/"
 
 # Remove unnecessary files and directories
 echo ""
-echo "🧹 Step 6/6: Cleaning up unnecessary files..."
+echo "🧹 Step 7/7: Cleaning up unnecessary files..."
 CLEANUP_ITEMS=(
   "dist-chrome/__tests__"
   "dist-chrome/coverage"
