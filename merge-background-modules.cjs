@@ -23,7 +23,14 @@ if (!fs.existsSync(backgroundPath)) {
 try {
   // Read openrouter.js and remove export statements
   let openrouterContent = fs.readFileSync(openrouterPath, 'utf8');
-  openrouterContent = openrouterContent.replace(/^export /gm, '');
+  // Remove all export statements comprehensively
+  openrouterContent = openrouterContent
+    // Single-line named exports: export { foo, bar };
+    .replace(/^export\s*\{[^}]*\};?\s*$/gm, '')
+    // Export declarations: export const/let/var/function/class
+    .replace(/^export\s+(default\s+|const\s+|let\s+|var\s+|function\s+|class\s+)/gm, '$1')
+    // Multi-line named exports: export {\n  foo,\n  bar\n};
+    .replace(/^export\s*\{[\s\S]*?\};?\s*$/gm, '');
 
   // Read background.js
   let backgroundContent = fs.readFileSync(backgroundPath, 'utf8');
@@ -33,6 +40,17 @@ try {
     /^import .* from ['"]\.\/openrouter\.js['"];?\s*$/m,
     ''
   );
+
+  // Remove export statements from background.js (for Jest compatibility)
+  backgroundContent = backgroundContent
+    // Single-line named exports: export { foo, bar };
+    .replace(/^export\s*\{[^}]*\};?\s*$/gm, '')
+    // Export declarations: export const/let/var/function/class
+    .replace(/^export\s+(default\s+|const\s+|let\s+|var\s+|function\s+|class\s+)/gm, '$1')
+    // Multi-line named exports
+    .replace(/^export\s*\{[\s\S]*?\};?\s*$/gm, '')
+    // Comments about exports (optional cleanup)
+    .replace(/\/\/ Export for (testing|ES modules).*\n/g, '');
 
   // Find insertion point - after polyfill code, before main logic
   // Look for a marker comment or insert after the polyfill block

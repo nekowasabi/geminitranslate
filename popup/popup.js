@@ -19,15 +19,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const statusMessage = document.getElementById('status');
 
   // Load saved settings
-  browser.storage.local.get([
-    'openRouterApiKey',
-    'openRouterModel',
-    'openRouterProvider',
-    'targetLanguage',
-    'fontSize',
-    'lineHeight',
-    'apiKey'  // 既存Gemini APIキー（移行案内用）
-  ], function(result) {
+  browser.storage.local.get({
+    openRouterApiKey: null,
+    openRouterModel: null,
+    openRouterProvider: null,
+    targetLanguage: 'tr',
+    fontSize: 16,
+    lineHeight: 4,
+    apiKey: null  // 既存Gemini APIキー（移行案内用）
+  }).then(function(result) {
     // OpenRouter settings
     if (result.openRouterApiKey) {
       apiKeyInput.value = result.openRouterApiKey;
@@ -68,6 +68,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (result.apiKey && !result.openRouterApiKey) {
       showStatus('⚠️ OpenRouter APIへの移行が必要です。新しいAPIキーを設定してください。', 'info', 10000);
     }
+  }).catch(function(error) {
+    console.error('Storage error:', error);
   });
 
   // Add input focus effects
@@ -239,7 +241,12 @@ document.addEventListener('DOMContentLoaded', function() {
     translatePageButton.disabled = true;
     translatePageButton.innerHTML = '<span>Translating...</span>';
 
-    browser.storage.local.get(['openRouterApiKey', 'targetLanguage', 'fontSize', 'lineHeight'], function(result) {
+    browser.storage.local.get({
+      openRouterApiKey: null,
+      targetLanguage: 'tr',
+      fontSize: 16,
+      lineHeight: 4
+    }).then(function(result) {
       if (!result.openRouterApiKey) {
         showStatus('Please enter and save your OpenRouter API key first', 'error');
         translatePageButton.disabled = false;
@@ -276,6 +283,10 @@ document.addEventListener('DOMContentLoaded', function() {
           translatePageButton.textContent = 'Translate Page';
         });
       });
+    }).catch(function(error) {
+      console.error('Storage error:', error);
+      translatePageButton.disabled = false;
+      translatePageButton.textContent = 'Translate Page';
     });
   });
 
