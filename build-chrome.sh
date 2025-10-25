@@ -50,7 +50,7 @@ if [ ! -f "popup/browser-polyfill.min.js" ]; then
 fi
 
 # Build with web-ext
-echo "📦 Step 1/5: Building with web-ext..."
+echo "📦 Step 1/6: Building with web-ext..."
 if ! npm run build:ext; then
   handle_error "web-ext build failed"
 fi
@@ -69,13 +69,13 @@ echo "   ✓ Found: $(basename "$ZIP_FILE")"
 
 # Create dist-chrome directory
 echo ""
-echo "📂 Step 2/5: Creating dist-chrome directory..."
+echo "📂 Step 2/6: Creating dist-chrome directory..."
 mkdir -p dist-chrome
 echo "   ✓ Directory created"
 
 # Extract zip to dist-chrome
 echo ""
-echo "📦 Step 3/5: Extracting to dist-chrome/..."
+echo "📦 Step 3/6: Extracting to dist-chrome/..."
 if ! unzip -o "$ZIP_FILE" -d dist-chrome > /dev/null 2>&1; then
   handle_error "Failed to extract zip file"
 fi
@@ -92,7 +92,7 @@ fi
 
 # Convert manifest to v3
 echo ""
-echo "🔄 Step 4/5: Converting manifest.json to v3..."
+echo "🔄 Step 4/6: Converting manifest.json to v3..."
 if ! node convert-manifest-v3.cjs dist-chrome/manifest.json; then
   handle_error "Manifest v3 conversion failed"
 fi
@@ -100,7 +100,7 @@ echo "   ✓ Manifest converted to v3"
 
 # Add Chrome compatibility polyfill
 echo ""
-echo "🔌 Step 5/5: Adding WebExtension Polyfill..."
+echo "🔌 Step 5/6: Adding WebExtension Polyfill..."
 if ! node add-chrome-polyfill.cjs dist-chrome/background.js; then
   handle_error "Failed to add polyfill to background.js"
 fi
@@ -118,6 +118,41 @@ if ! cp popup/browser-polyfill.min.js dist-chrome/popup/; then
   handle_error "Failed to copy browser-polyfill.min.js to dist-chrome/popup/"
 fi
 echo "   ✓ Copied to dist-chrome/popup/"
+
+# Remove unnecessary files and directories
+echo ""
+echo "🧹 Step 6/6: Cleaning up unnecessary files..."
+CLEANUP_ITEMS=(
+  "dist-chrome/__tests__"
+  "dist-chrome/coverage"
+  "dist-chrome/tests"
+  "dist-chrome/eslint.config.js"
+  "dist-chrome/package.json"
+  "dist-chrome/package-lock.json"
+  "dist-chrome/deno.lock"
+  "dist-chrome/CLAUDE.md"
+  "dist-chrome/PLAN.md"
+  "dist-chrome/README.md"
+  "dist-chrome/vite.config.ts"
+  "dist-chrome/tsconfig.json"
+  "dist-chrome/tailwind.config.js"
+  "dist-chrome/postcss.config.js"
+  "dist-chrome/jest.config.js"
+  "dist-chrome/.vscode"
+  "dist-chrome/.DS_Store"
+  "dist-chrome/.gitignore"
+  "dist-chrome/.web-ext-config.json"
+  "dist-chrome/build-chrome.sh"
+  "dist-chrome/convert-manifest-v3.cjs"
+  "dist-chrome/add-chrome-polyfill.cjs"
+)
+
+for item in "${CLEANUP_ITEMS[@]}"; do
+  if [ -e "$item" ]; then
+    rm -rf "$item"
+  fi
+done
+echo "   ✓ Cleanup completed"
 
 # Final validation
 echo ""
