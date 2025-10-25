@@ -1,3 +1,167 @@
+/**
+ * OpenRouter API クライアント
+ * Gemini API移行用の翻訳クライアント
+ *
+ * @class OpenRouterClient
+ */
+class OpenRouterClient {
+  /**
+   * コンストラクタ
+   * @param {string} apiKey - OpenRouter APIキー
+   * @param {string} model - 使用するモデル名（例: "google/gemini-2.0-flash-exp:free"）
+   * @param {string} [provider] - プロバイダー名（オプション、例: "DeepInfra"）
+   */
+  constructor(apiKey, model, provider) {
+    this.apiKey = apiKey;
+    this.model = model;
+    this.provider = provider;
+    this.endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+  }
+
+  /**
+   * テキストを翻訳
+   * @param {string} content - 翻訳するテキスト
+   * @param {string} targetLanguage - 翻訳先言語（例: "Japanese", "English"）
+   * @param {number} maxTokens - 最大トークン数（デフォルト4000）
+   * @returns {Promise<string>} 翻訳されたテキスト
+   */
+  async translate(content, targetLanguage, maxTokens = 4000) {
+    try {
+      // PLAN.mdの翻訳プロンプト仕様に従ったシステムプロンプト
+      const systemPrompt = `Always translate the following text to ${targetLanguage}, regardless of the original language.
+Even if the text is in English, translate it to ${targetLanguage}. Never keep the original text as-is.
+Keep the same formatting and preserve all special characters.
+Only return the translated text without any explanations or additional text.
+If you see "[SPLIT]" markers, keep them exactly as they are in your response.
+Maintain HTML tags if present.`;
+
+      const request = {
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content
+          }
+        ],
+        max_tokens: maxTokens,
+        ...(this.provider ? { provider: { order: [this.provider] } } : {})
+      };
+
+      const response = await this._makeRequest(request);
+
+      if (!response.ok) {
+        const errorResult = this._handleErrorResponse(response);
+        throw new Error(errorResult.error || '翻訳リクエストに失敗しました');
+      }
+
+      const data = await response.json();
+      return data.choices[0]?.message?.content || '';
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('翻訳リクエストに失敗しました');
+    }
+  }
+
+  /**
+   * OpenRouter APIへの接続をテスト
+   * @returns {Promise<{success: boolean, message?: string, error?: string}>} 接続テストの結果
+   */
+  async testConnection() {
+    try {
+      const request = {
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant.'
+          },
+          {
+            role: 'user',
+            content: 'Say "OK" if you can read this.'
+          }
+        ],
+        max_tokens: 10,
+        ...(this.provider ? { provider: { order: [this.provider] } } : {})
+      };
+
+      const response = await this._makeRequest(request);
+
+      if (response.ok) {
+        return {
+          success: true,
+          message: '接続に成功しました'
+        };
+      }
+
+      return this._handleErrorResponse(response);
+    } catch (error) {
+      return {
+        success: false,
+        error: `ネットワークエラー: ${error instanceof Error ? error.message : '不明なエラー'}`
+      };
+    }
+  }
+
+  /**
+   * OpenRouter APIへリクエストを送信（プライベートメソッド）
+   * @private
+   * @param {object} request - リクエストボディ
+   * @returns {Promise<Response>} レスポンス
+   */
+  async _makeRequest(request) {
+    return fetch(this.endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    });
+  }
+
+  /**
+   * エラーレスポンスをハンドリング
+   * @private
+   * @param {Response} response - レスポンス
+   * @returns {{success: boolean, error: string}} エラー結果
+   */
+  _handleErrorResponse(response) {
+    const { status } = response;
+
+    switch (status) {
+      case 401:
+        return {
+          success: false,
+          error: '無効なAPIキーです'
+        };
+      case 429:
+        return {
+          success: false,
+          error: 'レート制限に達しました。しばらく待ってから再試行してください'
+        };
+      case 500:
+      case 502:
+      case 503:
+      case 504:
+        return {
+          success: false,
+          error: 'サーバーエラーが発生しました。後でもう一度お試しください'
+        };
+      default:
+        return {
+          success: false,
+          error: `不明なエラーが発生しました (ステータスコード: ${status})`
+        };
+    }
+  }
+}
+
 // Cache for translations to reduce API calls
 const translationCache = new Map();
 
@@ -73,18 +237,35 @@ browser.commands.onCommand.addListener(async (command) => {
 	}
 });
 
-// Listen for messages from content script
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+// Listen for messages from content script and popup
+browser.runtime.onMessage.addListener((message, _sender, _sendResponse) => {
 	if (message.action === "translateText") {
 		return translateText(message.text, message.targetLanguage);
 	} else if (message.action === "newContentDetected") {
 		// Just acknowledge the message
 		return Promise.resolve({ status: "acknowledged" });
+	} else if (message.action === "testConnection") {
+		// Handle test connection request from popup
+		return testConnection(message.apiKey, message.model, message.provider);
 	}
 	return false;
 });
 
-// Function to translate text using Gemini API
+// Function to test OpenRouter API connection
+async function testConnection(apiKey, model, provider) {
+	try {
+		const client = new OpenRouterClient(apiKey, model, provider);
+		const result = await client.testConnection();
+		return result;
+	} catch (error) {
+		return {
+			success: false,
+			error: `Test connection failed: ${error.message}`
+		};
+	}
+}
+
+// Function to translate text using OpenRouter API
 async function translateText(text, targetLanguage) {
 	try {
 		// Check cache first
@@ -94,88 +275,48 @@ async function translateText(text, targetLanguage) {
 			return Promise.resolve(translationCache.get(cacheKey));
 		}
 
-		// Get API key from storage
-		const result = await browser.storage.local.get("apiKey");
-		const apiKey = result.apiKey;
+		// Get API settings from storage
+		const result = await browser.storage.local.get([
+			"openRouterApiKey",
+			"openRouterModel",
+			"openRouterProvider"
+		]);
+
+		const apiKey = result.openRouterApiKey;
+		const model = result.openRouterModel || "google/gemini-2.0-flash-exp:free";
+		const provider = result.openRouterProvider || null;
 
 		if (!apiKey) {
-			throw new Error("API key not found");
+			throw new Error("OpenRouter API key not found");
 		}
-
-		// Prepare the prompt for translation
-		const prompt = `Always translate the following text to ${getLanguageName(targetLanguage)}, regardless of the original language. 
-Even if the text is in English, translate it to ${getLanguageName(targetLanguage)}. Never keep the original text as-is.
-Keep the same formatting and preserve all special characters. 
-Only return the translated text without any explanations or additional text.
-If you see "[SPLIT]" markers, keep them exactly as they are in your response.
-Maintain HTML tags if present.
-
-${text}`;
 
 		console.log(
-			`Sending translation request to Gemini API (text length: ${text.length})`,
+			`Sending translation request to OpenRouter API (text length: ${text.length})`,
 		);
 
-		// Make API request
-		const response = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
-			{
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					contents: [
-						{
-							parts: [{ text: prompt }],
-						},
-					],
-					generationConfig: {
-						temperature: 0.2,
-						topP: 0.8,
-						topK: 40,
-					},
-				}),
-			},
+		// Create OpenRouter client
+		const client = new OpenRouterClient(apiKey, model, provider);
+
+		// Translate using OpenRouter
+		const translatedText = await client.translate(
+			text,
+			getLanguageName(targetLanguage),
+			4000
 		);
 
-		if (!response.ok) {
-			const errorData = await response.json();
-			console.error("API error response:", errorData);
-			throw new Error(
-				`API error: ${errorData.error?.message || response.statusText}`,
-			);
-		}
-
-		const data = await response.json();
-
-		// Extract translated text from response
-		if (
-			data.candidates &&
-			data.candidates.length > 0 &&
-			data.candidates[0].content &&
-			data.candidates[0].content.parts &&
-			data.candidates[0].content.parts.length > 0
-		) {
-			const translatedText = data.candidates[0].content.parts[0].text;
-
-			// Store in cache (limit cache size to prevent memory issues)
-			if (translationCache.size > 200) {
-				// Remove oldest entries (20% of cache)
-				const keysToRemove = Math.floor(translationCache.size * 0.2);
-				const keys = Array.from(translationCache.keys());
-				for (let i = 0; i < keysToRemove; i++) {
-					translationCache.delete(keys[i]);
-				}
+		// Store in cache (limit cache size to prevent memory issues)
+		if (translationCache.size > 200) {
+			// Remove oldest entries (20% of cache)
+			const keysToRemove = Math.floor(translationCache.size * 0.2);
+			const keys = Array.from(translationCache.keys());
+			for (let i = 0; i < keysToRemove; i++) {
+				translationCache.delete(keys[i]);
 			}
-			translationCache.set(cacheKey, translatedText);
-
-			console.log("Translation successful");
-			return translatedText;
-		} else {
-			console.error("Invalid response format from API:", data);
-			throw new Error("Invalid response format from API");
 		}
+		translationCache.set(cacheKey, translatedText);
+
+		console.log("Translation successful");
+		return translatedText;
 	} catch (error) {
 		console.error("Translation error:", error);
 		return Promise.reject(error);

@@ -1,236 +1,172 @@
-# title: Gemini API から OpenRouter API への移行
+# title: Chrome拡張機能のポップアップ動作修正
 
 ## 概要
-- 現在Gemini APIを直接呼び出している翻訳機能を、OpenRouter APIを経由する形に完全移行することで、複数のAIモデルを柔軟に選択できる翻訳拡張機能を実現する
+- Firefox用に開発された拡張機能（manifest v2）をChrome対応（manifest v3）に変換した際、ポップアップのボタンが無反応になる問題を解決する
+- WebExtension Polyfillを導入し、Firefox専用の`browser` APIをChromeの`chrome` APIに自動変換する
 
 ### goal
-- ユーザーは拡張機能の設定画面で好みのAIモデル（Gemini、Claude等）を選択でき、それを使用してWebページや選択テキストを翻訳できる
-- 既存の翻訳機能（ページ全体翻訳、選択テキスト翻訳、クリップボード翻訳）は従来通り利用できる
+- ユーザーがChromeでポップアップを開き、APIキーの保存・モデル選択・翻訳機能のテストが正常に動作すること
+- CustomModel選択時にモデル名入力用のテキストボックスが正しく表示されること
 
 ## 必須のルール
 - 必ず `CLAUDE.md` を参照し、ルールを守ること
 
 ## 開発のゴール
-- Gemini APIの直接呼び出しコードを削除し、OpenRouter APIを使用する形に完全移行
-- ユーザーがポップアップUIでモデルを選択できる機能を追加
-- プロバイダールーティング機能を設定可能にする
-- 既存の翻訳品質とユーザー体験を維持する
+- popup.jsとbackground.jsでFirefox専用の`browser` APIが使用されている問題を解決
+- ChromeとFirefoxの両方で動作する拡張機能を実現
+- ビルドプロセスの自動化により、開発者がブラウザごとの差異を意識せずに開発できる環境を構築
 
 ## 実装仕様
 
-### 現状分析
-#### 現在のGemini API実装
-- **background.js**:
-  - `translateText()` 関数でGemini API (gemini-2.5-flash-lite) を直接呼び出し
-  - エンドポイント: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent`
-  - APIキーはlocalStorageに保存 (`apiKey`)
-  - 翻訳キャッシュ機構を実装
-- **popup/popup.js**:
-  - APIキー、対象言語、フォントサイズ、行間の設定を管理
-- **content.js**:
-  - ページ翻訳、選択テキスト翻訳、クリップボード翻訳の3機能を提供
-  - background.jsに翻訳リクエストを送信
+### 問題の詳細
+**現象:**
+1. ポップアップ画面のボタン（Save, Test Connection, Translate等）を押しても無反応
+2. CustomModelを選択してもモデル名入力用のテキストボックスが表示されない
 
-#### 参照実装 (read-aloud-tab)
-- **src/shared/services/openrouter.ts**:
-  - OpenRouterClientクラスで接続テスト、翻訳、要約機能を実装
-  - プロバイダールーティング対応
-  - エラーハンドリング（401, 429, 500番台エラー）
-- **src/shared/types/ai.ts**:
-  - OpenRouterRequest/Response型定義
-  - AiSettings型定義
-- **src/shared/constants.ts**:
-  - API共通エラーメッセージ定義
+**根本原因:**
+- popup.jsが14箇所で`browser` APIを使用（Chrome未サポート）
+  - 3行目: `browser.runtime.getManifest()`
+  - 22行目以降: `browser.storage.local.get/set()`
+  - 188行目: `browser.runtime.sendMessage()`
+  - 254, 287行目: `browser.tabs.query/sendMessage()`
 
-### 移行方針
-1. ✅ モデル選択: ユーザーがポップアップで選択可能
-2. ✅ 移行方法: Gemini APIコードを完全削除し、OpenRouterに置き換え
-3. ✅ プロバイダールーティング: 使用する（設定可能）
-4. ✅ プロンプト: 現在のGemini用プロンプトをそのまま移行
+- background.jsも複数箇所で`browser` APIを使用
+  - 170, 191, 205行目: `browser.tabs.query()`
+  - 222行目: `browser.commands.onCommand`
+  - 241行目: `browser.runtime.onMessage`
 
-### 翻訳プロンプト仕様
-```
-Always translate the following text to ${targetLanguage}, regardless of the original language.
-Even if the text is in English, translate it to ${targetLanguage}. Never keep the original text as-is.
-Keep the same formatting and preserve all special characters.
-Only return the translated text without any explanations or additional text.
-If you see "[SPLIT]" markers, keep them exactly as they are in your response.
-Maintain HTML tags if present.
+**技術的背景:**
+- Firefoxの`browser` API: Promise-based（非同期処理が簡潔）
+- Chromeの`chrome` API: Callback-based（コールバック地獄）
+- WebExtension Polyfill: Firefoxの優れたAPIをChromeで利用可能にするラッパー
 
-${text}
-```
-
-### Storage構造
-#### 変更前
-- `apiKey`: Gemini APIキー
-- `targetLanguage`: 翻訳先言語
-- `fontSize`: フォントサイズ
-- `lineHeight`: 行間
-
-#### 変更後
-- `openRouterApiKey`: OpenRouter APIキー
-- `openRouterModel`: 使用するモデル名（例: "google/gemini-2.0-flash-exp:free"）
-- `openRouterProvider`: プロバイダー名（オプション、例: "DeepInfra"）
-- `targetLanguage`: 翻訳先言語（維持）
-- `fontSize`: フォントサイズ（維持）
-- `lineHeight`: 行間（維持）
+### 解決策
+Mozilla公式のWebExtension Polyfillを導入し、`browser` APIを自動的に`chrome` APIに変換する。
 
 ## 生成AIの学習用コンテキスト
-### 参照実装
-- /home/takets/repos/read-aloud-tab/src/shared/services/openrouter.ts
-  - OpenRouterClientクラスの実装パターン
-- /home/takets/repos/read-aloud-tab/src/shared/types/ai.ts
-  - 型定義
-- /home/takets/repos/read-aloud-tab/src/shared/constants.ts
-  - エラーメッセージ定義
 
-### 現在の実装
-- background.js
-  - translateText()関数の実装
+### HTMLファイル
+- popup/popup.html
+  - polyfillスクリプトの挿入位置を確認
+
+### JavaScriptファイル
 - popup/popup.js
-  - 設定管理の実装
-- content.js
-  - メッセージング処理
+  - `browser` API使用箇所の確認
+- background.js
+  - `browser` API使用箇所の確認
+
+### 設定ファイル
+- manifest.json
+  - background scriptsの設定確認
+- build-chrome.sh
+  - ビルドプロセスの自動化
 
 ## Process
 
-### process1 OpenRouterクライアントの実装
-#### sub1 openrouter.jsファイルの作成
-@target: openrouter.js
-@ref: /home/takets/repos/read-aloud-tab/src/shared/services/openrouter.ts
-- [ ] OpenRouterClientクラスを作成
-  - コンストラクタ: apiKey, model, provider（オプション）を受け取る
-  - endpoint: 'https://openrouter.ai/api/v1/chat/completions'
-- [ ] translate()メソッドを実装
-  - content: 翻訳するテキスト
-  - targetLanguage: 翻訳先言語
-  - maxTokens: 最大トークン数（デフォルト4000）
-  - 現在のプロンプト形式を維持
-  - provider指定がある場合はリクエストに含める
-- [ ] testConnection()メソッドを実装
-  - 簡単なテストリクエストを送信
-  - 成功/失敗を返す
-- [ ] _makeRequest()プライベートメソッドを実装
-  - Authorization: Bearer ${apiKey}
-  - Content-Type: application/json
-- [ ] _handleErrorResponse()メソッドを実装
-  - 401: 無効なAPIキー
-  - 429: レート制限
-  - 500番台: サーバーエラー
+### process1 WebExtension Polyfillのダウンロード
+@target: popup/browser-polyfill.min.js
+@ref: https://unpkg.com/webextension-polyfill@0.10.0/dist/browser-polyfill.min.js
+- [x] Mozilla公式のpolyfillをダウンロード
+  ```bash
+  curl -o popup/browser-polyfill.min.js https://unpkg.com/webextension-polyfill@0.10.0/dist/browser-polyfill.min.js
+  ```
+- [x] ファイルサイズ・内容を確認
+- [x] .gitignoreに追加するか検討（推奨: リポジトリにコミット）
 
-### process2 background.jsの書き換え
-#### sub1 Gemini API関連コードの削除
-@target: background.js
-- [ ] Gemini APIのエンドポイント呼び出しコードを削除（121行目）
-- [ ] Gemini API固有の処理を削除
-
-#### sub2 OpenRouter APIへの移行
-@target: background.js
-@ref: openrouter.js
-- [ ] openrouter.jsをインポート
-- [ ] translateText()関数を書き換え
-  - storageからopenRouterApiKey, openRouterModel, openRouterProviderを取得
-  - OpenRouterClientインスタンスを生成
-  - translate()メソッドを呼び出し
-  - キャッシュ機構は維持
-- [ ] エラーハンドリングを更新
-  - OpenRouterのエラー形式に対応
-
-### process3 ポップアップUIの拡張
-#### sub1 popup.htmlの更新
+### process2 popup.htmlの修正
 @target: popup/popup.html
-- [ ] APIキー入力欄のラベルを「OpenRouter API Key」に変更
-- [ ] モデル選択ドロップダウンを追加
-  - デフォルトオプション:
-    - google/gemini-2.0-flash-exp:free（無料、推奨）
-    - google/gemini-flash-1.5-8b
-    - anthropic/claude-3.5-sonnet
-    - カスタムモデル入力オプション
-- [ ] プロバイダー設定入力欄を追加（オプション）
-  - プレースホルダー: "Optional: DeepInfra, Together, etc."
-- [ ] 接続テストボタンを追加
-  - ラベル: "Test Connection"
+@ref: popup/browser-polyfill.min.js
+- [x] 84行目の`<script src="popup.js"></script>`の前にpolyfillを追加
+  ```html
+  <script src="browser-polyfill.min.js"></script>
+  <script src="popup.js"></script>
+  ```
+- [x] ブラウザで動作確認
+  - F12でコンソールエラーが消えることを確認
+  - 各ボタンの動作確認
 
-#### sub2 popup.jsの更新
-@target: popup/popup.js
-- [ ] 設定読み込み処理を更新
-  - openRouterApiKey, openRouterModel, openRouterProviderを読み込み
-  - 既存のapiKeyがある場合は移行案内を表示
-- [ ] 設定保存処理を更新
-  - openRouterApiKey, openRouterModel, openRouterProviderを保存
-- [ ] モデル選択の変更イベントハンドラを追加
-- [ ] プロバイダー入力の変更イベントハンドラを追加
-- [ ] 接続テストボタンのイベントハンドラを追加
-  - OpenRouterClientのtestConnection()を呼び出し
-  - 結果をユーザーに表示
+### process3 background.jsのpolyfill対応
+@target: background.js, manifest.json
+@ref: popup/browser-polyfill.min.js
+- [x] 現在の簡易polyfill（`var browser = chrome`）の問題点を確認
+- [x] Manifest v3のservice worker制約を調査
+  - service workerでは複数スクリプトの配列が使えない
+  - importScripts()またはバンドルが必要
+- [x] 2つの選択肢を検討:
+  1. background.jsの先頭にpolyfillコードを直接埋め込む
+  2. importScripts('browser-polyfill.min.js')を使用
+- [x] 選択したアプローチを実装
 
-#### sub3 popup.cssの調整（必要に応じて）
-@target: popup/popup.css
-- [ ] 新規追加したUI要素のスタイルを調整
-  - モデル選択ドロップダウン
-  - プロバイダー入力欄
-  - 接続テストボタン
+### process4 ビルドスクリプトの自動化
+@target: build-chrome.sh
+@ref: convert-manifest-v3.cjs, add-chrome-polyfill.cjs
+- [x] polyfillファイルをdist-chromeにコピーする処理を追加
+- [x] popup/popup.htmlへのpolyfill挿入を自動化
+  - sedコマンドまたはNode.jsスクリプトで実装
+- [x] background.jsへのpolyfill適用を自動化
+- [x] 動作確認: `npm run build:chrome`で完全なChrome用パッケージが生成されることを確認
 
-### process4 content.jsの調整
-#### sub1 エラーメッセージの更新
+### process5 content.jsの互換性確認
 @target: content.js
-- [ ] エラーメッセージを確認
-  - OpenRouter APIに関連するエラーメッセージに更新（必要に応じて）
-  - 基本的にはbackground.jsからのエラーをそのまま表示
-
-### process5 manifest.jsonの更新
-@target: manifest.json
-- [ ] descriptionを更新
-  - "Translate web pages using OpenRouter API" または類似の説明
-- [ ] versionを更新（メジャーバージョンアップ推奨: 2.0.0）
+- [ ] content.js内で`browser` APIが使用されているか調査
+- [ ] 使用されている場合、polyfillの適用方法を検討
+  - content_scriptsはmanifest.jsonで配列指定可能
+  - polyfillを先に読み込む設定を追加
 
 ### process10 ユニットテスト
-#### sub1 OpenRouterクライアントのテスト
-- [ ] translate()メソッドのテスト
-  - 正常系: 翻訳が成功する
-  - 異常系: APIキーが無効
-  - 異常系: レート制限
-  - 異常系: ネットワークエラー
-- [ ] testConnection()メソッドのテスト
-  - 正常系: 接続成功
-  - 異常系: 接続失敗
-
-#### sub2 統合テスト
-- [ ] ページ全体翻訳のテスト
-  - 各種モデルで動作確認
-- [ ] 選択テキスト翻訳のテスト
-  - ポップアップ表示と翻訳結果の確認
-- [ ] クリップボード翻訳のテスト
-  - クリップボードからの読み取りと翻訳
-- [ ] プロバイダールーティングのテスト
-  - プロバイダー指定時の動作確認
-- [ ] エラーハンドリングのテスト
-  - 各種エラー時の挙動確認
+- [ ] ポップアップ画面の動作テスト
+  - [ ] APIキーの保存・読み込み
+  - [ ] モデル選択（特にCustomModel）
+  - [ ] Test Connection機能
+- [ ] background.jsの通信テスト
+  - [ ] コマンドリスナーの動作確認
+  - [ ] content.jsとのメッセージング確認
+- [ ] Firefoxでの動作確認（リグレッションテスト）
+  - [ ] polyfill追加後もFirefoxで正常動作すること
 
 ### process50 フォローアップ
-#### sub1 既存ユーザーへの移行案内
-- [ ] 初回起動時の移行案内を実装
-  - 既存のapiKeyが存在し、openRouterApiKeyが存在しない場合
-  - 「OpenRouter APIへの移行が必要です」というメッセージを表示
-  - 設定画面へのリンクを提供
-
-#### sub2 ドキュメント更新
-- [ ] README.mdの更新
-  - OpenRouter API使用に関する説明
-  - 推奨モデルの記載
-  - APIキー取得方法へのリンク
 
 ### process100 リファクタリング
-- [ ] コードの整理
-  - 不要なコメントの削除
-  - 一貫性のあるコーディングスタイルの確保
-- [ ] エラーハンドリングの統一
-  - OpenRouter APIのエラーを一元管理
+- [ ] add-chrome-polyfill.cjsの改善
+  - 現在の簡易的な変数宣言を正式なpolyfillに置き換え
+- [ ] ビルドスクリプトの最適化
+  - エラーハンドリングの追加
+  - ログ出力の改善
 
 ### process200 ドキュメンテーション
-- [ ] CHANGELOG.mdの作成/更新
-  - v2.0.0: Gemini API → OpenRouter API移行
-  - モデル選択機能の追加
-  - プロバイダールーティング機能の追加
-- [ ] CLAUDE.mdの更新
-  - OpenRouter API統合に関する情報を追加
+- [x] PLAN.mdに調査結果と実装手順を記録
+- [ ] README.mdにChrome対応の手順を追加
+  - 開発者向け: ビルド方法
+  - ユーザー向け: インストール方法
+- [ ] CHANGELOG.mdにChrome対応を記載
+  - 変更内容: WebExtension Polyfill導入
+  - 影響: Chrome/Edgeでの動作サポート
+
+## 検証方法
+
+### 修正前の症状
+1. ブラウザコンソール（F12）で "browser is not defined" エラーが表示される
+2. ポップアップのボタンをクリックしても何も起こらない
+3. CustomModel選択時にテキストボックスが表示されない
+
+### 修正後の期待動作
+1. ブラウザコンソールにエラーが表示されない
+2. "Save"ボタンをクリック → "API key saved!"のメッセージが表示される
+3. モデル選択で"Custom Model..."を選択 → テキストボックスが表示される
+4. "Test Connection"ボタンをクリック → 接続テストが実行され結果が表示される
+5. "Translate"系ボタンが正常に動作する
+
+## リスクと緩和策
+
+### リスク1: Manifest v3の破壊的変更
+- **影響**: webRequest APIの制限により一部機能が動作しない可能性
+- **緩和策**: まずpolyfillのみ追加してv2のまま動作確認、その後v3移行を検討
+
+### リスク2: CDN依存によるオフライン動作不可
+- **影響**: インターネット接続なしでpolyfillが読み込めない
+- **緩和策**: ローカルにpolyfillファイルを配置（推奨）
+
+### リスク3: Service Worker化によるストレージアクセス変更
+- **影響**: Manifest v3のbackground service workerは永続的でない
+- **緩和策**: 段階的移行、まずv2でpolyfill動作確認
+
