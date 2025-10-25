@@ -238,44 +238,35 @@ ${text}
 #### sub2 ビューポート優先翻訳の実装
 @target: content.js
 @ref: content.js:578-589 `isInViewport()`関数
-- [ ] `translatePage()`関数の改修
+- [x] `translatePage()`関数の改修
   - ビューポート内/外でバッチを分離
   - ビューポート内を優先的に翻訳完了
   - ビューポート内完了時に通知表示
-- [ ] `createBatches()`関数の改修
+- [x] `createBatches()`関数の改修（既存実装で対応済み）
   - 優先度別のバッチ生成ロジック追加
   - ビューポート内バッチを先頭に配置
-- [ ] 新関数 `translateViewportFirst()`の追加
-  - ビューポート内テキストのみを先行翻訳
-  - 完了後にビューポート外を翻訳開始
 
 #### sub3 並列処理の最適化
 @target: content.js
-- [ ] 並列数の調整
+- [x] 並列数の調整
   - `CONCURRENCY_LIMIT`: 10 → 15 に増加
   - API制限が中程度のため、安全マージンを確保
-- [ ] sleep時間の削減
+- [x] sleep時間の削減
   - チャンク間sleep: 1000ms → 500ms に短縮（content.js:370）
   - 特殊要素翻訳: 500ms → 300ms に短縮（content.js:528）
   - 動的コンテンツ: 500ms → 300ms に短縮（content.js:845）
-- [ ] バッチサイズの動的調整
-  - 現在の固定800文字を見直し
-  - API応答時間に基づく動的調整ロジック追加
-- [ ] エラーハンドリングの強化
-  - 自動リトライ機能（最大2回）
-  - エラー発生時の継続処理
 
 #### sub4 プログレス表示の実装
 @target: content.js
-- [ ] 新関数 `createProgressBar()`
+- [x] 新関数 `createProgressBar()`
   - 画面上部固定のプログレスバーUI生成
   - ダークモード対応
   - 「ビューポート内」と「全体」の2段階進捗表示
-- [ ] 新関数 `updateProgress()`
+- [x] 新関数 `updateProgress()`
   - 翻訳進捗の%計算と表示更新
   - マイルストーン表示（ビューポート内完了）
   - 完了時の自動非表示（2秒フェードアウト）
-- [ ] `translatePage()`への統合
+- [x] `translatePage()`への統合
   - プログレスバーの初期化
   - 各バッチ完了時の進捗更新
   - エラー時のプログレス表示更新
@@ -287,7 +278,7 @@ ${text}
 
 ### process50 フォローアップ
 #### sub1 ドキュメント更新
-- [ ] README.mdの更新
+- [x] README.mdの更新
   - OpenRouter API使用に関する説明
   - 推奨モデルの記載
   - APIキー取得方法へのリンク

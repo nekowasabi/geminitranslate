@@ -1,7 +1,7 @@
 (() => {
 	// 状態管理用変数
 	const originalContent = new Map(); // 翻訳前のオリジナルコンテンツを保持するMap
-	const CONCURRENCY_LIMIT = 10; // 並列処理の最大数
+	const CONCURRENCY_LIMIT = 15; // 並列処理の最大数（最適化: 10→15）
 	const originalFontSizes = new Map(); // 翻訳前のフォントサイズを保持するMap
 	const originalLineHeights = new Map(); // 翻訳前の行間を保持するMap
 	let isTranslating = false; // ページ全体翻訳中のフラグ
@@ -10,6 +10,9 @@
 	let selectionIcon = null; // 選択テキスト翻訳用アイコン
 	let selectionPopup = null; // 翻訳結果表示ポップアップ
 	let lastSelectedText = ""; // 最後に選択されたテキスト
+	let progressBar = null; // プログレスバー要素
+	let progressText = null; // プログレステキスト要素
+	let progressFill = null; // プログレスバーの塗りつぶし要素
 
 	// ダークモード検出
 	const isDarkMode =
@@ -132,6 +135,110 @@
 		}
 	}
 
+	// プログレスバー作成関数
+	function createProgressBar() {
+		/* 翻訳進捗を表示するプログレスバーを作成
+		   - 画面上部固定のUI
+		   - ダークモード対応
+		   - ビューポート内と全体の2段階表示 */
+		if (progressBar) {
+			return; // 既に存在する場合は作成しない
+		}
+
+		progressBar = document.createElement("div");
+		progressBar.id = "gemini-progress-bar";
+		progressBar.style.cssText = `
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			background-color: ${isDarkMode ? "#1a1a1a" : "#f5f5f5"};
+			color: ${isDarkMode ? "#fff" : "#333"};
+			padding: 12px 20px;
+			box-shadow: 0 2px 8px ${isDarkMode ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.15)"};
+			z-index: 999998;
+			font-family: Arial, sans-serif;
+			font-size: 14px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		`;
+
+		// プログレステキスト
+		progressText = document.createElement("div");
+		progressText.style.cssText = `
+			font-weight: 500;
+			margin-bottom: 4px;
+		`;
+		progressText.textContent = "翻訳中... 0%";
+
+		// プログレスバーの外枠
+		const progressBarContainer = document.createElement("div");
+		progressBarContainer.style.cssText = `
+			width: 100%;
+			height: 8px;
+			background-color: ${isDarkMode ? "#333" : "#ddd"};
+			border-radius: 4px;
+			overflow: hidden;
+		`;
+
+		// プログレスバーの塗りつぶし
+		progressFill = document.createElement("div");
+		progressFill.style.cssText = `
+			height: 100%;
+			width: 0%;
+			background-color: #4285f4;
+			transition: width 0.3s ease;
+			border-radius: 4px;
+		`;
+
+		progressBarContainer.appendChild(progressFill);
+		progressBar.appendChild(progressText);
+		progressBar.appendChild(progressBarContainer);
+		document.body.appendChild(progressBar);
+	}
+
+	// プログレス更新関数
+	function updateProgress(current, total, isViewportPhase = false, viewportComplete = false) {
+		/* 翻訳進捗を更新
+		   - パーセンテージ計算と表示
+		   - ビューポート内完了のマイルストーン表示
+		   - 完了時の自動非表示（2秒後） */
+		if (!progressBar || !progressText || !progressFill) {
+			return;
+		}
+
+		const percentage = Math.round((current / total) * 100);
+		progressFill.style.width = `${percentage}%`;
+
+		if (viewportComplete) {
+			progressText.textContent = `ビューポート内の翻訳完了! 全体を翻訳中... ${percentage}%`;
+		} else if (isViewportPhase) {
+			progressText.textContent = `ビューポート内を翻訳中... ${percentage}%`;
+		} else {
+			progressText.textContent = `翻訳中... ${percentage}%`;
+		}
+
+		// 完了時の処理
+		if (current >= total) {
+			progressText.textContent = "翻訳完了!";
+			setTimeout(() => {
+				if (progressBar && progressBar.parentNode) {
+					progressBar.style.opacity = "0";
+					progressBar.style.transition = "opacity 0.5s ease";
+					setTimeout(() => {
+						if (progressBar && progressBar.parentNode) {
+							progressBar.parentNode.removeChild(progressBar);
+							progressBar = null;
+							progressText = null;
+							progressFill = null;
+						}
+					}, 500);
+				}
+			}, 2000);
+		}
+	}
+
 	// テキスト選択時のアイコン表示処理
 	function showSelectionIcon(_e) {
 		/* ユーザーが2文字以上選択した時に翻訳アイコンを表示
@@ -233,35 +340,15 @@
 	// ページ全体翻訳関数
 	async function translatePage(targetLanguage, fontSize = 16, lineHeight = 4) {
 		/* ページ全体のテキストを翻訳
-       - 進行状況通知バナーの表示
+       - プログレスバー表示
+       - ビューポート内を優先的に翻訳
        - テキストノードの収集とバッチ処理
        - API制限回避のための遅延処理
        - 動的コンテンツ監視のセットアップ */
 		console.log("translatePage実行:", { targetLanguage, fontSize, lineHeight });
-		const notification = document.createElement("div");
-		notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background-color: #4285f4;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
-      z-index: 999999;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      animation: fadeInOut 3s ease-in-out forwards;
-    `;
-		notification.textContent = "Start Translate";
-		document.body.appendChild(notification);
 
-		setTimeout(() => {
-			if (notification && notification.parentNode) {
-				notification.parentNode.removeChild(notification);
-			}
-		}, 3000);
+		// プログレスバーを作成
+		createProgressBar();
 
 		isTranslating = true;
 
@@ -269,8 +356,15 @@
 		const textNodes = textNodeData.map((item) => item.node);
 		console.log(`Found ${textNodes.length} text nodes to translate`);
 
-		const batches = createBatches(textNodeData, 800);
-		console.log(`Created ${batches.length} batches for translation`);
+		// ビューポート内と外でバッチを分離
+		const viewportNodes = textNodeData.filter(item => item.priority === 1);
+		const nonViewportNodes = textNodeData.filter(item => item.priority === 0);
+
+		const viewportBatches = createBatches(viewportNodes, 800);
+		const nonViewportBatches = createBatches(nonViewportNodes, 800);
+		const totalBatches = viewportBatches.length + nonViewportBatches.length;
+
+		console.log(`Created ${viewportBatches.length} viewport batches and ${nonViewportBatches.length} non-viewport batches`);
 
 		// バッチ翻訳処理をカプセル化する非同期関数
 		const translateBatch = async (batch, batchIndex) => {
@@ -352,22 +446,58 @@
 			}
 		};
 
-		// バッチをチャンクに分割して並列処理
-		for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
-			const chunk = batches.slice(i, i + CONCURRENCY_LIMIT);
-			console.log(
-				`Processing chunk ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`,
-			);
+		let completedBatches = 0;
 
-			// チャンク内のバッチを並列で翻訳
-			const promises = chunk.map((batch, index) =>
-				translateBatch(batch, i + index),
-			);
-			await Promise.all(promises);
+		// まずビューポート内のバッチを処理
+		if (viewportBatches.length > 0) {
+			console.log("=== ビューポート内の翻訳を開始 ===");
+			for (let i = 0; i < viewportBatches.length; i += CONCURRENCY_LIMIT) {
+				const chunk = viewportBatches.slice(i, i + CONCURRENCY_LIMIT);
+				console.log(
+					`Processing viewport chunk ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`,
+				);
 
-			// APIレート制限のための遅延（最後のチャンクの後には不要）
-			if (i + CONCURRENCY_LIMIT < batches.length) {
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				// チャンク内のバッチを並列で翻訳
+				const promises = chunk.map((batch, index) =>
+					translateBatch(batch, i + index),
+				);
+				await Promise.all(promises);
+
+				completedBatches += chunk.length;
+				updateProgress(completedBatches, totalBatches, true, false);
+
+				// APIレート制限のための遅延（最後のチャンクの後には不要）
+				// 最適化: 1000ms → 500ms に短縮
+				if (i + CONCURRENCY_LIMIT < viewportBatches.length) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+				}
+			}
+			console.log("=== ビューポート内の翻訳完了 ===");
+		}
+
+		// ビューポート外のバッチを処理
+		if (nonViewportBatches.length > 0) {
+			console.log("=== ビューポート外の翻訳を開始 ===");
+			for (let i = 0; i < nonViewportBatches.length; i += CONCURRENCY_LIMIT) {
+				const chunk = nonViewportBatches.slice(i, i + CONCURRENCY_LIMIT);
+				console.log(
+					`Processing non-viewport chunk ${Math.floor(i / CONCURRENCY_LIMIT) + 1}...`,
+				);
+
+				// チャンク内のバッチを並列で翻訳
+				const promises = chunk.map((batch, index) =>
+					translateBatch(batch, i + index),
+				);
+				await Promise.all(promises);
+
+				completedBatches += chunk.length;
+				updateProgress(completedBatches, totalBatches, false, viewportBatches.length > 0);
+
+				// APIレート制限のための遅延（最後のチャンクの後には不要）
+				// 最適化: 1000ms → 500ms に短縮
+				if (i + CONCURRENCY_LIMIT < nonViewportBatches.length) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+				}
 			}
 		}
 
@@ -525,7 +655,8 @@
 				console.error("Error translating special elements:", error);
 			}
 
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			// 最適化: 500ms → 300ms に短縮
+			await new Promise((resolve) => setTimeout(resolve, 300));
 		}
 	}
 
@@ -842,7 +973,8 @@
 				console.error("Error translating dynamic batch:", error);
 			}
 
-			await new Promise((resolve) => setTimeout(resolve, 500));
+			// 最適化: 500ms → 300ms に短縮
+			await new Promise((resolve) => setTimeout(resolve, 300));
 		}
 
 		isTranslating = false;
