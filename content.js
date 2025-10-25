@@ -835,6 +835,7 @@
 							(result) => {
 								const currentTargetLanguage =
 									result.targetLanguage || targetLanguage || "tr";
+								const currentFontSize = result.fontSize || fontSize || 16;
 								translateNodes(
 									newNodes,
 									currentTargetLanguage,

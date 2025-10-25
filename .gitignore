@@ -24,3 +24,13 @@ dist-chrome
 *.sln
 *.sw?
 .aider*
+
+# Test coverage
+coverage
+
+# Build artifacts
+web-ext-artifacts
+.serena
+
+# Backup files
+*.bak

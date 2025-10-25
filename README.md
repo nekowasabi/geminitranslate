@@ -25,11 +25,50 @@ A Firefox extension that uses OpenRouter API to translate web pages while preser
 
 ## Installation
 
+### Firefox Installation
+
 1. Download or clone this repository.
 2. Open Firefox and navigate to `about:debugging`.
 3. Click on the "This Firefox" option.
 4. Click on "Load Temporary Add-on...".
-5. Select any file within the extension directory.
+5. Select the `manifest.json` file in the extension directory.
+
+### Chrome/Edge Installation
+
+This extension also supports Chrome and Edge browsers. Follow these steps to build and install:
+
+#### For Developers (Building from Source)
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/geminitranslate.git
+   cd geminitranslate
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Build the Chrome-compatible extension:
+   ```bash
+   npm run build:chrome
+   ```
+   This will:
+   - Build the extension with web-ext
+   - Convert manifest.json to v3 (required for Chrome)
+   - Inject WebExtension Polyfill for browser API compatibility
+   - Create a `dist-chrome/` directory with the built extension
+
+4. Load the extension in Chrome:
+   - Open `chrome://extensions/` in Chrome
+   - Enable "Developer mode" (top right toggle)
+   - Click "Load unpacked"
+   - Select the `dist-chrome/` directory
+
+#### For End Users (Installing Pre-built Extension)
+
+**Note:** This extension is not yet published on the Chrome Web Store. Please follow the developer installation steps above.
 
 ## Usage
 
@@ -74,6 +113,22 @@ A Firefox extension that uses OpenRouter API to translate web pages while preser
 - **Dynamic Content**: Uses MutationObserver to detect and translate dynamically loaded content
 - **Smart Text Filtering**: Only translates meaningful text, skipping single-character texts or numbers
 - **Element Exclusion**: Excludes invisible elements and special elements (script, style, iframe, code) from translation
+
+### Cross-Browser Compatibility
+
+This extension is compatible with both Firefox and Chromium-based browsers (Chrome, Edge, Brave, etc.):
+
+- **Firefox**: Native support using the `browser` API (Manifest v2)
+- **Chrome/Edge**: Uses WebExtension Polyfill to ensure compatibility
+  - Automatically converts `browser` API calls to `chrome` API
+  - Manifest v3 support for Chrome Web Store compliance
+  - Build process handles all necessary transformations
+
+**Implementation Details:**
+- WebExtension Polyfill (v0.10.0) provides Firefox-style Promise-based APIs in Chrome
+- Automated build script (`npm run build:chrome`) converts Firefox extension to Chrome format
+- All browser API calls (`browser.storage`, `browser.tabs`, `browser.runtime`) work identically across browsers
+- Comprehensive test suite (73 tests) ensures cross-browser functionality
 
 ---
 

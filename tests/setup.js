@@ -11,6 +11,8 @@ global.browser = {
   },
   runtime: {
     sendMessage: jest.fn(() => Promise.resolve()),
+    getURL: jest.fn((path) => `chrome-extension://mock-extension-id/${path}`),
+    getManifest: jest.fn(() => ({ version: '2.0.1' })),
     onMessage: {
       addListener: jest.fn(),
     },
@@ -19,7 +21,15 @@ global.browser = {
     query: jest.fn(() => Promise.resolve([])),
     sendMessage: jest.fn(() => Promise.resolve()),
   },
+  commands: {
+    onCommand: {
+      addListener: jest.fn(),
+    },
+  },
 };
 
 // Mock chrome API (for compatibility)
 global.chrome = global.browser;
+
+// Export jest for tests that need it
+global.jest = jest;

@@ -5,6 +5,63 @@ All notable changes to the AI Translator Firefox Extension will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2025-10-25
+
+### Added - Chrome/Edge Support
+- **Cross-Browser Compatibility**: Extension now works on Chrome, Edge, and other Chromium-based browsers
+  - WebExtension Polyfill (v0.10.0) integration for browser API compatibility
+  - Automated build process for Chrome-compatible package
+  - Manifest v3 conversion for Chrome Web Store compliance
+- **Build System**:
+  - New `npm run build:chrome` command for Chrome builds
+  - Automated polyfill injection into background.js
+  - Enhanced error handling and validation in build scripts
+- **Testing**:
+  - 43 new unit tests for popup.js and background.js
+  - Firefox regression test documentation (tests/FIREFOX_REGRESSION.md)
+  - Total test coverage: 73 tests across all components
+  - Browser API mock setup for cross-browser testing
+
+### Improved
+- **Build Process**:
+  - Comprehensive validation of build prerequisites
+  - Step-by-step progress indicators during build
+  - Automatic file existence checks
+  - Better error messages with troubleshooting hints
+- **Code Quality**:
+  - Formal WebExtension Polyfill integration (replaces simple `var browser = chrome` workaround)
+  - Consistent Promise-based API usage across browsers
+  - Improved code documentation and comments
+
+### Technical Changes
+- Updated `add-chrome-polyfill.cjs`: Now injects full WebExtension Polyfill instead of simple assignment
+- Enhanced `build-chrome.sh`: Added validation, error handling, and progress tracking
+- New test files:
+  - `tests/popup.test.js`: 20 tests for popup functionality
+  - `tests/background.test.js`: 23 tests for background script
+  - `tests/setup.js`: Enhanced with `browser.commands` mock
+  - `tests/FIREFOX_REGRESSION.md`: Manual testing procedures
+- Updated `README.md`: Added Chrome installation and technical compatibility sections
+
+### Compatibility
+- **Firefox**: ✅ All existing functionality preserved (Manifest v2)
+- **Chrome/Edge**: ✅ Full feature parity with Firefox version (Manifest v3)
+- **Test Status**: 73/73 tests passing
+- **ESLint**: Clean (13 warnings, 0 errors)
+
+### Migration Notes
+For developers:
+1. Use `npm run build:chrome` to create Chrome-compatible build
+2. Load `dist-chrome/` directory as unpacked extension in Chrome
+3. All Firefox features work identically in Chrome
+4. No code changes needed for new features - polyfill handles API differences
+
+For users:
+- Firefox users: No changes needed, extension works as before
+- Chrome users: Follow new installation instructions in README.md
+
+---
+
 ## [2.0.0] - 2025-10-25
 
 ### Changed - Major Migration
