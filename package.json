@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:ext": "web-ext build",
+    "build:ext": "web-ext build --overwrite-dest",
     "build:chrome": "bash build-chrome.sh",
     "clean:chrome": "rm -rf dist-chrome",
     "lint": "eslint .",

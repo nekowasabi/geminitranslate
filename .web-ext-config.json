@@ -32,7 +32,7 @@
     "build-chrome.sh"
   ],
   "build": {
-    "overwriteDest": true
+    "overwrite-dest": true
   },
   "verbose": false
 }
