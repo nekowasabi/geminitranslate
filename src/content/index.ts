@@ -1,18 +1,34 @@
-// Content Script entry point
-console.log('DoganayLab Translate - Content Script initialized');
+/**
+ * Content Script Entry Point
+ *
+ * Initializes ContentScript orchestrator and handles
+ * browser-specific setup.
+ */
+
+import { ContentScript } from './contentScript';
+import { logger } from '@shared/utils';
 
 // Determine browser API
-const browserAPI = typeof chrome !== 'undefined' && chrome.runtime ? chrome : browser;
+const browserAPI = typeof chrome !== 'undefined' && chrome.runtime ? chrome : (window as any).browser;
 
-// Basic message listener
-browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Content script received message:', message);
+// Initialize ContentScript
+let contentScript: ContentScript | null = null;
 
-  if (sendResponse) {
-    sendResponse({ status: 'ok' });
+try {
+  contentScript = new ContentScript();
+  contentScript.initialize();
+
+  logger.log('DoganayLab Translate - Content Script initialized');
+} catch (error) {
+  logger.error('Failed to initialize content script:', error);
+}
+
+// Cleanup on unload
+window.addEventListener('beforeunload', () => {
+  if (contentScript) {
+    contentScript.cleanup();
   }
-
-  return true; // Async response
 });
 
-export {};
+// Export for potential testing/debugging
+export { contentScript };

@@ -19,6 +19,9 @@ export enum MessageType {
   // Settings
   SETTINGS_CHANGED = 'settingsChanged',
   API_KEY_UPDATED = 'apiKeyUpdated',
+
+  // Connection Test
+  TEST_CONNECTION = 'testConnection',
 }
 
 /**
@@ -111,6 +114,13 @@ export interface ResetMessage extends BaseMessage {
 }
 
 /**
+ * Test Connection Message
+ */
+export interface TestConnectionMessage extends BaseMessage {
+  type: MessageType.TEST_CONNECTION;
+}
+
+/**
  * Union Type for All Messages
  */
 export type Message =
@@ -121,7 +131,8 @@ export type Message =
   | ClipboardTranslationMessage
   | TranslationProgressMessage
   | TranslationErrorMessage
-  | ResetMessage;
+  | ResetMessage
+  | TestConnectionMessage;
 
 /**
  * Message Listener Callback Type

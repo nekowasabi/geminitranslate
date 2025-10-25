@@ -24,6 +24,8 @@ module.exports = {
       '@shared': path.resolve(__dirname, '../src/shared'),
       '@background': path.resolve(__dirname, '../src/background'),
       '@content': path.resolve(__dirname, '../src/content'),
+      '@popup': path.resolve(__dirname, '../src/popup'),
+      '@options': path.resolve(__dirname, '../src/options'),
     },
   },
 

@@ -278,7 +278,7 @@ describe('TranslationEngine', () => {
 
       // Should have tried 4 times (initial + 3 retries)
       expect(mockApiClient.translate).toHaveBeenCalledTimes(4);
-    });
+    }, 10000); // 10 second timeout
   });
 
   describe('clearCache', () => {

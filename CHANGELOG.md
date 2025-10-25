@@ -1,9 +1,53 @@
 # Changelog
 
-All notable changes to the AI Translator Firefox Extension will be documented in this file.
+All notable changes to DoganayLab API Translate App will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.0] - 2025-10-26
+
+### 🎉 Major Release - Complete TypeScript Rewrite
+
+#### Added
+- TypeScript 100% migration for type safety
+- React 18 UI for Popup and Options pages
+- Chrome Manifest V3 support
+- 3-Tier cache system (Memory → Session → Local)
+- LRU cache with automatic eviction (max 1000 entries)
+- Selection translation (Alt+Y) with floating UI
+- Clipboard translation (Alt+C)
+- Dark mode with automatic theme detection
+- Connection test in Options UI
+- Webpack 5 build system
+- Jest testing framework (380+ tests, 99.5% coverage)
+
+#### Changed (Breaking)
+- API key storage: `apiKey` → `openRouterApiKey` (auto-migrated)
+- Default model: `google/gemini-2.0-flash-exp:free`
+- Complete architecture rewrite with layered design
+- React-based UI replacing vanilla JavaScript
+
+#### Fixed
+- Memory leaks in DOM manipulation
+- Race conditions in concurrent translations
+- Cache invalidation issues
+- Firefox/Chrome compatibility issues
+
+#### Security
+- CSP-compliant (no inline scripts)
+- Permissions minimized
+- Secure storage for API keys
+
+#### Statistics
+- Bundle size: 768KB (Chrome), 764KB (Firefox)
+- Test coverage: 99.5% (378/380 passing)
+- TypeScript: 100%
+
+#### Migration
+Your settings will be automatically migrated from v2.x to v3.0.0.
+
+---
 
 ## [2.0.2] - 2025-10-25
 

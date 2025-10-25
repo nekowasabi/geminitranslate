@@ -1,27 +1,45 @@
-# AI Translator Firefox Extension
+# DoganayLab API Translate App v3.0
 
-A Firefox extension that uses OpenRouter API to translate web pages while preserving their structure. Choose from multiple AI models including Google Gemini, Claude, GPT-4, and more.
+A Chrome/Firefox extension that uses OpenRouter API to translate web pages while preserving their structure. Choose from multiple AI models including Google Gemini, Claude, GPT-4, and more.
+
+**Version 3.0.0** - Complete TypeScript rewrite with modern architecture, React 18 UI, and Manifest V3 support.
 
 ![ScreenShot](screenshot.png) ![ScreenShot](screenshot3.png) ![ScreenShot](screenshot2.png)
 
 
-## Features
-- **Multiple AI Model Support**: Choose from various AI models via OpenRouter:
-  - Google Gemini 2.0 Flash (Free tier available)
+## ✨ Features
+
+### Translation Modes
+- **Page Translation** (Alt+W): Translate entire page while preserving layout
+- **Selection Translation** (Alt+Y): Translate selected text with floating UI
+- **Clipboard Translation** (Alt+C): Translate copied text instantly
+
+### AI Models
+- **Multiple AI Model Support** via OpenRouter:
+  - Google Gemini 2.0 Flash (Free tier) - Default
+  - Anthropic Claude 3.5 Haiku (Free tier)
   - Google Gemini Flash 1.5 8B
-  - Anthropic Claude 3.5 Sonnet
   - OpenAI GPT-4o Mini
-  - And many more models available through OpenRouter
-- **Provider Routing**: Optional provider selection (DeepInfra, Together, etc.) for optimized performance
-- **User API Key Management**: Users can enter their own OpenRouter API keys through the popup interface, and these keys are stored locally.
-- **Free Translation Options**: Get free translations using OpenRouter's free tier models like Gemini 2.0 Flash.
-- **Full Page Translation**: Translates all text on the page while maintaining its layout.
-- **Language Selection**: Allows users to choose the target language for translation.
-- **Revert to Original Content**: Users can switch the page back to its original content.
-- **Dynamic Content Support**: Uses MutationObserver to detect and translate dynamically loaded content.
-- **Custom Element Translation**: Translates custom elements such as input placeholders, button texts, and alt texts.
-- **Translation Caching**: Caches translations to reduce API calls.
-- **Batch Processing**: Employs batch processing for efficient handling of large pages.
+  - And 20+ more models
+
+### Performance
+- **3-Tier Cache System**: Memory → Session → Local Storage
+- **LRU Cache**: Automatic eviction of old entries (max 1000)
+- **Batch Processing**: Efficient handling of large pages (1000+ nodes)
+- **Concurrent Translation**: Parallel API requests with rate limiting
+
+### Supported Languages
+20+ languages including:
+- English, Japanese, Chinese, Korean
+- Spanish, French, German, Italian
+- Russian, Arabic, Hindi, Thai
+- And more...
+
+### Modern UI
+- **React 18**: Modern, responsive interface
+- **Dark Mode**: Automatic theme detection
+- **Connection Test**: Verify API key instantly
+- **Model Selector**: Easy model switching
 
 ## Installation
 

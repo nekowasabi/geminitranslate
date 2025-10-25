@@ -26,5 +26,6 @@ export default {
     '^@content/(.*)$': '<rootDir>/src/content/$1',
     '^@popup/(.*)$': '<rootDir>/src/popup/$1',
     '^@options/(.*)$': '<rootDir>/src/options/$1',
+    '\\.(css|less|scss|sass)$': '<rootDir>/tests/__mocks__/styleMock.ts',
   },
 };

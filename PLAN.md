@@ -339,7 +339,7 @@
 #### sub3.1: DOMManipulator実装
 @target: `src/content/domManipulator.ts`
 @ref: `ARCHITECTURE.md` (L809-L863), `content.js` (既存実装)
-- [ ] DOMManipulator クラス作成
+- [x] DOMManipulator クラス作成
   - `extractTextNodes()` メソッド
     - TreeWalker使用
     - SCRIPT/STYLE/NOSCRIPT/IFRAME除外
@@ -351,24 +351,24 @@
 #### sub3.2: SelectionHandler実装
 @target: `src/content/selectionHandler.ts`
 @ref: `ARCHITECTURE.md` (L182, L719)
-- [ ] SelectionHandler クラス作成
+- [x] SelectionHandler クラス作成
   - `enable()` メソッド（選択イベントリスナー設定）
   - `translateCurrent(targetLanguage)` メソッド
   - `getSelection()` ラッパー
-- [ ] Floating UI と連携
+- [x] Floating UI と連携
 
 #### sub3.3: ClipboardHandler実装
 @target: `src/content/clipboardHandler.ts`
 @ref: `ARCHITECTURE.md` (L183, L720)
-- [ ] ClipboardHandler クラス作成
+- [x] ClipboardHandler クラス作成
   - `read()` メソッド（clipboard API使用）
   - `showTranslation(translation)` メソッド
-- [ ] 翻訳結果表示UI
+- [x] 翻訳結果表示UI
 
 #### sub3.4: MutationObserver実装
 @target: `src/content/mutationObserver.ts`
 @ref: `ARCHITECTURE.md` (L184, L749-L750)
-- [ ] MutationObserverManager クラス作成
+- [x] MutationObserverManager クラス作成
   - `observe(target)` メソッド
   - 動的コンテンツ検出
   - 自動翻訳適用
@@ -376,7 +376,7 @@
 #### sub3.5: FloatingUI実装
 @target: `src/content/floatingUI.ts`
 @ref: `ARCHITECTURE.md` (L192, L350, L418-L420)
-- [ ] FloatingUI クラス作成
+- [x] FloatingUI クラス作成
   - `show(translation, position)` メソッド
   - `hide()` メソッド
   - コピーボタン実装
@@ -386,7 +386,7 @@
 #### sub3.6: Content Script統合
 @target: `src/content/index.ts`
 @ref: `ARCHITECTURE.md` (L717-L806), `content.js` (既存実装)
-- [ ] ContentScript クラス作成
+- [x] ContentScript クラス作成
   - 全コンポーネント初期化
   - メッセージリスナー設定
   - アクション別処理
@@ -398,22 +398,22 @@
 #### sub3.7: Content Layerテスト
 @target: `tests/unit/content/`
 @ref: `ARCHITECTURE.md` (L1553-L1610)
-- [ ] domManipulator.test.ts作成
+- [x] domManipulator.test.ts作成
   - extractTextNodes() テスト
   - applyTranslations() テスト
   - reset() テスト
-- [ ] selectionHandler.test.ts作成
+- [x] selectionHandler.test.ts作成
   - 選択検出テスト
   - 翻訳実行テスト
-- [ ] floatingUI.test.ts作成
+- [x] floatingUI.test.ts作成
   - 表示/非表示テスト
   - ポジショニングテスト
 
 **検証基準**:
-- [ ] `npm test -- content` が全てパス
-- [ ] Wikipedia等でページ翻訳成功
-- [ ] 選択翻訳動作
-- [ ] クリップボード翻訳動作
+- [x] `npm test -- content` が全てパス
+- [x] Wikipedia等でページ翻訳成功
+- [x] 選択翻訳動作
+- [x] クリップボード翻訳動作
 
 ---
 
@@ -422,101 +422,101 @@
 #### sub4.1: Popup UI実装
 @target: `src/popup/`, `public/popup.html`
 @ref: `ARCHITECTURE.md` (L866-L985), `popup/popup.js` (既存実装)
-- [ ] ディレクトリ構造作成
+- [x] ディレクトリ構造作成
   - `src/popup/index.tsx`, `App.tsx`
   - `src/popup/components/` (QuickTranslate, LanguageSelector, StatusIndicator, ApiKeyWarning)
   - `src/popup/hooks/` (useTranslation, useSettings)
-- [ ] App.tsx作成
+- [x] App.tsx作成
   - メインレイアウト
   - コンポーネント統合
   - Context API で設定管理
-- [ ] QuickTranslate.tsx作成
+- [x] QuickTranslate.tsx作成
   - Translate Pageボタン
   - Reset to Originalボタン
   - ボタン無効化ロジック
-- [ ] LanguageSelector.tsx作成
+- [x] LanguageSelector.tsx作成
   - 言語ドロップダウン
   - 選択言語の保存
-- [ ] StatusIndicator.tsx作成
+- [x] StatusIndicator.tsx作成
   - 翻訳状態表示（idle/translating/success/error）
   - プログレス表示
-- [ ] ApiKeyWarning.tsx作成
+- [x] ApiKeyWarning.tsx作成
   - API キー未設定警告バナー
-- [ ] useTranslation.ts作成
+- [x] useTranslation.ts作成
   - `translate()` 関数
   - `reset()` 関数
   - ステート管理
-- [ ] useSettings.ts作成
+- [x] useSettings.ts作成
   - 設定読み込み
   - 設定更新
-- [ ] popup.html作成
+- [x] popup.html作成
   - Reactマウント用div
   - Webpack HtmlWebpackPlugin連携
 
 #### sub4.2: Options UI実装
 @target: `src/options/`, `public/options.html`
 @ref: `ARCHITECTURE.md` (L200-L210)
-- [ ] ディレクトリ構造作成
+- [x] ディレクトリ構造作成
   - `src/options/index.tsx`, `App.tsx`
   - `src/options/components/` (ApiSettings, ModelSelector, LanguageSettings, AppearanceSettings, ConnectionTest)
   - `src/options/hooks/` (useSettings)
-- [ ] App.tsx作成
+- [x] App.tsx作成
   - タブレイアウト
   - セクション分割
-- [ ] ApiSettings.tsx作成
+- [x] ApiSettings.tsx作成
   - API キー入力フィールド
   - 保存ボタン
   - セキュリティ注意書き
-- [ ] ModelSelector.tsx作成
+- [x] ModelSelector.tsx作成
   - モデル選択ドロップダウン
   - Provider選択（Optional）
-- [ ] LanguageSettings.tsx作成
+- [x] LanguageSettings.tsx作成
   - ターゲット言語選択
   - フォントサイズ調整
   - 行高調整
-- [ ] AppearanceSettings.tsx作成
+- [x] AppearanceSettings.tsx作成
   - UI設定
   - ダークモード切替
-- [ ] ConnectionTest.tsx作成
+- [x] ConnectionTest.tsx作成
   - テスト翻訳実行ボタン
   - 接続結果表示
-- [ ] options.html作成
+- [x] options.html作成
   - Reactマウント用div
 
 #### sub4.3: HTML/CSS統合
 @target: `src/styles/globals.css`, `tailwind.config.js`
 @ref: `ARCHITECTURE.md` (L234-L236)
-- [ ] tailwind.config.js作成
+- [x] tailwind.config.js作成
   - content設定（src/**/*.tsx）
   - カスタムテーマ設定
   - 拡張機能用カラーパレット
-- [ ] globals.css作成
+- [x] globals.css作成
   - Tailwind directives
   - カスタムスタイル
   - ダークモード対応
-- [ ] Webpack CSS loader設定確認
+- [x] Webpack CSS loader設定確認
 
 #### sub4.4: UI Layerテスト
 @target: `tests/unit/popup/`, `tests/unit/options/`
 @ref: `ARCHITECTURE.md` (L1510-L1611)
-- [ ] React Testing Library設定
-- [ ] QuickTranslate.test.tsx作成
+- [x] React Testing Library設定
+- [x] QuickTranslate.test.tsx作成
   - ボタンクリックテスト
   - 無効化状態テスト
-- [ ] LanguageSelector.test.tsx作成
+- [x] LanguageSelector.test.tsx作成
   - 言語選択テスト
   - 保存処理テスト
-- [ ] useTranslation.test.ts作成
+- [x] useTranslation.test.ts作成
   - translate() テスト
   - reset() テスト
   - ステート変化テスト
 
 **検証基準**:
-- [ ] `npm test -- popup` が全てパス
-- [ ] `npm test -- options` が全てパス
-- [ ] Popup/Optionsが正常表示
-- [ ] 設定変更が正常動作
-- [ ] Tailwindスタイルが正しく適用
+- [x] `npm test -- popup` が全てパス
+- [x] `npm test -- options` が全てパス
+- [x] Popup/Optionsが正常表示
+- [x] 設定変更が正常動作
+- [x] Tailwindスタイルが正しく適用
 
 ---
 
@@ -525,27 +525,27 @@
 #### sub5.1: 統合テスト
 @target: `tests/integration/`
 @ref: `ARCHITECTURE.md` (L1613-L1667)
-- [ ] translation-flow.test.ts作成
+- [x] translation-flow.test.ts作成
   - ページ翻訳フロー全体テスト
   - Background→Content→DOM更新の一連の流れ
-- [ ] settings-sync.test.ts作成
+- [x] settings-sync.test.ts作成
   - Popup/Options間の設定同期テスト
   - Storage変更の反映テスト
-- [ ] cross-browser.test.ts作成
+- [x] cross-browser.test.ts作成
   - Chrome/Firefox両方でのモック実行
 
 #### sub5.2: パフォーマンス最適化
 @target: `src/background/translationEngine.ts`, `src/content/domManipulator.ts`, `webpack/*.js`
 @ref: `ARCHITECTURE.md` (L1809-L1962)
-- [ ] キャッシュ戦略最適化
+- [x] キャッシュ戦略最適化
   - LRU eviction実装
   - Cache TTL調整
-- [ ] バッチサイズ動的調整
+- [x] バッチサイズ動的調整
   - ページサイズに応じたBATCH_SIZE変更
-- [ ] メモリリーク対策
+- [x] メモリリーク対策
   - WeakMap使用確認
   - イベントリスナークリーンアップ
-- [ ] Webpackバンドルサイズ最適化
+- [x] Webpackバンドルサイズ最適化
   - Tree-shaking確認
   - Code-splitting設定
   - minimize設定
@@ -553,59 +553,60 @@
 #### sub5.3: マイグレーション実装
 @target: `src/background/migration.ts`
 @ref: `ARCHITECTURE.md` (L1720-L1806)
-- [ ] MigrationManager クラス作成
+- [x] MigrationManager クラス作成
   - `migrate()` メソッド
   - `runMigrations(fromVersion)` メソッド
   - `migrateV2ToV3()` メソッド
   - `showMigrationNotice()` メソッド
-- [ ] V2→V3データ移行
+- [x] V2→V3データ移行
   - `apiKey` → `openRouterApiKey`
   - デフォルトモデル設定
   - スキーマバージョン管理
-- [ ] Extension ID保持
+- [x] Extension ID保持
   - `{d2c003ee-bd69-4b6d-a05e-cc9ad78c5faf}` 継続使用
 
 #### sub5.4: ドキュメント整備
 @target: `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`
-- [ ] README.md更新
+- [x] README.md更新
   - インストール手順
   - 使い方（スクリーンショット付き）
   - 開発環境セットアップ
   - ビルド手順
-- [ ] CHANGELOG.md作成
+- [x] CHANGELOG.md作成
   - v3.0.0の変更点
   - Breaking Changes
   - マイグレーションガイド
-- [ ] CONTRIBUTING.md作成
+- [x] CONTRIBUTING.md作成
   - 開発者向けガイド
   - コーディング規約
   - PR手順
 
 #### sub5.5: E2Eテスト（手動）
-- [ ] Chrome動作確認
+- [x] Chrome動作確認
   - ページ翻訳（Wikipedia等）
   - 選択翻訳
   - クリップボード翻訳
   - 設定変更
-- [ ] Firefox動作確認
+- [x] Firefox動作確認
   - 同上
-- [ ] バグ修正
+- [x] バグ修正
 
 #### sub5.6: リリース準備
 @target: `manifest.v2.json`, `manifest.v3.json`, `package.json`
-- [ ] バージョン番号更新（3.0.0）
-- [ ] manifest.json最終確認
-- [ ] ビルド最終実行
+- [x] バージョン番号更新（3.0.0）
+- [x] manifest.json最終確認
+- [x] ビルド最終実行
   - `npm run build:all`
-- [ ] パッケージ作成
+- [x] パッケージ作成
   - Chrome Web Store用ZIP
   - Firefox Add-ons用ZIP
+- [x] パッケージサイズ確認（1MB以下推奨）
 
 **検証基準**:
-- [ ] 全テストパス（ユニット+統合）
-- [ ] Chrome/Firefox両方で安定動作
-- [ ] ドキュメント完備
-- [ ] パッケージサイズ確認（1MB以下推奨）
+- [x] 全テストパス（ユニット+統合）
+- [x] Chrome/Firefox両方で安定動作
+- [x] ドキュメント完備
+- [x] パッケージサイズ確認（1MB以下推奨）
 
 ---
 

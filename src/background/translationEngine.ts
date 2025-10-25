@@ -31,6 +31,7 @@ import { OpenRouterClient } from './apiClient';
 import { logger } from '../shared/utils/logger';
 import { retry } from '../shared/utils/retry';
 import { BATCH_CONFIG, RETRY_CONFIG } from '../shared/constants/config';
+import LRUCache from '../shared/utils/lruCache';
 
 /**
  * Cache layer type
@@ -81,8 +82,9 @@ export class TranslationEngine {
 
   /**
    * Memory cache (fastest, session-scoped)
+   * LRU cache with max 1000 entries
    */
-  private memoryCache: Map<string, string> = new Map();
+  private memoryCache: LRUCache<string> = new LRUCache<string>(1000);
 
   /**
    * Batch size for API requests
@@ -377,7 +379,7 @@ export class TranslationEngine {
    */
   async getCacheStats(): Promise<CacheStats> {
     return {
-      memory: this.memoryCache.size,
+      memory: this.memoryCache.size(),
       session: this.getStorageCacheSize(sessionStorage),
       local: this.getStorageCacheSize(localStorage),
       hitRate: this.calculateHitRate(),
