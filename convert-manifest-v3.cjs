@@ -30,8 +30,13 @@ const manifestV3 = {
     service_worker: manifest.background.scripts[0]
   },
 
-  // Content scripts remain the same
-  content_scripts: manifest.content_scripts,
+  // Content scripts with polyfill for Chrome compatibility
+  content_scripts: manifest.content_scripts.map(cs => ({
+    ...cs,
+    js: cs.js.includes('browser-polyfill.min.js')
+      ? cs.js  // Already has polyfill, keep as-is
+      : ['browser-polyfill.min.js', ...cs.js]  // Add polyfill first
+  })),
 
   // Separate permissions and host_permissions
   // Note: webRequest and webRequestBlocking are removed as they're deprecated in v3
