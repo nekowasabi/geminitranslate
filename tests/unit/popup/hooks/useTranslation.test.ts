@@ -16,12 +16,14 @@ jest.mock('@shared/messages/MessageBus', () => ({
 }));
 
 // Mock StorageManager
+const mockGet = jest.fn();
+const mockGetTargetLanguage = jest.fn();
+
 jest.mock('@shared/storage/StorageManager', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => ({
-    get: jest.fn().mockResolvedValue({
-      targetLanguage: 'ja',
-    }),
+    get: mockGet,
+    getTargetLanguage: mockGetTargetLanguage,
   })),
 }));
 
@@ -30,6 +32,16 @@ const mockSend = MessageBus.send as jest.MockedFunction<typeof MessageBus.send>;
 describe('useTranslation Hook', () => {
   beforeEach(() => {
     mockSend.mockClear();
+    mockGet.mockClear();
+    mockGetTargetLanguage.mockClear();
+
+    // Default mock values
+    mockGet.mockResolvedValue({
+      openRouterApiKey: 'test-api-key',
+      openRouterModel: 'google/gemini-2.0-flash-exp:free',
+      targetLanguage: 'ja',
+    });
+    mockGetTargetLanguage.mockResolvedValue('ja');
   });
 
   describe('Initial State', () => {
@@ -217,6 +229,115 @@ describe('useTranslation Hook', () => {
 
       await waitFor(() => {
         expect(result.current.status).toBe('error');
+      });
+    });
+  });
+
+  describe('OpenRouter Configuration Validation', () => {
+    it('should fail with error when API key is not configured', async () => {
+      mockGet.mockResolvedValue({
+        openRouterApiKey: '',
+        openRouterModel: 'google/gemini-2.0-flash-exp:free',
+        targetLanguage: 'ja',
+      });
+
+      const { result } = renderHook(() => useTranslation());
+
+      await act(async () => {
+        await result.current.translate('ja');
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error');
+        expect(result.current.error).toContain('API key is not configured');
+      });
+
+      // Should NOT send message to background if validation fails
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('should fail with error when API key is whitespace only', async () => {
+      mockGet.mockResolvedValue({
+        openRouterApiKey: '   ',
+        openRouterModel: 'google/gemini-2.0-flash-exp:free',
+        targetLanguage: 'ja',
+      });
+
+      const { result } = renderHook(() => useTranslation());
+
+      await act(async () => {
+        await result.current.translate('ja');
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error');
+        expect(result.current.error).toContain('API key is not configured');
+      });
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('should fail with error when model is not configured', async () => {
+      mockGet.mockResolvedValue({
+        openRouterApiKey: 'test-api-key',
+        openRouterModel: '',
+        targetLanguage: 'ja',
+      });
+
+      const { result } = renderHook(() => useTranslation());
+
+      await act(async () => {
+        await result.current.translate('ja');
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error');
+        expect(result.current.error).toContain('Model is not configured');
+      });
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('should fail with error when model is whitespace only', async () => {
+      mockGet.mockResolvedValue({
+        openRouterApiKey: 'test-api-key',
+        openRouterModel: '   ',
+        targetLanguage: 'ja',
+      });
+
+      const { result } = renderHook(() => useTranslation());
+
+      await act(async () => {
+        await result.current.translate('ja');
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('error');
+        expect(result.current.error).toContain('Model is not configured');
+      });
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('should succeed when both API key and model are properly configured', async () => {
+      mockSend.mockResolvedValue({ status: 'completed' });
+
+      const { result } = renderHook(() => useTranslation());
+
+      await act(async () => {
+        await result.current.translate('ja');
+      });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('success');
+      });
+
+      // Should send message when validation passes
+      expect(mockSend).toHaveBeenCalledWith({
+        type: MessageType.TRANSLATE_PAGE,
+        payload: {
+          targetLanguage: 'ja',
+        },
       });
     });
   });

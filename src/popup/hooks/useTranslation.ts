@@ -43,6 +43,24 @@ export function useTranslation(): UseTranslationReturn {
       setError(null);
       setProgress(0);
 
+      // Validate OpenRouter configuration before attempting translation
+      const settings = await storageManager.get(['openRouterApiKey', 'openRouterModel']);
+
+      // Check API key
+      if (!settings.openRouterApiKey || settings.openRouterApiKey.trim() === '') {
+        throw new Error('API key is not configured. Please set your OpenRouter API key in Settings.');
+      }
+
+      // Check model
+      if (!settings.openRouterModel || settings.openRouterModel.trim() === '') {
+        throw new Error('Model is not configured. Please set your preferred model in Settings.');
+      }
+
+      console.log(`[Popup:useTranslation] ${timestamp} - OpenRouter configuration validated:`, {
+        hasApiKey: true,
+        model: settings.openRouterModel
+      });
+
       // Get target language from storage if not provided
       const lang = targetLanguage || await storageManager.getTargetLanguage();
       console.log(`[Popup:useTranslation] ${timestamp} - Target language resolved:`, lang);
