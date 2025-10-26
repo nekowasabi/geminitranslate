@@ -25,6 +25,7 @@ import { OpenRouterClient } from './apiClient';
 import { MessageHandler } from './messageHandler';
 import { CommandHandler } from './commandHandler';
 import { MessageBus } from '../shared/messages/MessageBus';
+import { MessageType } from '../shared/messages/types';
 import { logger } from '../shared/utils/logger';
 
 /**
@@ -81,6 +82,8 @@ class BackgroundService {
       const timestamp = new Date().toISOString();
       console.log(`[Background:Firefox] ${timestamp} - Received message:`, {
         type: message.type,
+        typeOf: typeof message.type,
+        typeValue: message.type,
         action: message.action,
         payload: message.payload,
         sender: {
@@ -92,9 +95,9 @@ class BackgroundService {
 
       // CommandHandler: TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARD
       if (
-        message.type === 'translate' ||
-        message.type === 'translateSelection' ||
-        message.type === 'translateClipboard'
+        message.type === MessageType.TRANSLATE_PAGE ||
+        message.type === MessageType.TRANSLATE_SELECTION ||
+        message.type === MessageType.TRANSLATE_CLIPBOARD
       ) {
         // Popupからのメッセージの場合、sender.tabがundefinedになる
         // アクティブタブを動的に取得
