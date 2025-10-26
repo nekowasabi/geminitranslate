@@ -83,16 +83,18 @@ export class SelectionHandler {
   /**
    * Translate selected text
    * @param targetLanguage - Target language code
+   * @param text - Optional text to translate (if not provided, uses current selection)
    * @returns Translated text or null if error/no selection
    */
-  async translateSelection(targetLanguage: string): Promise<string | null> {
+  async translateSelection(targetLanguage: string, text?: string): Promise<string | null> {
     // Prevent concurrent translations
     if (this.isTranslating) {
       logger.log('Translation already in progress, skipping');
       return null;
     }
 
-    const selectedText = this.getSelectedText();
+    // Use provided text or get current selection
+    const selectedText = text || this.getSelectedText();
 
     if (!selectedText) {
       logger.log('No text selected for translation');
@@ -172,6 +174,7 @@ export class SelectionHandler {
             },
             async () => {
               // IconBadge clicked - trigger translation
+              // Use captured selectedText from mouseup event to ensure full text is translated
               try {
                 const targetLanguage = await this.storageManager.getTargetLanguage();
 
@@ -180,7 +183,9 @@ export class SelectionHandler {
                   return;
                 }
 
-                const translatedText = await this.translateSelection(targetLanguage);
+                // Pass selectedText explicitly to ensure full text is translated
+                // even if user has deselected the text before clicking IconBadge
+                const translatedText = await this.translateSelection(targetLanguage, selectedText);
 
                 // Show FloatingUI with translation result
                 if (translatedText && selectedText) {
