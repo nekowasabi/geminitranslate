@@ -248,28 +248,13 @@ export class IconBadge {
     const content = document.createElement('div');
     content.className = 'content';
 
-    // Original text section
-    const originalSection = document.createElement('div');
-    originalSection.className = 'text-section';
-
-    const originalLabel = document.createElement('div');
-    originalLabel.className = 'text-label';
-    originalLabel.textContent = '原文';
-
-    const originalTextDiv = document.createElement('div');
-    originalTextDiv.className = 'original-text';
-    originalTextDiv.textContent = originalText;
-
-    originalSection.appendChild(originalLabel);
-    originalSection.appendChild(originalTextDiv);
-
-    // Translated text section
+    // Translated text section (original text removed as per user request)
     const translatedSection = document.createElement('div');
     translatedSection.className = 'text-section';
 
     const translatedLabel = document.createElement('div');
     translatedLabel.className = 'text-label';
-    translatedLabel.textContent = '翻訳';
+    translatedLabel.textContent = '翻訳結果';
 
     const translatedTextDiv = document.createElement('div');
     translatedTextDiv.className = 'translated-text';
@@ -278,7 +263,6 @@ export class IconBadge {
     translatedSection.appendChild(translatedLabel);
     translatedSection.appendChild(translatedTextDiv);
 
-    content.appendChild(originalSection);
     content.appendChild(translatedSection);
 
     // Actions
