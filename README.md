@@ -192,6 +192,29 @@ npm run dev:chrome   # Chrome development mode
 npm run dev:firefox  # Firefox development mode
 ```
 
+### Packaging Commands
+```bash
+# Package for Firefox (build + create .xpi)
+npm run package:firefox
+# Output: web-ext-artifacts/doganaylab_api_translate-3.0.0.zip
+
+# Package for Chrome (build + create .zip)
+npm run package:chrome
+# Output: web-ext-artifacts/chrome-v3.0.0.zip
+
+# Package for both browsers
+npm run package:all
+
+# Manual packaging (if needed)
+npm run build:firefox
+npm run build:ext:firefox  # Firefox packaging only
+
+npm run build:chrome
+npm run build:ext:chrome   # Chrome packaging only
+```
+
+**Note**: Packaged files are created in the `web-ext-artifacts/` directory and are ready for submission to browser stores.
+
 ### Project Structure
 ```
 geminitranslate/
