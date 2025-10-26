@@ -81,7 +81,16 @@ export function useSettings(): UseSettingsReturn {
   const saveSettings = useCallback(async () => {
     try {
       setSaving(true);
+      console.log('[useSettings] Saving settings:', settings);
+
       await storageManager.set(settings);
+
+      // 保存直後に読み込んで検証
+      const saved = await storageManager.get(['openRouterApiKey', 'openRouterModel', 'openRouterProvider']);
+      console.log('[useSettings] Verification after save:', saved);
+      console.log('[useSettings] Saved openRouterApiKey:', saved.openRouterApiKey);
+      console.log('[useSettings] Saved openRouterModel:', saved.openRouterModel);
+
       setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

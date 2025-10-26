@@ -108,14 +108,23 @@ export class OpenRouterClient {
    * Initialize the client by loading configuration from storage
    */
   async initialize(): Promise<void> {
+    console.log('[OpenRouterClient] initialize() called');
     const storage = new StorageManager();
     const data = await storage.get(['openRouterApiKey', 'openRouterModel', 'openRouterProvider']);
+
+    console.log('[OpenRouterClient] Data received from StorageManager:', data);
+    console.log('[OpenRouterClient] openRouterApiKey exists:', !!data.openRouterApiKey);
+    console.log('[OpenRouterClient] openRouterApiKey value:', data.openRouterApiKey);
+    console.log('[OpenRouterClient] openRouterModel exists:', !!data.openRouterModel);
+    console.log('[OpenRouterClient] openRouterModel value:', data.openRouterModel);
 
     this.config = {
       apiKey: data.openRouterApiKey || '',
       model: data.openRouterModel || '',
       provider: data.openRouterProvider,
     };
+
+    console.log('[OpenRouterClient] Config set to:', this.config);
   }
 
   /**

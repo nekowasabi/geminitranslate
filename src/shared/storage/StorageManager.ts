@@ -14,9 +14,16 @@ class StorageManager {
    */
   async get<K extends StorageKeys>(keys?: K[]): Promise<StorageData> {
     try {
+      console.log('[StorageManager] get() called with keys:', keys);
+
       const data = keys
         ? await BrowserAdapter.storage.get<Partial<StorageData>>(keys)
         : await BrowserAdapter.storage.get<Partial<StorageData>>([]);
+
+      console.log('[StorageManager] Raw data from BrowserAdapter:', data);
+      console.log('[StorageManager] Data keys:', Object.keys(data));
+      console.log('[StorageManager] openRouterApiKey:', data.openRouterApiKey);
+      console.log('[StorageManager] openRouterModel:', data.openRouterModel);
 
       // lineHeightマイグレーション処理: 2.0より大きい値を1.5に修正
       if (data.lineHeight && data.lineHeight > 2.0) {
@@ -25,9 +32,15 @@ class StorageManager {
       }
 
       // デフォルト値とマージ
-      return { ...DEFAULT_STORAGE, ...data };
+      const result = { ...DEFAULT_STORAGE, ...data };
+      console.log('[StorageManager] Merged result:', result);
+      console.log('[StorageManager] Result openRouterApiKey:', result.openRouterApiKey);
+      console.log('[StorageManager] Result openRouterModel:', result.openRouterModel);
+
+      return result;
     } catch (error) {
-      console.error('StorageManager.get error:', error);
+      console.error('[StorageManager] get error:', error);
+      console.error('[StorageManager] Returning DEFAULT_STORAGE due to error');
       return DEFAULT_STORAGE;
     }
   }
