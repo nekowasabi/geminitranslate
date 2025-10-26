@@ -22,6 +22,7 @@ export interface StorageData {
   targetLanguage?: string;
   fontSize?: number;
   lineHeight?: number;
+  darkMode?: boolean;
   schemaVersion?: number;
   migrationNoticeShown?: boolean;
 }
@@ -31,7 +32,8 @@ export type StorageKeys = keyof StorageData;
 export const DEFAULT_STORAGE: StorageData = {
   targetLanguage: 'tr',
   fontSize: 16,
-  lineHeight: 4,
+  lineHeight: 1.5,
+  darkMode: false,
   openRouterModel: 'google/gemini-2.0-flash-exp:free',
   schemaVersion: 3,
 };

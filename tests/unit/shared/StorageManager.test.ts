@@ -40,6 +40,64 @@ describe('StorageManager', () => {
       expect(result.openRouterApiKey).toBe('test-key');
       expect(result.targetLanguage).toBe('en');
     });
+
+    it('should migrate lineHeight from 4 to 1.5 when value is greater than 2.0', async () => {
+      const mockData = { lineHeight: 4 };
+      let savedData: any = null;
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      (global.chrome.storage.local.set as jest.Mock).mockImplementation((data, callback) => {
+        savedData = data;
+        if (callback) {
+          callback();
+        }
+        return Promise.resolve();
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(1.5);
+      expect(savedData).toEqual({ lineHeight: 1.5 });
+      expect(chrome.storage.local.set).toHaveBeenCalled();
+    });
+
+    it('should not migrate lineHeight when value is within valid range (1.0-2.0)', async () => {
+      const mockData = { lineHeight: 1.8 };
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(1.8);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
+    it('should handle lineHeight migration when lineHeight is exactly 2.0', async () => {
+      const mockData = { lineHeight: 2.0 };
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(2.0);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
   });
 
   describe('set', () => {

@@ -18,6 +18,12 @@ class StorageManager {
         ? await BrowserAdapter.storage.get<Partial<StorageData>>(keys)
         : await BrowserAdapter.storage.get<Partial<StorageData>>([]);
 
+      // lineHeightマイグレーション処理: 2.0より大きい値を1.5に修正
+      if (data.lineHeight && data.lineHeight > 2.0) {
+        data.lineHeight = 1.5;
+        await this.set({ lineHeight: 1.5 });
+      }
+
       // デフォルト値とマージ
       return { ...DEFAULT_STORAGE, ...data };
     } catch (error) {

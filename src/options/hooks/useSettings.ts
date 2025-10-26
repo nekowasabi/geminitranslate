@@ -3,7 +3,7 @@
  * Manages settings state and operations for options UI
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import StorageManager from '@shared/storage/StorageManager';
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
@@ -38,7 +38,7 @@ export function useSettings(): UseSettingsReturn {
   const [testing, setTesting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const storageManager = new StorageManager();
+  const storageManager = useMemo(() => new StorageManager(), []);
 
   /**
    * Load settings from storage on mount

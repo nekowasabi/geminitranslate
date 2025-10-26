@@ -3,7 +3,7 @@
  * Main popup UI for the translation extension
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import '../styles/popup.css';
 import { QuickTranslate } from './components/QuickTranslate';
 import { LanguageSelector } from './components/LanguageSelector';
@@ -15,7 +15,7 @@ import StorageManager from '@shared/storage/StorageManager';
 export const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const { status, error, progress } = useTranslation();
-  const storageManager = new StorageManager();
+  const storageManager = useMemo(() => new StorageManager(), []);
 
   // Check for API key on mount
   useEffect(() => {

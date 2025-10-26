@@ -5,6 +5,38 @@ All notable changes to DoganayLab API Translate App will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2025-10-26
+
+### 🔧 Settings & Stability Improvements
+
+#### Added
+- **options_ui** definition to both manifest.v2.json and manifest.v3.json for proper settings page integration
+- **Dark mode** storage support in StorageData interface with default value
+- Comprehensive **error handling** for BrowserAdapter storage operations (get/set/remove)
+- **Migration logic** for lineHeight values > 2.0 to automatically correct to 1.5
+- Detailed **error messages** in options page with specific error information
+- Unit tests for BrowserAdapter error handling scenarios
+- Unit tests for StorageManager lineHeight migration logic
+
+#### Changed
+- **lineHeight default value** from 4 to 1.5 to match UI specifications (1.0-2.0 range)
+- Optimized **StorageManager instantiation** using React's useMemo in useSettings and popup/App
+- Refactored BrowserAdapter to use **handleRuntimeError** common function, eliminating code duplication
+- Enhanced error logging with console.error for debugging
+
+#### Fixed
+- Settings page not opening from browser extension UI
+- Potential memory leaks from repeated StorageManager instantiation
+- Silent storage operation failures due to missing chrome.runtime.lastError checks
+- Inconsistent lineHeight values for existing users
+- Dark mode settings not being saved or loaded properly
+
+#### Technical Details
+- BrowserAdapter: Added chrome.runtime.lastError validation in all storage methods
+- StorageManager: Automatic data migration for invalid lineHeight values
+- React hooks: useMemo optimization prevents unnecessary re-instantiation
+- Manifest files: browser_style: false (Firefox), open_in_tab: true (Chrome)
+
 ## [3.0.0] - 2025-10-26
 
 ### 🎉 Major Release - Complete TypeScript Rewrite

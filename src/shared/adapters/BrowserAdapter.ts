@@ -14,6 +14,24 @@ class BrowserAdapter {
   }
 
   /**
+   * chrome.runtime.lastErrorをチェックし、エラーがあればreject、なければresolveする
+   * @param resolve Promiseのresolve関数
+   * @param reject Promiseのreject関数
+   * @param result 成功時の結果（オプション）
+   */
+  private handleRuntimeError<T>(
+    resolve: (value: T) => void,
+    reject: (reason?: any) => void,
+    result?: T
+  ): void {
+    if (chrome.runtime.lastError) {
+      reject(new Error(chrome.runtime.lastError.message));
+    } else {
+      resolve(result as T);
+    }
+  }
+
+  /**
    * Chrome環境かどうかを判定
    */
   get isChrome(): boolean {
@@ -45,9 +63,9 @@ class BrowserAdapter {
        * @returns Promise<取得したデータ>
        */
       get: <T extends Record<string, any>>(keys: string[]): Promise<T> => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           this.api.storage.local.get(keys, (result) => {
-            resolve(result as T);
+            this.handleRuntimeError(resolve, reject, result as T);
           });
         });
       },
@@ -57,9 +75,9 @@ class BrowserAdapter {
        * @param data 保存するデータ
        */
       set: (data: Record<string, any>): Promise<void> => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           this.api.storage.local.set(data, () => {
-            resolve();
+            this.handleRuntimeError(resolve, reject, undefined as void);
           });
         });
       },
@@ -69,9 +87,9 @@ class BrowserAdapter {
        * @param keys 削除するキーの配列
        */
       remove: (keys: string[]): Promise<void> => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           this.api.storage.local.remove(keys, () => {
-            resolve();
+            this.handleRuntimeError(resolve, reject, undefined as void);
           });
         });
       },

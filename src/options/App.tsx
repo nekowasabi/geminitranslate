@@ -34,7 +34,9 @@ const App: React.FC = () => {
       setSaveMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err) {
-      setSaveMessage({ type: 'error', text: 'Failed to save settings' });
+      const errorMessage = err instanceof Error ? `Failed to save settings: ${err.message}` : 'Failed to save settings';
+      console.error('Settings save error:', err);
+      setSaveMessage({ type: 'error', text: errorMessage });
       setTimeout(() => setSaveMessage(null), 5000);
     }
   };
@@ -205,10 +207,9 @@ const App: React.FC = () => {
                 aria-labelledby="tab-appearance"
               >
                 <AppearanceSettings
-                  darkMode={false} // TODO: Implement dark mode state
+                  darkMode={settings.darkMode || false}
                   onChange={(key, value) => {
-                    // TODO: Implement dark mode state management
-                    console.log('Dark mode changed:', value);
+                    updateSettings(key as any, value as any);
                   }}
                 />
               </div>

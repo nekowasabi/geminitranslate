@@ -31,6 +31,21 @@ describe('BrowserAdapter', () => {
       expect(result).toEqual(mockData);
     });
 
+    it('should reject when storage.get encounters chrome.runtime.lastError', async () => {
+      const errorMessage = 'Storage quota exceeded';
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        // Simulate chrome.runtime.lastError
+        (global.chrome.runtime as any).lastError = { message: errorMessage };
+        if (callback) {
+          callback({});
+        }
+        // Clean up lastError
+        delete (global.chrome.runtime as any).lastError;
+      });
+
+      await expect(BrowserAdapter.storage.get(['apiKey'])).rejects.toThrow(errorMessage);
+    });
+
     it('should set data to storage', async () => {
       const testData = { apiKey: 'new-key' };
       (global.chrome.storage.local.set as jest.Mock).mockImplementation((data, callback) => {
@@ -46,6 +61,21 @@ describe('BrowserAdapter', () => {
       expect((chrome.storage.local.set as jest.Mock).mock.calls[0][0]).toEqual(testData);
     });
 
+    it('should reject when storage.set encounters chrome.runtime.lastError', async () => {
+      const errorMessage = 'Storage write failed';
+      (global.chrome.storage.local.set as jest.Mock).mockImplementation((data, callback) => {
+        // Simulate chrome.runtime.lastError
+        (global.chrome.runtime as any).lastError = { message: errorMessage };
+        if (callback) {
+          callback();
+        }
+        // Clean up lastError
+        delete (global.chrome.runtime as any).lastError;
+      });
+
+      await expect(BrowserAdapter.storage.set({ apiKey: 'test' })).rejects.toThrow(errorMessage);
+    });
+
     it('should remove data from storage', async () => {
       const keysToRemove = ['apiKey'];
       (global.chrome.storage.local.remove as jest.Mock).mockImplementation((keys, callback) => {
@@ -59,6 +89,21 @@ describe('BrowserAdapter', () => {
 
       expect(chrome.storage.local.remove).toHaveBeenCalled();
       expect((chrome.storage.local.remove as jest.Mock).mock.calls[0][0]).toEqual(keysToRemove);
+    });
+
+    it('should reject when storage.remove encounters chrome.runtime.lastError', async () => {
+      const errorMessage = 'Storage remove failed';
+      (global.chrome.storage.local.remove as jest.Mock).mockImplementation((keys, callback) => {
+        // Simulate chrome.runtime.lastError
+        (global.chrome.runtime as any).lastError = { message: errorMessage };
+        if (callback) {
+          callback();
+        }
+        // Clean up lastError
+        delete (global.chrome.runtime as any).lastError;
+      });
+
+      await expect(BrowserAdapter.storage.remove(['apiKey'])).rejects.toThrow(errorMessage);
     });
   });
 
