@@ -101,6 +101,20 @@ describe('useSettings Hook', () => {
       expect(result.current.settings.openRouterModel).toBe('openai/gpt-4-turbo');
     });
 
+    it('should allow empty string for model selection', async () => {
+      const { result } = renderHook(() => useSettings());
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      act(() => {
+        result.current.updateSettings('openRouterModel', '');
+      });
+
+      expect(result.current.settings.openRouterModel).toBe('');
+    });
+
     it('should update target language', async () => {
       const { result } = renderHook(() => useSettings());
 
@@ -201,7 +215,7 @@ describe('useSettings Hook', () => {
   describe('testConnection', () => {
     it('should send test connection message via MessageBus', async () => {
       mockMessageBus.send.mockResolvedValue({
-        status: 'success',
+        success: true,
         data: { responseTime: 123 },
       });
 
@@ -218,6 +232,7 @@ describe('useSettings Hook', () => {
 
       expect(mockMessageBus.send).toHaveBeenCalledWith({
         type: MessageType.TEST_CONNECTION,
+        action: 'testConnection',
       });
 
       expect(testResult).toEqual({
@@ -228,7 +243,7 @@ describe('useSettings Hook', () => {
 
     it('should set testing state during connection test', async () => {
       mockMessageBus.send.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ status: 'success' }), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve({ success: true }), 100))
       );
 
       const { result } = renderHook(() => useSettings());

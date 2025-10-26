@@ -78,10 +78,25 @@ class BackgroundService {
    */
   private setupMessageListener(): void {
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      // CommandHandler: TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARD
+      if (
+        message.type === 'translate' ||
+        message.type === 'translateSelection' ||
+        message.type === 'translateClipboard'
+      ) {
+        if (this.commandHandler && sender.tab?.id) {
+          // CommandHandler は content script への転送のみを担当
+          this.commandHandler.handleMessage(message, sender.tab.id);
+        }
+        return true; // async response
+      }
+
+      // MessageHandler: requestTranslation, clearCache, getCacheStats, testConnection
       if (this.messageHandler) {
         this.messageHandler.handle(message, sender, sendResponse);
-        return true; // Indicates async response
+        return true; // async response
       }
+
       return false;
     });
 

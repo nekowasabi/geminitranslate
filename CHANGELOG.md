@@ -5,6 +5,91 @@ All notable changes to DoganayLab API Translate App will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🐛 Firefox UI/UX Bug Fixes
+
+#### Fixed
+- **Firefox環境でAPIキー設定後に設定画面へアクセスできない問題を修正**
+  - ポップアップヘッダーに歯車アイコン（⚙️）ボタンを常時表示（APIキーの有無に関わらず）
+  - ApiKeyWarningコンポーネントから「Open Settings」ボタンを削除し、警告表示のみに専念
+  - ユーザーがいつでも設定画面にアクセスできるよう改善
+- **設定画面でモデル名を空文字列にできない問題を修正**
+  - options/App.tsxで `||` 演算子を `??`（nullish coalescing）に変更
+  - 空文字列 `''` をユーザー入力として許可し、カスタマイズ性を向上
+  - デフォルト値は `null` または `undefined` の場合のみ適用されるように改善
+- **Firefoxのポップアップで「Translate」ボタンが動作しない問題を修正**
+  - background.firefox.tsにTRANSLATE_PAGEメッセージハンドラを追加
+  - MessageHandlerとCommandHandlerの役割を明確に分離
+  - ポップアップからのメッセージが正常にcontent scriptに転送されるように改善
+
+#### Changed
+- **MessageHandler と CommandHandler の役割分担を明確化**
+  - MessageHandler: TranslationEngineへの直接リクエスト（requestTranslation, clearCache, getCacheStats, testConnection）
+  - CommandHandler: Content Scriptへの転送（TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARD）
+  - background.firefox.tsでメッセージタイプに応じて適切なハンドラに委譲
+
+#### Added
+- **CommandHandler.handleMessage() メソッドを追加**
+  - ポップアップからのメッセージを受信してcontent scriptに転送
+  - TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARDメッセージに対応
+
+#### Technical Details
+- popup/App.tsx: ヘッダーに歯車アイコンボタンを追加（インラインスタイルでホバー効果実装）
+- popup/components/ApiKeyWarning.tsx: 設定ボタンを削除し、メッセージを「Settings (⚙️)」参照に変更
+- options/App.tsx: すべての設定プロパティで `??` 演算子を使用（apiKey, model, provider, targetLanguage, fontSize, darkMode）
+- background.firefox.ts: setupMessageListener()でメッセージタイプに応じた条件分岐を実装
+- background/commandHandler.ts: handleMessage()メソッドを追加し、メッセージタイプごとにsendメソッドを呼び出し
+
+---
+
+### 🐛 Firefox Compatibility Fix
+
+#### Fixed
+- **Firefox環境でOpen Settingsボタンが非表示になる問題を修正**
+  - BrowserAdapter.handleRuntimeError()がChrome/Firefox両対応に改善
+  - `chrome.runtime.lastError`のハードコーディングを`this.api.runtime.lastError`に変更
+  - Firefoxでストレージアクセスが失敗していた問題を解消
+- **React Hooksベストプラクティスに準拠**
+  - popup/App.tsxのuseEffect依存配列に`storageManager`を追加
+  - exhaustive-depsルール違反を解消
+
+#### Changed
+- **DEFAULT_STORAGE型整合性の向上**
+  - `openRouterApiKey: undefined`を明示的に追加
+  - StorageData型との完全な一貫性を確保
+
+#### Technical Details
+- BrowserAdapter.handleRuntimeError()がブラウザ検出機能（this.api）と統合
+- Chrome環境では`chrome.runtime.lastError`、Firefox環境では`browser.runtime.lastError`を自動判定
+- ストレージアクセス失敗時のエラーハンドリングが両ブラウザで正常動作
+
+---
+
+### 🎨 Settings UI Improvements
+
+#### Changed
+- **Model selection** changed from dropdown to text input for better flexibility
+- **Provider setting** changed from hardcoded display to optional text input field
+- Users can now specify custom OpenRouter models and providers directly
+
+#### Fixed
+- **Test Connection** functionality now works correctly
+  - Fixed message format mismatch between Options layer and Background layer
+  - Added `action` field to TestConnectionMessage type definition
+  - Updated response handling to use `response.success` instead of `response.status`
+
+#### Removed
+- ModelSelector component (replaced with simple text input)
+- models.ts constants file (no longer needed with text input approach)
+
+#### Technical Details
+- TestConnectionMessage interface now includes `action: 'testConnection'` field
+- ApiSettings component now accepts `model` and `provider` props with onChange handlers
+- MessageBus.send() now includes both `type` and `action` fields for TEST_CONNECTION
+- Response format aligned: `{ success: boolean, data?: any, error?: string }`
+- OpenRouterClient already supported provider parameter (no changes needed)
+
 ## [3.0.1] - 2025-10-26
 
 ### 🔧 Settings & Stability Improvements

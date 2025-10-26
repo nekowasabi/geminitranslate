@@ -3,23 +3,11 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ApiKeyWarning } from '@popup/components/ApiKeyWarning';
 
-// Mock chrome.runtime.openOptionsPage
-const mockOpenOptionsPage = jest.fn();
-global.chrome = {
-  runtime: {
-    openOptionsPage: mockOpenOptionsPage,
-  },
-} as any;
-
 describe('ApiKeyWarning Component', () => {
-  beforeEach(() => {
-    mockOpenOptionsPage.mockClear();
-  });
-
   describe('Rendering', () => {
     it('should render warning banner when API key is missing', () => {
       render(<ApiKeyWarning hasApiKey={false} />);
@@ -36,34 +24,15 @@ describe('ApiKeyWarning Component', () => {
       expect(screen.getByText('API Key Required')).toBeInTheDocument();
     });
 
-    it('should display open settings button', () => {
+    it('should display message directing to settings gear icon', () => {
       render(<ApiKeyWarning hasApiKey={false} />);
-      expect(screen.getByRole('button', { name: /open settings/i })).toBeInTheDocument();
-    });
-  });
-
-  describe('Open Settings Button', () => {
-    it('should call chrome.runtime.openOptionsPage when clicked', async () => {
-      render(<ApiKeyWarning hasApiKey={false} />);
-      const button = screen.getByRole('button', { name: /open settings/i });
-
-      fireEvent.click(button);
-
-      await waitFor(() => {
-        expect(mockOpenOptionsPage).toHaveBeenCalledTimes(1);
-      });
+      expect(screen.getByText(/please configure your openrouter api key in settings/i)).toBeInTheDocument();
     });
 
-    it('should be accessible via keyboard', async () => {
+    it('should NOT display open settings button', () => {
       render(<ApiKeyWarning hasApiKey={false} />);
-      const button = screen.getByRole('button', { name: /open settings/i });
-
-      button.focus();
-      fireEvent.keyDown(button, { key: 'Enter', code: 'Enter' });
-
-      await waitFor(() => {
-        expect(mockOpenOptionsPage).toHaveBeenCalledTimes(1);
-      });
+      const button = screen.queryByRole('button', { name: /open settings/i });
+      expect(button).not.toBeInTheDocument();
     });
   });
 

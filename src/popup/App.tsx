@@ -25,16 +25,36 @@ export const App: React.FC = () => {
     };
 
     checkApiKey();
-  }, []);
+  }, [storageManager]);
 
   return (
     <div className="popup-container">
       <header className="popup-header">
         <h1>Quick Translate</h1>
-        <div className="extension-version">
-          {chrome?.runtime?.getManifest?.()?.version && (
-            <span>v{chrome.runtime.getManifest().version}</span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => chrome?.runtime?.openOptionsPage()}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '20px',
+              padding: '4px 8px',
+              opacity: 1,
+              transition: 'opacity 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+            aria-label="Open Settings"
+            title="Settings"
+          >
+            ⚙️
+          </button>
+          <div className="extension-version">
+            {chrome?.runtime?.getManifest?.()?.version && (
+              <span>v{chrome.runtime.getManifest().version}</span>
+            )}
+          </div>
         </div>
       </header>
 

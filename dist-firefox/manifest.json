@@ -65,5 +65,9 @@
       },
       "description": "Translate selected text in popup"
     }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "browser_style": false
   }
 }

@@ -101,6 +101,31 @@ export class CommandHandler {
   }
 
   /**
+   * Handle message from popup and forward to content script
+   * @param message - Message from popup
+   * @param tabId - Target tab ID
+   */
+  async handleMessage(message: any, tabId: number): Promise<void> {
+    try {
+      switch (message.type) {
+        case MessageType.TRANSLATE_PAGE:
+          await this.sendTranslatePageMessage(tabId);
+          break;
+        case MessageType.TRANSLATE_SELECTION:
+          await this.sendTranslateSelectionMessage(tabId);
+          break;
+        case MessageType.TRANSLATE_CLIPBOARD:
+          await this.sendTranslateClipboardMessage(tabId);
+          break;
+        default:
+          logger.warn('CommandHandler: Unknown message type', message.type);
+      }
+    } catch (error) {
+      logger.error('CommandHandler: Error handling message', error);
+    }
+  }
+
+  /**
    * Send TRANSLATE_PAGE message to tab
    */
   private async sendTranslatePageMessage(tabId: number): Promise<void> {

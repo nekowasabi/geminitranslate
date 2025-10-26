@@ -6,7 +6,6 @@
 import React, { useState } from 'react';
 import { useSettings } from '@options/hooks/useSettings';
 import { ApiSettings } from '@options/components/ApiSettings';
-import { ModelSelector } from '@options/components/ModelSelector';
 import { LanguageSettings } from '@options/components/LanguageSettings';
 import { AppearanceSettings } from '@options/components/AppearanceSettings';
 import { ConnectionTest } from '@options/components/ConnectionTest';
@@ -170,13 +169,12 @@ const App: React.FC = () => {
                 className="space-y-6"
               >
                 <ApiSettings
-                  apiKey={settings.openRouterApiKey || ''}
+                  apiKey={settings.openRouterApiKey ?? ''}
+                  model={settings.openRouterModel ?? 'google/gemini-2.0-flash-exp:free'}
+                  provider={settings.openRouterProvider ?? ''}
                   onChange={(value) => updateSettings('openRouterApiKey', value)}
-                />
-
-                <ModelSelector
-                  selectedModel={settings.openRouterModel || 'google/gemini-2.0-flash-exp:free'}
-                  onChange={(value) => updateSettings('openRouterModel', value)}
+                  onModelChange={(value) => updateSettings('openRouterModel', value)}
+                  onProviderChange={(value) => updateSettings('openRouterProvider', value)}
                 />
 
                 <ConnectionTest onTest={testConnection} testing={testing} />
@@ -191,9 +189,9 @@ const App: React.FC = () => {
                 aria-labelledby="tab-translation"
               >
                 <LanguageSettings
-                  targetLanguage={settings.targetLanguage || 'en'}
-                  fontSize={settings.fontSize || 16}
-                  lineHeight={settings.lineHeight || 1.5}
+                  targetLanguage={settings.targetLanguage ?? 'en'}
+                  fontSize={settings.fontSize ?? 16}
+                  lineHeight={settings.lineHeight ?? 1.5}
                   onChange={(key, value) => updateSettings(key as any, value as any)}
                 />
               </div>
@@ -207,7 +205,7 @@ const App: React.FC = () => {
                 aria-labelledby="tab-appearance"
               >
                 <AppearanceSettings
-                  darkMode={settings.darkMode || false}
+                  darkMode={settings.darkMode ?? false}
                   onChange={(key, value) => {
                     updateSettings(key as any, value as any);
                   }}
