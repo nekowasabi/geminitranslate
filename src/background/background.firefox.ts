@@ -77,7 +77,7 @@ class BackgroundService {
    * Setup browser.runtime.onMessage listener
    */
   private setupMessageListener(): void {
-    browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       const timestamp = new Date().toISOString();
       console.log(`[Background:Firefox] ${timestamp} - Received message:`, {
         type: message.type,
@@ -96,18 +96,35 @@ class BackgroundService {
         message.type === 'translateSelection' ||
         message.type === 'translateClipboard'
       ) {
+        // Popupからのメッセージの場合、sender.tabがundefinedになる
+        // アクティブタブを動的に取得
+        let tabId = sender.tab?.id;
+
+        if (!tabId) {
+          try {
+            const tabs = await browser.tabs.query({
+              active: true,
+              currentWindow: true
+            });
+            tabId = tabs[0]?.id;
+            console.log(`[Background:Firefox] ${timestamp} - Resolved active tab ID:`, tabId);
+          } catch (error) {
+            console.error(`[Background:Firefox] ${timestamp} - Failed to get active tab:`, error);
+          }
+        }
+
         console.log(`[Background:Firefox] ${timestamp} - Routing to CommandHandler:`, {
           messageType: message.type,
-          tabId: sender.tab?.id
+          tabId
         });
 
-        if (this.commandHandler && sender.tab?.id) {
+        if (this.commandHandler && tabId) {
           // CommandHandler は content script への転送のみを担当
-          this.commandHandler.handleMessage(message, sender.tab.id);
+          this.commandHandler.handleMessage(message, tabId);
         } else {
           console.error(`[Background:Firefox] ${timestamp} - Cannot route to CommandHandler:`, {
             hasHandler: !!this.commandHandler,
-            hasTabId: !!sender.tab?.id
+            hasTabId: !!tabId
           });
         }
         return true; // async response
