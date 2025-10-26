@@ -94,15 +94,24 @@ export function useSettings(): UseSettingsReturn {
 
   /**
    * Test connection to OpenRouter API
+   *
+   * Tests the current UI settings WITHOUT saving them to storage.
+   * This allows users to validate their configuration before committing changes.
    */
   const testConnection = useCallback(async (): Promise<TestConnectionResult> => {
     try {
       setTesting(true);
       const startTime = Date.now();
 
+      // Send current UI settings to test (without saving to storage)
       const response = await MessageBus.send({
         type: MessageType.TEST_CONNECTION,
         action: 'testConnection',
+        payload: {
+          apiKey: settings.openRouterApiKey,
+          model: settings.openRouterModel,
+          provider: settings.openRouterProvider,
+        },
       });
 
       const endTime = Date.now();
@@ -128,7 +137,7 @@ export function useSettings(): UseSettingsReturn {
     } finally {
       setTesting(false);
     }
-  }, []);
+  }, [settings]);
 
   return {
     settings,

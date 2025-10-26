@@ -325,14 +325,30 @@ export class MessageHandler {
 
   /**
    * Handle testConnection action
+   *
+   * Supports two modes:
+   * 1. With payload: Test temporary config without saving (for Options UI preview)
+   * 2. Without payload: Test saved config from storage (backward compatibility)
    */
   private async handleTestConnection(
     payload: any,
     sendResponse: (response: HandlerResponse) => void
   ): Promise<void> {
     try {
-      // Call OpenRouterClient
-      const result = await this.client.testConnection();
+      let result;
+
+      // Check if payload contains temporary config to test
+      if (payload?.apiKey !== undefined) {
+        // Mode 1: Test temporary config (Options UI - before saving)
+        result = await this.client.testConnectionWithConfig({
+          apiKey: payload.apiKey || '',
+          model: payload.model || 'google/gemini-2.0-flash-exp:free',
+          provider: payload.provider,
+        });
+      } else {
+        // Mode 2: Test saved config (backward compatibility)
+        result = await this.client.testConnection();
+      }
 
       sendResponse({
         success: true,

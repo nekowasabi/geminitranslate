@@ -411,4 +411,134 @@ describe('OpenRouterClient', () => {
       expect(result.error).toContain('Invalid API key');
     });
   });
+
+  describe('testConnectionWithConfig', () => {
+    it('should test connection with temporary config without saving', async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'こんにちは' } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.testConnectionWithConfig({
+        apiKey: 'temp-api-key',
+        model: 'google/gemini-1.5-flash',
+        provider: 'Google',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('Connection successful');
+      expect(result.message).toContain('google/gemini-1.5-flash');
+
+      // Verify the temporary config was used
+      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
+      const requestHeaders = fetchCall[1].headers;
+      expect(requestHeaders.Authorization).toBe('Bearer temp-api-key');
+
+      const requestBody = JSON.parse(fetchCall[1].body);
+      expect(requestBody.model).toBe('google/gemini-1.5-flash');
+    });
+
+    it('should return error when temporary API key is empty', async () => {
+      const result = await client.testConnectionWithConfig({
+        apiKey: '',
+        model: 'google/gemini-2.0-flash-exp:free',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('API key');
+    });
+
+    it('should return error when temporary API key is whitespace only', async () => {
+      const result = await client.testConnectionWithConfig({
+        apiKey: '   ',
+        model: 'google/gemini-2.0-flash-exp:free',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('API key');
+    });
+
+    it('should use default model when not specified in temporary config', async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'こんにちは' } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.testConnectionWithConfig({
+        apiKey: 'temp-api-key',
+        model: '', // Empty model
+      });
+
+      expect(result.success).toBe(true);
+
+      // Verify default model was used
+      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
+      const requestBody = JSON.parse(fetchCall[1].body);
+      expect(requestBody.model).toBe('google/gemini-2.0-flash-exp:free');
+    });
+
+    it('should restore original config after testing', async () => {
+      // Initialize with saved config
+      await client.initialize();
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'こんにちは' } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      // Test with temporary config
+      await client.testConnectionWithConfig({
+        apiKey: 'temp-api-key',
+        model: 'google/gemini-1.5-flash',
+      });
+
+      // Clear fetch mock
+      (global.fetch as jest.Mock).mockClear();
+
+      // Make another translate call to verify original config is restored
+      await client.translate(['Hello'], 'Japanese');
+
+      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
+      const requestHeaders = fetchCall[1].headers;
+      const requestBody = JSON.parse(fetchCall[1].body);
+
+      // Should use original config from storage
+      expect(requestHeaders.Authorization).toBe('Bearer test-api-key');
+      expect(requestBody.model).toBe('google/gemini-2.0-flash-exp:free');
+    });
+
+    it('should return error when temporary config API request fails', async () => {
+      const mockResponse = {
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        json: jest.fn().mockResolvedValue({
+          error: { message: 'Invalid API key' },
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const promise = client.testConnectionWithConfig({
+        apiKey: 'invalid-key',
+        model: 'google/gemini-2.0-flash-exp:free',
+      });
+
+      // Run all timers (retries)
+      await jest.runAllTimersAsync();
+
+      const result = await promise;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid API key');
+    });
+  });
 });

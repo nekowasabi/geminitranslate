@@ -31,7 +31,7 @@ export type StorageKeys = keyof StorageData;
 
 export const DEFAULT_STORAGE: StorageData = {
   openRouterApiKey: undefined,
-  targetLanguage: 'tr',
+  targetLanguage: 'ja',
   fontSize: 16,
   lineHeight: 1.5,
   darkMode: false,

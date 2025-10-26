@@ -131,11 +131,47 @@ export interface ResetMessage extends BaseMessage {
 
 /**
  * Test Connection Message
+ *
+ * Options UIからBackground Scriptへ接続テストリクエストを送信する際に使用。
+ * payloadに設定を含めることで、保存前の設定をテストできる。
+ *
+ * @example
+ * ```typescript
+ * // 現在のUI設定でテスト（保存前）
+ * const message: TestConnectionMessage = {
+ *   type: MessageType.TEST_CONNECTION,
+ *   action: 'testConnection',
+ *   payload: {
+ *     apiKey: 'sk-or-...',
+ *     model: 'google/gemini-2.0-flash-exp:free',
+ *     provider: 'Google',
+ *   },
+ * };
+ *
+ * // 保存済み設定でテスト（従来通り）
+ * const message: TestConnectionMessage = {
+ *   type: MessageType.TEST_CONNECTION,
+ *   action: 'testConnection',
+ * };
+ * ```
  */
 export interface TestConnectionMessage extends BaseMessage {
   type: MessageType.TEST_CONNECTION;
   action: 'testConnection';
-  payload?: any;
+  payload?: {
+    /**
+     * OpenRouter API key (optional - if not provided, uses saved config)
+     */
+    apiKey?: string;
+    /**
+     * Model identifier (optional - if not provided, uses saved config)
+     */
+    model?: string;
+    /**
+     * Provider preference (optional - if not provided, uses saved config)
+     */
+    provider?: string;
+  };
 }
 
 /**

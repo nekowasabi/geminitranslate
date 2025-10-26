@@ -20,6 +20,12 @@ jest.mock('../../../src/shared/utils/logger', () => ({
     error: jest.fn(),
   },
 }));
+jest.mock('../../../src/shared/storage/StorageManager', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    getTargetLanguage: jest.fn().mockResolvedValue('ja'),
+  })),
+}));
 
 describe('CommandHandler', () => {
   let handler: CommandHandler;
@@ -72,7 +78,7 @@ describe('CommandHandler', () => {
         expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(123, {
           type: MessageType.TRANSLATE_PAGE,
           payload: {
-            targetLanguage: 'Japanese', // Default language
+            targetLanguage: 'ja', // From StorageManager mock
           },
         });
       });
@@ -92,7 +98,7 @@ describe('CommandHandler', () => {
         expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(123, {
           type: MessageType.TRANSLATE_PAGE,
           payload: {
-            targetLanguage: 'Japanese',
+            targetLanguage: 'ja',
           },
         });
       });
@@ -110,7 +116,7 @@ describe('CommandHandler', () => {
         expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(123, {
           type: MessageType.TRANSLATE_SELECTION,
           payload: {
-            targetLanguage: 'Japanese',
+            targetLanguage: 'ja',
           },
         });
       });
@@ -128,7 +134,7 @@ describe('CommandHandler', () => {
         expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(123, {
           type: MessageType.TRANSLATE_CLIPBOARD,
           payload: {
-            targetLanguage: 'Japanese',
+            targetLanguage: 'ja',
           },
         });
       });
@@ -221,7 +227,7 @@ describe('CommandHandler', () => {
   });
 
   describe('Target Language', () => {
-    it('should use default target language', async () => {
+    it('should use target language from Storage', async () => {
       // Arrange
       const command = 'translate-page';
 
@@ -230,12 +236,13 @@ describe('CommandHandler', () => {
 
       // Assert
       const call = mockMessageBus.sendToTab.mock.calls[0];
-      expect(call[1].payload.targetLanguage).toBe('Japanese');
+      // StorageManager mock returns 'ja' (Japanese)
+      expect(call[1].payload.targetLanguage).toBe('ja');
     });
 
-    it('should support custom target language in constructor', async () => {
+    it('should support custom target language in constructor (fallback)', async () => {
       // Arrange
-      const customHandler = new CommandHandler(mockMessageBus, 'Spanish');
+      const customHandler = new CommandHandler(mockMessageBus, 'es');
       const command = 'translate-page';
 
       // Act
@@ -243,7 +250,144 @@ describe('CommandHandler', () => {
 
       // Assert
       const call = mockMessageBus.sendToTab.mock.calls[0];
-      expect(call[1].payload.targetLanguage).toBe('Spanish');
+      // StorageManager mock still returns 'ja' (not affected by constructor arg)
+      expect(call[1].payload.targetLanguage).toBe('ja');
+    });
+  });
+
+  describe('handleMessage() - Message Forwarding', () => {
+    it('should forward TRANSLATE_PAGE message and return success response', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.TRANSLATE_PAGE,
+        payload: {
+          targetLanguage: 'en', // Input is ignored
+        },
+      };
+      const tabId = 123;
+      mockMessageBus.sendToTab = jest.fn().mockResolvedValue({ success: true });
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      // Language is fetched from Storage (ja), not from message payload
+      expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(tabId, {
+        type: MessageType.TRANSLATE_PAGE,
+        payload: {
+          targetLanguage: 'ja',
+        },
+      });
+      expect(response).toEqual({ success: true });
+    });
+
+    it('should forward TRANSLATE_SELECTION message and return success response', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.TRANSLATE_SELECTION,
+        payload: {
+          targetLanguage: 'en', // Input is ignored
+        },
+      };
+      const tabId = 123;
+      mockMessageBus.sendToTab = jest.fn().mockResolvedValue({ success: true });
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      // Language is fetched from Storage (ja), not from message payload
+      expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(tabId, {
+        type: MessageType.TRANSLATE_SELECTION,
+        payload: {
+          targetLanguage: 'ja',
+        },
+      });
+      expect(response).toEqual({ success: true });
+    });
+
+    it('should forward TRANSLATE_CLIPBOARD message and return success response', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.TRANSLATE_CLIPBOARD,
+        payload: {
+          targetLanguage: 'en', // Input is ignored
+        },
+      };
+      const tabId = 123;
+      mockMessageBus.sendToTab = jest.fn().mockResolvedValue({ success: true });
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      // Language is fetched from Storage (ja), not from message payload
+      expect(mockMessageBus.sendToTab).toHaveBeenCalledWith(tabId, {
+        type: MessageType.TRANSLATE_CLIPBOARD,
+        payload: {
+          targetLanguage: 'ja',
+        },
+      });
+      expect(response).toEqual({ success: true });
+    });
+
+    it('should return error response when sendToTab fails', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.TRANSLATE_PAGE,
+        payload: {
+          targetLanguage: 'Japanese',
+        },
+      };
+      const tabId = 123;
+      const mockError = new Error('Failed to send message');
+      mockMessageBus.sendToTab = jest.fn().mockRejectedValue(mockError);
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      expect(response).toEqual({
+        success: false,
+        error: 'Failed to send message',
+      });
+    });
+
+    it('should return error response for unknown message type', async () => {
+      // Arrange
+      const message = {
+        type: 'unknown-type' as any,
+        payload: {},
+      };
+      const tabId = 123;
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      expect(response).toEqual({
+        success: false,
+        error: 'Unknown message type: unknown-type',
+      });
+      expect(mockMessageBus.sendToTab).not.toHaveBeenCalled();
+    });
+
+    it('should return default success response when sendToTab returns undefined', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.TRANSLATE_PAGE,
+        payload: {
+          targetLanguage: 'Japanese',
+        },
+      };
+      const tabId = 123;
+      mockMessageBus.sendToTab = jest.fn().mockResolvedValue(undefined);
+
+      // Act
+      const response = await handler.handleMessage(message, tabId);
+
+      // Assert
+      expect(response).toEqual({ success: true });
     });
   });
 });

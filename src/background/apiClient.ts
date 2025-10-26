@@ -24,6 +24,7 @@ import StorageManager from '../shared/storage/StorageManager';
 import { logger } from '../shared/utils/logger';
 import { retry } from '../shared/utils/retry';
 import { API_CONFIG, RETRY_CONFIG } from '../shared/constants/config';
+import { getLanguageName } from '../shared/constants/languages';
 
 /**
  * OpenRouter configuration interface
@@ -277,11 +278,14 @@ export class OpenRouterClient {
    * Build translation prompt
    *
    * @param texts - Texts to translate
-   * @param targetLanguage - Target language
+   * @param targetLanguage - Target language code (e.g., 'ja', 'tr', 'en')
    * @returns Formatted prompt
    */
   private buildPrompt(texts: string[], targetLanguage: string): string {
-    return `Translate the following texts to ${targetLanguage}. Return only the translations, one per line, without numbering:\n\n${texts.join('\n')}`;
+    // Convert language code to English language name for better LLM understanding
+    // e.g., 'ja' → 'Japanese', 'tr' → 'Turkish', 'en' → 'English'
+    const languageName = getLanguageName(targetLanguage, false);
+    return `Translate the following texts to ${languageName}. Return only the translations, one per line, without numbering:\n\n${texts.join('\n')}`;
   }
 
   /**
@@ -329,6 +333,60 @@ export class OpenRouterClient {
         success: true,
         message: `Connection successful! Model: ${this.config?.model}`,
       };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Test API connection with temporary config (without saving to storage)
+   *
+   * This method allows testing a configuration before saving it to storage.
+   * Useful for validating API keys and models in the Options UI.
+   *
+   * @param config - Temporary configuration to test
+   * @returns Connection test result
+   *
+   * @example
+   * ```typescript
+   * const result = await client.testConnectionWithConfig({
+   *   apiKey: 'sk-or-...',
+   *   model: 'google/gemini-2.0-flash-exp:free',
+   *   provider: 'Google',
+   * });
+   * ```
+   */
+  async testConnectionWithConfig(config: OpenRouterConfig): Promise<ConnectionTestResult> {
+    try {
+      // Early validation: Check API key before attempting translation
+      if (!config.apiKey || config.apiKey.trim() === '') {
+        return {
+          success: false,
+          error: 'API key is required. Please configure your OpenRouter API key.',
+        };
+      }
+
+      // Temporarily use provided config
+      const originalConfig = this.config;
+      this.config = {
+        apiKey: config.apiKey,
+        model: config.model || 'google/gemini-2.0-flash-exp:free',
+        provider: config.provider,
+      };
+
+      try {
+        await this.translate(['Hello'], 'Japanese');
+        return {
+          success: true,
+          message: `Connection successful! Model: ${this.config.model}`,
+        };
+      } finally {
+        // Restore original config
+        this.config = originalConfig;
+      }
     } catch (error) {
       return {
         success: false,

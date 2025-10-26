@@ -28,6 +28,7 @@ import BrowserAdapter from '../shared/adapters/BrowserAdapter';
 import { MessageBus } from '../shared/messages/MessageBus';
 import { MessageType, PageTranslationMessage } from '../shared/messages/types';
 import { logger } from '../shared/utils/logger';
+import StorageManager from '../shared/storage/StorageManager';
 
 /**
  * Command handler function type
@@ -45,9 +46,9 @@ export class CommandHandler {
   /**
    * Create a new CommandHandler
    * @param messageBus - MessageBus instance for sending messages
-   * @param targetLanguage - Default target language for translations (default: 'Japanese')
+   * @param targetLanguage - Default target language code (default: 'ja' for Japanese)
    */
-  constructor(messageBus: MessageBus, targetLanguage: string = 'Japanese') {
+  constructor(messageBus: MessageBus, targetLanguage: string = 'ja') {
     this.messageBus = messageBus;
     this.targetLanguage = targetLanguage;
 
@@ -158,16 +159,21 @@ export class CommandHandler {
    */
   private async sendTranslatePageMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     const timestamp = new Date().toISOString();
+
+    // Get latest language setting from Storage
+    const storageManager = new StorageManager();
+    const targetLanguage = await storageManager.getTargetLanguage();
+
     console.log(`[Background:CommandHandler] ${timestamp} - sendTranslatePageMessage() - Preparing message:`, {
       tabId,
-      targetLanguage: this.targetLanguage
+      targetLanguage
     });
 
     try {
       const message: PageTranslationMessage = {
         type: MessageType.TRANSLATE_PAGE,
         payload: {
-          targetLanguage: this.targetLanguage,
+          targetLanguage,
         },
       };
 
@@ -202,10 +208,14 @@ export class CommandHandler {
    */
   private async sendTranslateSelectionMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
+      // Get latest language setting from Storage
+      const storageManager = new StorageManager();
+      const targetLanguage = await storageManager.getTargetLanguage();
+
       const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {
         type: MessageType.TRANSLATE_SELECTION,
         payload: {
-          targetLanguage: this.targetLanguage,
+          targetLanguage,
         },
       });
       return response || { success: true };
@@ -224,10 +234,14 @@ export class CommandHandler {
    */
   private async sendTranslateClipboardMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
+      // Get latest language setting from Storage
+      const storageManager = new StorageManager();
+      const targetLanguage = await storageManager.getTargetLanguage();
+
       const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {
         type: MessageType.TRANSLATE_CLIPBOARD,
         payload: {
-          targetLanguage: this.targetLanguage,
+          targetLanguage,
         },
       });
       return response || { success: true };

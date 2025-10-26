@@ -22,7 +22,7 @@
 
 import { TranslationEngine } from './translationEngine';
 import { OpenRouterClient } from './apiClient';
-import { MessageHandler } from './messageHandler';
+import { MessageHandler, HandlerResponse } from './messageHandler';
 import { CommandHandler } from './commandHandler';
 import { MessageBus } from '../shared/messages/MessageBus';
 import { MessageType } from '../shared/messages/types';
@@ -78,7 +78,7 @@ class BackgroundService {
    * Setup browser.runtime.onMessage listener
    */
   private setupMessageListener(): void {
-    browser.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+    browser.runtime.onMessage.addListener(async (message, sender) => {
       const timestamp = new Date().toISOString();
       console.log(`[Background:Firefox] ${timestamp} - Received message:`, {
         type: message.type,
@@ -126,26 +126,25 @@ class BackgroundService {
           try {
             const response = await this.commandHandler.handleMessage(message, tabId);
             console.log(`[Background:Firefox] ${timestamp} - CommandHandler response:`, response);
-            sendResponse({ status: 'started', ...response });
+            return { status: 'started', ...response };
           } catch (error) {
             console.error(`[Background:Firefox] ${timestamp} - CommandHandler error:`, error);
-            sendResponse({
+            return {
               status: 'error',
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error'
-            });
+            };
           }
         } else {
           console.error(`[Background:Firefox] ${timestamp} - Cannot route to CommandHandler:`, {
             hasHandler: !!this.commandHandler,
             hasTabId: !!tabId
           });
-          sendResponse({
+          return {
             success: false,
             error: 'CommandHandler not available or tab ID missing'
-          });
+          };
         }
-        return true; // async response
       }
 
       // MessageHandler: requestTranslation, clearCache, getCacheStats, testConnection
@@ -155,12 +154,16 @@ class BackgroundService {
       });
 
       if (this.messageHandler) {
-        this.messageHandler.handle(message, sender, sendResponse);
-        return true; // async response
+        // MessageHandlerはcallback-based sendResponseを使用するため、Promiseでラップ
+        return new Promise<HandlerResponse | undefined>((resolve) => {
+          this.messageHandler!.handle(message, sender, (response?: HandlerResponse) => {
+            resolve(response);
+          });
+        });
       }
 
       console.warn(`[Background:Firefox] ${timestamp} - No handler available for message:`, message);
-      return false;
+      return undefined;
     });
 
     logger.log('BackgroundService (Firefox): Message listener registered');
