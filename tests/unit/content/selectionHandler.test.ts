@@ -21,6 +21,26 @@ jest.mock('@shared/messages/MessageBus', () => {
   };
 });
 
+// Mock IconBadge
+const mockIconBadgeShow = jest.fn();
+const mockIconBadgeHide = jest.fn();
+jest.mock('@content/iconBadge', () => {
+  return {
+    IconBadge: jest.fn().mockImplementation(() => ({
+      show: mockIconBadgeShow,
+      hide: mockIconBadgeHide,
+    })),
+  };
+});
+
+// Mock StorageManager
+const mockGetTargetLanguage = jest.fn();
+jest.mock('@shared/storage/StorageManager', () => {
+  return jest.fn().mockImplementation(() => ({
+    getTargetLanguage: mockGetTargetLanguage,
+  }));
+});
+
 import { SelectionHandler } from '@content/selectionHandler';
 import { MessageType } from '@shared/messages/types';
 
@@ -30,6 +50,20 @@ describe('SelectionHandler', () => {
   beforeEach(() => {
     selectionHandler = new SelectionHandler();
     jest.clearAllMocks();
+    mockGetTargetLanguage.mockResolvedValue('Japanese');
+
+    // Mock getBoundingClientRect globally
+    Range.prototype.getBoundingClientRect = jest.fn().mockReturnValue({
+      x: 100,
+      y: 200,
+      width: 100,
+      height: 20,
+      top: 200,
+      right: 200,
+      bottom: 220,
+      left: 100,
+      toJSON: () => ({}),
+    });
 
     // Reset selection
     window.getSelection()?.removeAllRanges();
@@ -144,12 +178,14 @@ describe('SelectionHandler', () => {
 
   describe('translateSelection', () => {
     it('should send translation request via MessageBus', async () => {
-      mockSend.mockResolvedValue({
-        type: MessageType.TRANSLATION_RESPONSE,
-        payload: {
+      mockSend.mockResolvedValueOnce({
+        success: true,
+        data: {
           translations: ['翻訳されたテキスト'],
-          targetLanguage: 'ja',
         },
+      }).mockResolvedValueOnce({
+        success: true,
+        data: {},
       });
 
       // Create selection
@@ -213,10 +249,9 @@ describe('SelectionHandler', () => {
 
     it('should handle empty translation response', async () => {
       mockSend.mockResolvedValue({
-        type: MessageType.TRANSLATION_RESPONSE,
-        payload: {
+        success: true,
+        data: {
           translations: [],
-          targetLanguage: 'ja',
         },
       });
 
@@ -318,6 +353,178 @@ describe('SelectionHandler', () => {
       const selectedText = selectionHandler.getSelectedText();
 
       expect(selectedText).toBe(longText);
+
+      // Cleanup
+      document.body.removeChild(div);
+    });
+  });
+
+  describe('IconBadge integration', () => {
+    it('should show IconBadge on text selection', (done) => {
+      const div = document.createElement('div');
+      div.textContent = 'Select this text';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      // Simulate selection
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      // Simulate mouseup event
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        clientX: 100,
+        clientY: 200,
+      });
+      document.dispatchEvent(mouseUpEvent);
+
+      // Wait for event handler
+      setTimeout(() => {
+        expect(mockIconBadgeShow).toHaveBeenCalled();
+        expect(mockIconBadgeShow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            x: expect.any(Number),
+            y: expect.any(Number),
+          }),
+          expect.any(Function)
+        );
+
+        // Cleanup
+        document.body.removeChild(div);
+        done();
+      }, 15);
+    });
+
+    it('should hide IconBadge when disabled', () => {
+      selectionHandler.enable();
+      selectionHandler.disable();
+
+      expect(mockIconBadgeHide).toHaveBeenCalled();
+    });
+
+    it('should not show IconBadge when no text is selected', (done) => {
+      selectionHandler.enable();
+
+      // Simulate mouseup without selection
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      setTimeout(() => {
+        expect(mockIconBadgeShow).not.toHaveBeenCalled();
+        done();
+      }, 15);
+    });
+
+    it('should trigger translation when IconBadge is clicked', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['翻訳結果'],
+        },
+      });
+
+      const div = document.createElement('div');
+      div.textContent = 'Click badge to translate';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      // Simulate selection
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      // Simulate mouseup
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      // Wait for icon badge to show
+      await new Promise(resolve => setTimeout(resolve, 15));
+
+      // Get the onClick callback from the IconBadge.show call
+      const onClickCallback = mockIconBadgeShow.mock.calls[0][1];
+
+      // Simulate IconBadge click
+      await onClickCallback();
+
+      expect(mockSend).toHaveBeenCalledWith({
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: ['Click badge to translate'],
+          targetLanguage: 'Japanese',
+        },
+      });
+
+      // Cleanup
+      document.body.removeChild(div);
+    });
+
+    it('should prevent concurrent translations with isTranslating flag', async () => {
+      let callCount = 0;
+      mockSend.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // First call - REQUEST_TRANSLATION
+          return new Promise(resolve => setTimeout(() => resolve({
+            success: true,
+            data: { translations: ['結果'] },
+          }), 100));
+        } else {
+          // Second call - SELECTION_TRANSLATED
+          return Promise.resolve({ success: true, data: {} });
+        }
+      });
+
+      const div = document.createElement('div');
+      div.textContent = 'Test concurrent';
+      document.body.appendChild(div);
+
+      // Simulate selection
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      selectionHandler.enable();
+
+      // Simulate mouseup
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      await new Promise(resolve => setTimeout(resolve, 15));
+
+      // Get onClick callback
+      const onClickCallback = mockIconBadgeShow.mock.calls[0][1];
+
+      // Start first translation
+      const firstTranslation = onClickCallback();
+
+      // Try to start second translation (should be prevented)
+      const secondTranslation = onClickCallback();
+
+      await Promise.all([firstTranslation, secondTranslation]);
+
+      // Should call send twice for successful translation (REQUEST + SELECTION_TRANSLATED)
+      // But second concurrent call should be prevented, so still only 2 calls total
+      expect(mockSend).toHaveBeenCalledTimes(2);
+
+      // Verify first call was REQUEST_TRANSLATION
+      expect(mockSend).toHaveBeenNthCalledWith(1, {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: ['Test concurrent'],
+          targetLanguage: 'Japanese',
+        },
+      });
 
       // Cleanup
       document.body.removeChild(div);

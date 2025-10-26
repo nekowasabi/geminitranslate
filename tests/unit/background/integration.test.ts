@@ -18,7 +18,6 @@ import { MessageType } from '../../../src/shared/messages/types';
 
 // Mock dependencies
 jest.mock('../../../src/background/apiClient');
-jest.mock('../../../src/shared/storage/StorageManager');
 jest.mock('../../../src/shared/adapters/BrowserAdapter');
 jest.mock('../../../src/shared/utils/logger', () => ({
   logger: {
@@ -27,6 +26,19 @@ jest.mock('../../../src/shared/utils/logger', () => ({
     error: jest.fn(),
   },
 }));
+
+// Mock StorageManager
+jest.mock('../../../src/shared/storage/StorageManager', () => {
+  return {
+    __esModule: true,
+    default: jest.fn().mockImplementation(() => ({
+      getTargetLanguage: jest.fn().mockResolvedValue('Japanese'),
+      getApiKey: jest.fn().mockResolvedValue('test-api-key'),
+      getModel: jest.fn().mockResolvedValue('test-model'),
+      getProvider: jest.fn().mockResolvedValue('Google'),
+    })),
+  };
+});
 
 describe('Background Layer Integration', () => {
   let messageHandler: MessageHandler;
@@ -56,7 +68,7 @@ describe('Background Layer Integration', () => {
     await engine.initialize();
 
     messageHandler = new MessageHandler(engine, client);
-    commandHandler = new CommandHandler(messageBus);
+    commandHandler = new CommandHandler(messageBus, 'Japanese');
 
     // Mock BrowserAdapter
     BrowserAdapter.tabs = {
@@ -233,7 +245,8 @@ describe('Background Layer Integration', () => {
       // Arrange
       const invalidMessage = {
         type: MessageType.REQUEST_TRANSLATION,
-        // Missing action
+        action: 'requestTranslation',
+        // Missing texts in payload
         payload: {},
       };
 
@@ -246,7 +259,7 @@ describe('Background Layer Integration', () => {
       // Assert
       expect(mockSendResponse).toHaveBeenCalledWith({
         success: false,
-        error: 'Invalid message format: missing action',
+        error: 'Invalid payload: texts must be an array',
       });
     });
 

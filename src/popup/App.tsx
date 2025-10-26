@@ -9,6 +9,7 @@ import { QuickTranslate } from './components/QuickTranslate';
 import { LanguageSelector } from './components/LanguageSelector';
 import { StatusIndicator } from './components/StatusIndicator';
 import { ApiKeyWarning } from './components/ApiKeyWarning';
+import { SelectionResult } from './components/SelectionResult';
 import { useTranslation } from './hooks/useTranslation';
 import StorageManager from '@shared/storage/StorageManager';
 
@@ -67,6 +68,8 @@ export const App: React.FC = () => {
         </div>
 
         <StatusIndicator status={status} progress={progress} error={error} />
+
+        <SelectionResult />
       </main>
 
       <footer className="popup-footer">

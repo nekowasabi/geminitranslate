@@ -158,7 +158,7 @@ FloatingUI:           10000  // 翻訳結果フローティング
 - [x] `SelectionTranslatedMessage` インターフェース定義
   - originalText, translatedText, targetLanguage, timestamp を含む
 - [x] `Message` Union型に `SelectionTranslatedMessage` を追加
-- [ ] JSDocコメント追加（使用例と目的を記述）
+- [x] JSDocコメント追加（使用例と目的を記述）
 
 ### process2 IconBadge コンポーネント実装
 @target: `src/content/iconBadge.ts` (新規作成)

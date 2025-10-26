@@ -15,6 +15,7 @@ export enum MessageType {
   TRANSLATION_PROGRESS = 'translationProgress',
   TRANSLATION_COMPLETED = 'translationCompleted',
   TRANSLATION_ERROR = 'translationError',
+  SELECTION_TRANSLATED = 'selectionTranslated',
 
   // Settings
   SETTINGS_CHANGED = 'settingsChanged',
@@ -261,6 +262,55 @@ export interface ReloadConfigMessage extends BaseMessage {
 }
 
 /**
+ * Selection Translated Message
+ *
+ * Sent from Content Script to Popup when a text selection has been successfully translated.
+ * Popup displays the result in SelectionResult component.
+ *
+ * **Direction**: Content → Popup
+ * **Trigger**: User clicks IconBadge to translate selected text
+ * **Handler**: useSelectionTranslation hook in Popup
+ *
+ * @example
+ * ```typescript
+ * // Content Script sends translation result to Popup
+ * browser.runtime.sendMessage({
+ *   type: MessageType.SELECTION_TRANSLATED,
+ *   payload: {
+ *     originalText: 'Hello World',
+ *     translatedText: 'こんにちは世界',
+ *     targetLanguage: 'Japanese',
+ *     timestamp: Date.now(),
+ *   },
+ * });
+ * ```
+ */
+export interface SelectionTranslatedMessage extends BaseMessage {
+  type: MessageType.SELECTION_TRANSLATED;
+  payload: {
+    /**
+     * Original selected text
+     */
+    originalText: string;
+
+    /**
+     * Translated text
+     */
+    translatedText: string;
+
+    /**
+     * Target language name (e.g., "Japanese", "English")
+     */
+    targetLanguage: string;
+
+    /**
+     * Unix timestamp when translation was completed
+     */
+    timestamp: number;
+  };
+}
+
+/**
  * Union Type for All Messages
  */
 export type Message =
@@ -273,7 +323,8 @@ export type Message =
   | TranslationErrorMessage
   | ResetMessage
   | TestConnectionMessage
-  | ReloadConfigMessage;
+  | ReloadConfigMessage
+  | SelectionTranslatedMessage;
 
 /**
  * Message Listener Callback Type

@@ -1,0 +1,206 @@
+/**
+ * Content Script Styles
+ * FloatingUI for displaying selection translation results
+ */
+
+/* FloatingUI Container */
+.gemini-translate-floating-result {
+  position: fixed;
+  z-index: 10000;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 300px;
+  max-width: 500px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', sans-serif;
+  border: 1px solid #e5e7eb;
+  animation: fadeInScale 0.2s ease-out;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Close Button */
+.gemini-translate-floating-result .close-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.gemini-translate-floating-result .close-button:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.gemini-translate-floating-result .close-button:active {
+  transform: scale(0.95);
+}
+
+/* Header */
+.gemini-translate-floating-result .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-right: 28px; /* Space for close button */
+}
+
+.gemini-translate-floating-result .header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.gemini-translate-floating-result .header .target-language {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Content Section */
+.gemini-translate-floating-result .content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gemini-translate-floating-result .text-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gemini-translate-floating-result .text-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gemini-translate-floating-result .original-text,
+.gemini-translate-floating-result .translated-text {
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2937;
+  max-height: 300px;
+  overflow-y: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.gemini-translate-floating-result .translated-text {
+  font-weight: 500;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+/* Actions */
+.gemini-translate-floating-result .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.gemini-translate-floating-result .copy-button {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.gemini-translate-floating-result .copy-button:hover {
+  background: #2563eb;
+}
+
+.gemini-translate-floating-result .copy-button:active {
+  transform: scale(0.98);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .gemini-translate-floating-result {
+    background: #1f2937;
+    color: #f3f4f6;
+    border-color: #374151;
+  }
+
+  .gemini-translate-floating-result .close-button {
+    color: #9ca3af;
+  }
+
+  .gemini-translate-floating-result .close-button:hover {
+    background: #374151;
+    color: #f9fafb;
+  }
+
+  .gemini-translate-floating-result .header h3 {
+    color: #f9fafb;
+  }
+
+  .gemini-translate-floating-result .header .target-language {
+    color: #9ca3af;
+  }
+
+  .gemini-translate-floating-result .text-label {
+    color: #9ca3af;
+  }
+
+  .gemini-translate-floating-result .original-text,
+  .gemini-translate-floating-result .translated-text {
+    background: #111827;
+    border-color: #4b5563;
+    color: #e5e7eb;
+  }
+
+  .gemini-translate-floating-result .translated-text {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+    color: #bfdbfe;
+  }
+
+  .gemini-translate-floating-result .copy-button {
+    background: #2563eb;
+  }
+
+  .gemini-translate-floating-result .copy-button:hover {
+    background: #1d4ed8;
+  }
+}

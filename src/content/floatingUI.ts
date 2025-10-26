@@ -20,6 +20,7 @@ export interface Position {
 export class FloatingUI {
   private floatingElement: HTMLElement | null = null;
   private translation: string = '';
+  private autoHideTimer: number | null = null;
 
   /**
    * Show floating UI with translation
@@ -53,9 +54,43 @@ export class FloatingUI {
   }
 
   /**
+   * Show error message in floating UI
+   * @param errorMessage - Error message to display
+   * @param position - Position coordinates
+   */
+  showError(errorMessage: string, position: Position): void {
+    // Hide existing UI
+    this.hide();
+
+    this.translation = errorMessage;
+
+    // Create error element with error styling
+    this.floatingElement = this.createErrorElement(errorMessage);
+
+    // Add to DOM
+    document.body.appendChild(this.floatingElement);
+
+    // Position element
+    this.positionElement(position);
+
+    // Auto-hide after 5 seconds
+    this.autoHideTimer = window.setTimeout(() => {
+      this.hide();
+    }, 5000);
+
+    logger.log('FloatingUI: Showing error at', position);
+  }
+
+  /**
    * Hide floating UI
    */
   hide(): void {
+    // Clear auto-hide timer if exists
+    if (this.autoHideTimer !== null) {
+      window.clearTimeout(this.autoHideTimer);
+      this.autoHideTimer = null;
+    }
+
     if (this.floatingElement && this.floatingElement.parentNode) {
       this.floatingElement.parentNode.removeChild(this.floatingElement);
       this.floatingElement = null;
@@ -162,6 +197,50 @@ export class FloatingUI {
     });
 
     return textElement;
+  }
+
+  /**
+   * Create error element with error styling
+   * @param errorMessage - Error message to display
+   * @returns HTMLElement
+   */
+  private createErrorElement(errorMessage: string): HTMLElement {
+    // Detect dark mode
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    // Create container
+    const container = document.createElement('div');
+    container.className = 'floating-translation floating-error';
+
+    // Add error styling (red background)
+    Object.assign(container.style, {
+      position: 'fixed',
+      zIndex: '10000',
+      backgroundColor: isDarkMode ? '#dc2626' : '#fee2e2',
+      color: isDarkMode ? '#fef2f2' : '#991b1b',
+      padding: '12px 16px',
+      borderRadius: '8px',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      maxWidth: '300px',
+      minWidth: '200px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      border: isDarkMode ? '1px solid #b91c1c' : '1px solid #fecaca',
+    });
+
+    // Create error text element
+    const textElement = document.createElement('div');
+    textElement.className = 'translation-text';
+    textElement.textContent = errorMessage; // Use textContent to prevent XSS
+
+    Object.assign(textElement.style, {
+      fontSize: '14px',
+      lineHeight: '1.5',
+      wordBreak: 'break-word',
+    });
+
+    container.appendChild(textElement);
+
+    return container;
   }
 
   /**

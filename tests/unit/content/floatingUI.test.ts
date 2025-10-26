@@ -305,4 +305,67 @@ describe('FloatingUI', () => {
       expect(zIndex).toBeGreaterThan(1000);
     });
   });
+
+  describe('showError', () => {
+    it('should display error message at specified position', () => {
+      const errorMessage = 'Translation failed';
+      const position = { x: 100, y: 200 };
+
+      floatingUI.showError(errorMessage, position);
+
+      const floatingElement = document.querySelector('.floating-translation');
+      expect(floatingElement).toBeTruthy();
+      expect(floatingElement?.textContent).toContain(errorMessage);
+    });
+
+    it('should apply error styling (red background)', () => {
+      const errorMessage = 'API error';
+      const position = { x: 100, y: 100 };
+
+      floatingUI.showError(errorMessage, position);
+
+      const floatingElement = document.querySelector('.floating-translation') as HTMLElement;
+      // Should have error-specific styling
+      const bgColor = floatingElement.style.backgroundColor;
+      expect(bgColor).toMatch(/(#fee2e2|#dc2626|rgb\(254, 226, 226\)|rgb\(220, 38, 38\))/i);
+    });
+
+    it('should auto-hide after 5 seconds', async () => {
+      jest.useFakeTimers();
+
+      const errorMessage = 'Timeout error';
+      const position = { x: 100, y: 100 };
+
+      floatingUI.showError(errorMessage, position);
+
+      expect(document.querySelector('.floating-translation')).toBeTruthy();
+
+      // Fast-forward 5 seconds
+      jest.advanceTimersByTime(5000);
+
+      expect(document.querySelector('.floating-translation')).toBeNull();
+
+      jest.useRealTimers();
+    });
+
+    it('should handle XSS in error messages', () => {
+      const xssPayload = '<script>alert("xss")</script>';
+      const position = { x: 100, y: 100 };
+
+      floatingUI.showError(xssPayload, position);
+
+      const textElement = document.querySelector('.translation-text');
+      expect(textElement?.textContent).toBe(xssPayload);
+      expect(document.querySelector('script')).toBeNull();
+    });
+
+    it('should replace existing error when called multiple times', () => {
+      floatingUI.showError('First error', { x: 0, y: 0 });
+      floatingUI.showError('Second error', { x: 50, y: 50 });
+
+      const floatingElements = document.querySelectorAll('.floating-translation');
+      expect(floatingElements.length).toBe(1);
+      expect(floatingElements[0].textContent).toContain('Second error');
+    });
+  });
 });

@@ -93,6 +93,31 @@ class BackgroundService {
         }
       });
 
+      // SELECTION_TRANSLATED: Direct handling (bypass MessageHandler)
+      // This is a notification message from Content Script, not an action-based request
+      if (message.type === MessageType.SELECTION_TRANSLATED) {
+        console.log(`[Background:Firefox] ${timestamp} - SELECTION_TRANSLATED received, saving to session storage`);
+
+        try {
+          await browser.storage.session.set({
+            lastSelectionTranslation: message.payload
+          });
+          console.log(`[Background:Firefox] ${timestamp} - Successfully saved to session storage:`, {
+            originalText: message.payload.originalText?.substring(0, 50),
+            translatedText: message.payload.translatedText?.substring(0, 50),
+            targetLanguage: message.payload.targetLanguage,
+            timestamp: message.payload.timestamp
+          });
+          return { success: true };
+        } catch (error) {
+          console.error(`[Background:Firefox] ${timestamp} - Failed to save to session storage:`, error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+      }
+
       // CommandHandler: TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARD
       if (
         message.type === MessageType.TRANSLATE_PAGE ||

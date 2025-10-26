@@ -110,10 +110,9 @@ describe('ClipboardHandler', () => {
       });
 
       mockSend.mockResolvedValue({
-        type: MessageType.TRANSLATION_RESPONSE,
-        payload: {
+        success: true,
+        data: {
           translations: [mockTranslation],
-          targetLanguage: 'ja',
         },
       });
 
@@ -201,10 +200,9 @@ describe('ClipboardHandler', () => {
       });
 
       mockSend.mockResolvedValue({
-        type: MessageType.TRANSLATION_RESPONSE,
-        payload: {
+        success: true,
+        data: {
           translations: ['Special characters & <HTML> "quotes"'],
-          targetLanguage: 'en',
         },
       });
 

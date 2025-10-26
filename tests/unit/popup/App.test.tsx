@@ -28,6 +28,10 @@ jest.mock('@popup/components/ApiKeyWarning', () => ({
   ),
 }));
 
+jest.mock('@popup/components/SelectionResult', () => ({
+  SelectionResult: () => <div data-testid="selection-result">SelectionResult</div>,
+}));
+
 // Mock hooks
 jest.mock('@popup/hooks/useTranslation', () => ({
   useTranslation: () => ({

@@ -163,6 +163,7 @@ export const EXCLUSION_SELECTORS = [
 
 /**
  * Keyboard shortcuts
+ * Note: These should match the commands defined in manifest.v2.json and manifest.v3.json
  */
 export const KEYBOARD_SHORTCUTS = {
   /**
@@ -171,9 +172,9 @@ export const KEYBOARD_SHORTCUTS = {
   TRANSLATE_PAGE: 'Alt+W',
 
   /**
-   * Translate selection
+   * Translate selection (matches manifest.json: Alt+Y)
    */
-  TRANSLATE_SELECTION: 'Alt+Shift+T',
+  TRANSLATE_SELECTION: 'Alt+Y',
 
   /**
    * Toggle auto-translate

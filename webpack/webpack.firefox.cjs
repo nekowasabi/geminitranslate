@@ -35,6 +35,7 @@ module.exports = merge(common, {
       patterns: [
         { from: 'public/manifest.v2.json', to: 'manifest.json' },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
+        { from: 'src/styles/content.css', to: 'content.css' },
       ],
     }),
   ],
