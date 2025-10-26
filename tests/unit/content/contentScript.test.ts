@@ -23,6 +23,18 @@ jest.mock('@shared/messages/MessageBus', () => {
   };
 });
 
+// Mock ProgressNotification
+const mockProgressNotification = {
+  show: jest.fn(),
+  update: jest.fn(),
+  complete: jest.fn(),
+  error: jest.fn(),
+  remove: jest.fn(),
+};
+jest.mock('@content/progressNotification', () => ({
+  ProgressNotification: jest.fn(() => mockProgressNotification),
+}));
+
 import { ContentScript } from '@content/contentScript';
 import { MessageType } from '@shared/messages/types';
 
@@ -306,6 +318,294 @@ describe('ContentScript', () => {
       expect(sendResponse).toHaveBeenCalledWith({
         success: false,
         error: expect.any(String),
+      });
+    });
+  });
+
+  // Process4: ProgressNotification integration tests
+  describe('ProgressNotification integration', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    describe('handleMessage - TRANSLATION_PROGRESS', () => {
+      it('should call progressNotification.update() when receiving TRANSLATION_PROGRESS', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_PROGRESS,
+            payload: {
+              current: 5,
+              total: 10,
+              percentage: 50,
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.update).toHaveBeenCalledWith(5, 10);
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle TRANSLATION_PROGRESS with 0% progress', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_PROGRESS,
+            payload: {
+              current: 0,
+              total: 10,
+              percentage: 0,
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.update).toHaveBeenCalledWith(0, 10);
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle TRANSLATION_PROGRESS with 100% progress', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_PROGRESS,
+            payload: {
+              current: 10,
+              total: 10,
+              percentage: 100,
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.update).toHaveBeenCalledWith(10, 10);
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle invalid TRANSLATION_PROGRESS payload gracefully', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_PROGRESS,
+            payload: {}, // Invalid payload
+          },
+          {},
+          sendResponse
+        );
+
+        // Should handle gracefully without throwing
+        expect(sendResponse).toHaveBeenCalled();
+      });
+    });
+
+    describe('translatePage with progress notification', () => {
+      it('should call progressNotification.show() when translation starts', async () => {
+        mockSend.mockResolvedValue({
+          success: true,
+          data: {
+            translations: ['こんにちは世界', 'テストコンテンツ'],
+          },
+        });
+
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATE_PAGE,
+            payload: { targetLanguage: 'ja' },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.show).toHaveBeenCalled();
+        const callArgs = mockProgressNotification.show.mock.calls[0];
+        expect(callArgs[0]).toBeGreaterThan(0); // total should be > 0
+      });
+
+      it('should call progressNotification.complete() when translation succeeds', async () => {
+        mockSend.mockResolvedValue({
+          success: true,
+          data: {
+            translations: ['こんにちは世界', 'テストコンテンツ'],
+          },
+        });
+
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATE_PAGE,
+            payload: { targetLanguage: 'ja' },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.complete).toHaveBeenCalled();
+      });
+
+      it('should call progressNotification.error() when translation fails', async () => {
+        const errorMessage = 'API rate limit exceeded';
+        mockSend.mockRejectedValue(new Error(errorMessage));
+
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATE_PAGE,
+            payload: { targetLanguage: 'ja' },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.error).toHaveBeenCalledWith(
+          expect.stringContaining(errorMessage)
+        );
+      });
+
+      it('should not call show() when extractedNodes is empty', async () => {
+        // Clear test container
+        testContainer.innerHTML = '';
+
+        mockSend.mockResolvedValue({
+          success: true,
+          data: {
+            translations: [],
+          },
+        });
+
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATE_PAGE,
+            payload: { targetLanguage: 'ja' },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.show).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('cleanup with progress notification', () => {
+      it('should call progressNotification.remove() during cleanup', () => {
+        contentScript.initialize();
+        contentScript.cleanup();
+
+        expect(mockProgressNotification.remove).toHaveBeenCalled();
+      });
+
+      it('should handle multiple cleanup calls', () => {
+        contentScript.initialize();
+        contentScript.cleanup();
+        contentScript.cleanup();
+
+        // Should not throw errors
+        expect(mockProgressNotification.remove).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('TRANSLATION_ERROR message handling', () => {
+      it('should call progressNotification.error() when receiving TRANSLATION_ERROR', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_ERROR,
+            payload: {
+              error: 'Network error occurred',
+              code: 'NETWORK_ERROR',
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.error).toHaveBeenCalledWith(
+          'Network error occurred'
+        );
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle TRANSLATION_ERROR without error code', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_ERROR,
+            payload: {
+              error: 'Unknown error',
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.error).toHaveBeenCalledWith('Unknown error');
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle TRANSLATION_ERROR with empty error message', async () => {
+        contentScript.initialize();
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.TRANSLATION_ERROR,
+            payload: {
+              error: '',
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.error).toHaveBeenCalledWith('');
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
       });
     });
   });

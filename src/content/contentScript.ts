@@ -14,6 +14,7 @@ import { SelectionHandler } from './selectionHandler';
 import { ClipboardHandler } from './clipboardHandler';
 import { MutationObserverManager } from './mutationObserver';
 import { FloatingUI } from './floatingUI';
+import { ProgressNotification } from './progressNotification';
 import { MessageBus } from '@shared/messages/MessageBus';
 import { MessageType, Message } from '@shared/messages/types';
 import { logger } from '@shared/utils';
@@ -24,6 +25,7 @@ export class ContentScript {
   private clipboardHandler: ClipboardHandler;
   private mutationObserver: MutationObserverManager;
   private floatingUI: FloatingUI;
+  private progressNotification: ProgressNotification;
   private messageBus: MessageBus;
   private isTranslated = false;
   private extractedNodes: TextNode[] = [];
@@ -34,6 +36,7 @@ export class ContentScript {
     this.clipboardHandler = new ClipboardHandler();
     this.mutationObserver = new MutationObserverManager();
     this.floatingUI = new FloatingUI();
+    this.progressNotification = new ProgressNotification();
     this.messageBus = new MessageBus();
 
     logger.log('ContentScript initialized');
@@ -54,6 +57,21 @@ export class ContentScript {
 
   /**
    * Handle messages from background script
+   *
+   * Routes incoming messages to appropriate handlers based on message type.
+   * Supports translation commands, progress updates, and error notifications.
+   *
+   * **Supported Message Types**:
+   * - `TRANSLATE_PAGE`: Full page translation
+   * - `TRANSLATE_SELECTION`: Selected text translation
+   * - `TRANSLATE_CLIPBOARD`: Clipboard content translation
+   * - `TRANSLATION_PROGRESS`: Progress update from background (updates UI)
+   * - `TRANSLATION_ERROR`: Error notification from background (shows error UI)
+   * - `RESET`: Reset page to original state
+   *
+   * @param message - The message object with type and payload
+   * @param sender - Message sender information
+   * @param sendResponse - Callback to send response back to sender
    */
   private async handleMessage(
     message: Message,
@@ -100,6 +118,26 @@ export class ContentScript {
           sendResponse({ success: true });
           break;
 
+        case MessageType.TRANSLATION_PROGRESS:
+          console.log(`[Content:ContentScript] ${timestamp} - Handling TRANSLATION_PROGRESS`);
+          if ('payload' in message && message.payload) {
+            const { current, total } = message.payload;
+            if (typeof current === 'number' && typeof total === 'number') {
+              this.progressNotification.update(current, total);
+            }
+          }
+          sendResponse({ success: true });
+          break;
+
+        case MessageType.TRANSLATION_ERROR:
+          console.log(`[Content:ContentScript] ${timestamp} - Handling TRANSLATION_ERROR`);
+          if ('payload' in message && message.payload && message.payload.error !== undefined) {
+            this.progressNotification.error(message.payload.error);
+            logger.error('Translation error received:', message.payload.error);
+          }
+          sendResponse({ success: true });
+          break;
+
         default:
           console.warn(`[Content:ContentScript] ${timestamp} - Unknown message type:`, message.type);
           logger.log('Unknown message type:', message.type);
@@ -118,6 +156,17 @@ export class ContentScript {
 
   /**
    * Translate entire page
+   *
+   * Extracts all translatable text nodes from the DOM, sends them to the background
+   * script for translation, and applies the translated text back to the page.
+   *
+   * **Progress Notification Flow**:
+   * 1. Shows initial progress notification (0%)
+   * 2. Background script sends TRANSLATION_PROGRESS messages during translation
+   * 3. Shows completion notification (auto-hides after 3s) or error notification
+   *
+   * @param targetLanguage - Target language for translation (e.g., 'Japanese', 'French')
+   * @throws Error if translation fails (error is caught and shown via progress notification)
    */
   private async translatePage(targetLanguage: string): Promise<void> {
     const timestamp = new Date().toISOString();
@@ -139,6 +188,9 @@ export class ContentScript {
         logger.log('No text nodes to translate');
         return;
       }
+
+      // Show progress notification
+      this.progressNotification.show(this.extractedNodes.length);
 
       // Extract texts
       const texts = this.extractedNodes.map(node => node.text);
@@ -187,6 +239,9 @@ export class ContentScript {
 
         this.isTranslated = true;
 
+        // Show completion notification
+        this.progressNotification.complete();
+
         console.log(`[Content:ContentScript] ${timestamp} - Page translation completed successfully`);
         logger.log('Page translation completed');
       } else {
@@ -200,6 +255,12 @@ export class ContentScript {
         stack: error instanceof Error ? error.stack : undefined
       });
       logger.error('Failed to translate page:', error);
+
+      // Show error notification
+      this.progressNotification.error(
+        error instanceof Error ? error.message : 'Translation failed'
+      );
+
       throw error;
     }
   }
@@ -309,6 +370,7 @@ export class ContentScript {
     this.selectionHandler.disable();
     this.mutationObserver.disconnect();
     this.floatingUI.hide();
+    this.progressNotification.remove();
     logger.log('ContentScript cleaned up');
   }
 }

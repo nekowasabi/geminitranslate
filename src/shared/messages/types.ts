@@ -102,23 +102,86 @@ export interface ClipboardTranslationMessage extends BaseMessage {
 
 /**
  * Translation Progress Message
+ *
+ * Sent from Background Script to Content Script during batch translation
+ * to update the progress notification UI in real-time.
+ *
+ * **Direction**: Background → Content
+ * **Trigger**: After each translation batch completes
+ * **Handler**: ContentScript.handleMessage() → ProgressNotification.update()
+ *
+ * @example
+ * ```typescript
+ * // Background Script sends progress update
+ * browser.tabs.sendMessage(tabId, {
+ *   type: MessageType.TRANSLATION_PROGRESS,
+ *   payload: {
+ *     current: 5,      // Completed batches
+ *     total: 10,       // Total batches
+ *     percentage: 50,  // 50% complete
+ *   },
+ * });
+ * ```
  */
 export interface TranslationProgressMessage extends BaseMessage {
   type: MessageType.TRANSLATION_PROGRESS;
   payload: {
+    /**
+     * Number of completed translation batches
+     */
     current: number;
+
+    /**
+     * Total number of translation batches
+     */
     total: number;
+
+    /**
+     * Completion percentage (0-100)
+     */
     percentage: number;
   };
 }
 
 /**
  * Translation Error Message
+ *
+ * Sent from Background Script to Content Script when a translation error occurs.
+ * Displays error notification to user without auto-hiding.
+ *
+ * **Direction**: Background → Content
+ * **Trigger**: Translation API failure, network error, or other exceptions
+ * **Handler**: ContentScript.handleMessage() → ProgressNotification.error()
+ *
+ * @example
+ * ```typescript
+ * // Background Script sends error notification
+ * browser.tabs.sendMessage(tabId, {
+ *   type: MessageType.TRANSLATION_ERROR,
+ *   payload: {
+ *     error: 'API rate limit exceeded',
+ *     code: 'RATE_LIMIT',  // Optional error code for categorization
+ *   },
+ * });
+ * ```
+ *
+ * **Common Error Codes**:
+ * - `RATE_LIMIT`: API rate limit exceeded
+ * - `NETWORK_ERROR`: Network connection failed
+ * - `AUTH_ERROR`: API key invalid or missing
+ * - `TIMEOUT`: Request timeout
  */
 export interface TranslationErrorMessage extends BaseMessage {
   type: MessageType.TRANSLATION_ERROR;
   payload: {
+    /**
+     * Human-readable error message
+     */
     error: string;
+
+    /**
+     * Optional error code for programmatic error handling
+     */
     code?: string;
   };
 }

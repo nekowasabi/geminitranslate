@@ -41,6 +41,7 @@ npm run build
 - Clipboard content translation
 - Dynamic content detection and translation
 - Dark mode support with automatic theme detection
+- **Progress notification during page translation** - Real-time progress updates with visual feedback
 
 ### Storage Management
 - API keys stored in browser.storage.local
@@ -100,6 +101,29 @@ const message: TestConnectionMessage = {
 };
 ```
 
+#### Translation Progress (Background → Content)
+```typescript
+const message: TranslationProgressMessage = {
+  type: MessageType.TRANSLATION_PROGRESS,
+  payload: {
+    current: 5,      // Number of completed batches
+    total: 10,       // Total number of batches
+    percentage: 50,  // Completion percentage (0-100)
+  },
+};
+```
+
+#### Translation Error (Background → Content)
+```typescript
+const message: TranslationErrorMessage = {
+  type: MessageType.TRANSLATION_ERROR,
+  payload: {
+    error: 'API rate limit exceeded',  // Error message
+    code: 'RATE_LIMIT',                // Optional error code
+  },
+};
+```
+
 ### MessageHandler Routing
 The `MessageHandler` class uses the `action` property to route messages to appropriate handlers:
 
@@ -123,12 +147,14 @@ When adding a new message type, follow these steps:
    ```typescript
    export interface YourNewMessage extends BaseMessage {
      type: MessageType.YOUR_NEW_TYPE;
-     action: 'yourNewAction';  // REQUIRED
+     action: 'yourNewAction';  // REQUIRED (for Content → Background messages)
      payload: {
        // Your payload structure
      };
    }
    ```
+
+   **Note**: The `action` property is **only required for messages sent from Content Script to Background Script** (e.g., TranslationRequestMessage, TestConnectionMessage). Progress and error notifications sent from Background to Content (TranslationProgressMessage, TranslationErrorMessage) do not need an `action` property as they are not routed through MessageHandler.
 
 2. **Add to Message union type**:
    ```typescript
