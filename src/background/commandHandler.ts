@@ -26,7 +26,7 @@
 
 import BrowserAdapter from '../shared/adapters/BrowserAdapter';
 import { MessageBus } from '../shared/messages/MessageBus';
-import { MessageType } from '../shared/messages/types';
+import { MessageType, PageTranslationMessage } from '../shared/messages/types';
 import { logger } from '../shared/utils/logger';
 
 /**
@@ -106,21 +106,38 @@ export class CommandHandler {
    * @param tabId - Target tab ID
    */
   async handleMessage(message: any, tabId: number): Promise<void> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:CommandHandler] ${timestamp} - handleMessage() called:`, {
+      messageType: message.type,
+      tabId,
+      payload: message.payload
+    });
+
     try {
       switch (message.type) {
         case MessageType.TRANSLATE_PAGE:
+          console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_PAGE to tab ${tabId}`);
           await this.sendTranslatePageMessage(tabId);
           break;
         case MessageType.TRANSLATE_SELECTION:
+          console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_SELECTION to tab ${tabId}`);
           await this.sendTranslateSelectionMessage(tabId);
           break;
         case MessageType.TRANSLATE_CLIPBOARD:
+          console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_CLIPBOARD to tab ${tabId}`);
           await this.sendTranslateClipboardMessage(tabId);
           break;
         default:
+          console.warn(`[Background:CommandHandler] ${timestamp} - Unknown message type:`, message.type);
           logger.warn('CommandHandler: Unknown message type', message.type);
       }
+      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`);
     } catch (error) {
+      console.error(`[Background:CommandHandler] ${timestamp} - Error handling message:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       logger.error('CommandHandler: Error handling message', error);
     }
   }
@@ -129,14 +146,35 @@ export class CommandHandler {
    * Send TRANSLATE_PAGE message to tab
    */
   private async sendTranslatePageMessage(tabId: number): Promise<void> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:CommandHandler] ${timestamp} - sendTranslatePageMessage() - Preparing message:`, {
+      tabId,
+      targetLanguage: this.targetLanguage
+    });
+
     try {
-      await this.messageBus.sendToTab(tabId, {
+      const message: PageTranslationMessage = {
         type: MessageType.TRANSLATE_PAGE,
         payload: {
           targetLanguage: this.targetLanguage,
         },
+      };
+
+      console.log(`[Background:CommandHandler] ${timestamp} - Sending to tab via MessageBus:`, {
+        tabId,
+        message
       });
+
+      await this.messageBus.sendToTab(tabId, message);
+
+      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`);
     } catch (error) {
+      console.error(`[Background:CommandHandler] ${timestamp} - Failed to send message:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        tabId
+      });
       logger.error('CommandHandler: Failed to send message', error);
       throw error;
     }

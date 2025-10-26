@@ -17,18 +17,6 @@ export {
   type Language,
 } from './languages';
 
-// Model constants
-export {
-  SUPPORTED_MODELS,
-  DEFAULT_MODEL,
-  MODEL_MAP,
-  getFreeModels,
-  getModelsByProvider,
-  getModelConfig,
-  isModelSupported,
-  type ModelConfig,
-} from './models';
-
 // Configuration constants
 export {
   API_CONFIG,

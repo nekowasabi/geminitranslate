@@ -14,7 +14,8 @@ class BrowserAdapter {
   }
 
   /**
-   * chrome.runtime.lastErrorをチェックし、エラーがあればreject、なければresolveする
+   * runtime.lastErrorをチェックし、エラーがあればreject、なければresolveする
+   * Chrome/Firefox両環境に対応
    * @param resolve Promiseのresolve関数
    * @param reject Promiseのreject関数
    * @param result 成功時の結果（オプション）
@@ -24,8 +25,8 @@ class BrowserAdapter {
     reject: (reason?: any) => void,
     result?: T
   ): void {
-    if (chrome.runtime.lastError) {
-      reject(new Error(chrome.runtime.lastError.message));
+    if (this.api.runtime.lastError) {
+      reject(new Error(this.api.runtime.lastError.message));
     } else {
       resolve(result as T);
     }

@@ -35,6 +35,9 @@ export function useTranslation(): UseTranslationReturn {
    * Translate the current page
    */
   const translate = useCallback(async (targetLanguage?: string) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[Popup:useTranslation] ${timestamp} - translate() called`, { targetLanguage });
+
     try {
       setStatus('translating');
       setError(null);
@@ -42,8 +45,14 @@ export function useTranslation(): UseTranslationReturn {
 
       // Get target language from storage if not provided
       const lang = targetLanguage || await storageManager.getTargetLanguage();
+      console.log(`[Popup:useTranslation] ${timestamp} - Target language resolved:`, lang);
 
       // Send translation request via MessageBus
+      console.log(`[Popup:useTranslation] ${timestamp} - Sending TRANSLATE_PAGE message to background`, {
+        type: MessageType.TRANSLATE_PAGE,
+        payload: { targetLanguage: lang }
+      });
+
       const response = await MessageBus.send({
         type: MessageType.TRANSLATE_PAGE,
         payload: {
@@ -51,14 +60,23 @@ export function useTranslation(): UseTranslationReturn {
         },
       });
 
+      console.log(`[Popup:useTranslation] ${timestamp} - Received response from background:`, response);
+
       if (response.status === 'completed' || response.status === 'started') {
+        console.log(`[Popup:useTranslation] ${timestamp} - Translation successful`);
         setStatus('success');
         setProgress(100);
       } else {
+        console.error(`[Popup:useTranslation] ${timestamp} - Translation failed - unexpected response status:`, response);
         throw new Error('Translation failed');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[Popup:useTranslation] ${timestamp} - Error during translation:`, {
+        error: err,
+        message: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined
+      });
       setStatus('error');
       setError(errorMessage);
       setProgress(0);

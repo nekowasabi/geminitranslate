@@ -1,16 +1,27 @@
 /**
  * ApiSettings Component
- * Manages API key input and provider selection
+ * Manages API key, model, and provider input
  */
 
 import React, { useState } from 'react';
 
 export interface ApiSettingsProps {
   apiKey: string;
+  model?: string;
+  provider?: string;
   onChange: (apiKey: string) => void;
+  onModelChange?: (model: string) => void;
+  onProviderChange?: (provider: string) => void;
 }
 
-export const ApiSettings: React.FC<ApiSettingsProps> = ({ apiKey, onChange }) => {
+export const ApiSettings: React.FC<ApiSettingsProps> = ({
+  apiKey,
+  model = 'google/gemini-2.0-flash-exp:free',
+  provider = '',
+  onChange,
+  onModelChange,
+  onProviderChange,
+}) => {
   const [showPassword, setShowPassword] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -43,18 +54,8 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ apiKey, onChange }) =>
       <div>
         <h3 className="text-lg font-semibold mb-4">API Configuration</h3>
 
-        {/* Provider Label */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Provider
-          </label>
-          <div className="px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded-md text-gray-700 dark:text-gray-300">
-            OpenRouter
-          </div>
-        </div>
-
         {/* API Key Input */}
-        <div>
+        <div className="mb-4">
           <label
             htmlFor="api-key"
             className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
@@ -93,6 +94,51 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ apiKey, onChange }) =>
               {validationError}
             </p>
           )}
+        </div>
+
+        {/* Model Input */}
+        <div className="mb-4">
+          <label
+            htmlFor="openRouterModel"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          >
+            OpenRouterモデル名
+          </label>
+          <input
+            id="openRouterModel"
+            type="text"
+            value={model}
+            onChange={(event) => onModelChange?.(event.target.value)}
+            placeholder="google/gemini-2.0-flash-exp:free"
+            aria-label="OpenRouterモデル名"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md
+                       focus:outline-none focus:ring-2 focus:ring-blue-500
+                       dark:bg-gray-800 dark:text-white"
+          />
+        </div>
+
+        {/* Provider Input */}
+        <div className="mb-4">
+          <label
+            htmlFor="openRouterProvider"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          >
+            プロバイダ指定（オプション）
+          </label>
+          <input
+            id="openRouterProvider"
+            type="text"
+            value={provider}
+            onChange={(event) => onProviderChange?.(event.target.value)}
+            placeholder="例: DeepInfra, Together, OpenAI"
+            aria-label="OpenRouterプロバイダ"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md
+                       focus:outline-none focus:ring-2 focus:ring-blue-500
+                       dark:bg-gray-800 dark:text-white"
+          />
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            特定のプロバイダを優先したい場合に指定してください。空欄の場合は自動選択されます。
+          </p>
         </div>
       </div>
 

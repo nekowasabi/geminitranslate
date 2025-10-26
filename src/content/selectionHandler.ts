@@ -96,8 +96,8 @@ export class SelectionHandler {
         },
       });
 
-      if (response?.payload?.translations && response.payload.translations.length > 0) {
-        return response.payload.translations[0];
+      if (response?.success && response?.data?.translations && response.data.translations.length > 0) {
+        return response.data.translations[0];
       }
 
       logger.warn('Empty translation response');

@@ -126,20 +126,40 @@ export class OpenRouterClient {
    * @throws Error if API key is not configured or API request fails
    */
   async translate(texts: string[], targetLanguage: string): Promise<string[]> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:OpenRouterClient] ${timestamp} - translate() called:`, {
+      textsCount: texts.length,
+      targetLanguage,
+      firstText: texts[0]?.substring(0, 50)
+    });
+
     // Ensure initialized
     if (!this.config) {
+      console.log(`[Background:OpenRouterClient] ${timestamp} - Config not loaded, initializing...`);
       await this.initialize();
     }
 
-    // Validate API key
-    if (!this.config?.apiKey) {
-      throw new Error('API key not configured');
+    console.log(`[Background:OpenRouterClient] ${timestamp} - Using config:`, {
+      hasApiKey: !!this.config?.apiKey,
+      apiKeyPrefix: this.config?.apiKey?.substring(0, 10) + '...',
+      model: this.config?.model,
+      provider: this.config?.provider
+    });
+
+    // Validate API key - check for empty or whitespace-only strings
+    if (!this.config?.apiKey || this.config.apiKey.trim() === '') {
+      console.error(`[Background:OpenRouterClient] ${timestamp} - API key not configured or empty`);
+      throw new Error('API key not configured or empty');
     }
 
     // Use retry wrapper for resilience
     return retry(
       async () => {
         const prompt = this.buildPrompt(texts, targetLanguage);
+        console.log(`[Background:OpenRouterClient] ${timestamp} - Built prompt (first 100 chars):`, {
+          prompt: prompt.substring(0, 100)
+        });
+
         const requestBody: Record<string, unknown> = {
           model: this.config!.model,
           messages: [{ role: 'user', content: prompt }],
@@ -149,6 +169,12 @@ export class OpenRouterClient {
         if (this.config!.provider) {
           requestBody.provider = { order: [this.config!.provider] };
         }
+
+        console.log(`[Background:OpenRouterClient] ${timestamp} - Making API request:`, {
+          endpoint: this.API_ENDPOINT,
+          model: this.config!.model,
+          hasProvider: !!this.config!.provider
+        });
 
         // Make API request with timeout
         const response = await this.fetchWithTimeout(this.API_ENDPOINT, {
@@ -161,10 +187,23 @@ export class OpenRouterClient {
           body: JSON.stringify(requestBody),
         });
 
+        console.log(`[Background:OpenRouterClient] ${timestamp} - Received API response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok
+        });
+
         // Handle errors
         if (!response.ok) {
           const error = await response.json();
           const isRateLimit = response.status === 429;
+
+          console.error(`[Background:OpenRouterClient] ${timestamp} - API request failed:`, {
+            status: response.status,
+            statusText: response.statusText,
+            error,
+            isRateLimit
+          });
 
           logger.error('OpenRouter API error:', error);
           throw new ApiError(
@@ -176,13 +215,30 @@ export class OpenRouterClient {
 
         // Parse response
         const data = await response.json();
-        return this.parseResponse(data.choices[0].message.content, texts.length);
+        console.log(`[Background:OpenRouterClient] ${timestamp} - Parsing API response:`, {
+          hasChoices: !!data.choices,
+          choicesLength: data.choices?.length,
+          hasContent: !!data.choices?.[0]?.message?.content
+        });
+
+        const translations = this.parseResponse(data.choices[0].message.content, texts.length);
+
+        console.log(`[Background:OpenRouterClient] ${timestamp} - Translation successful:`, {
+          translationsCount: translations.length,
+          firstTranslation: translations[0]?.substring(0, 50)
+        });
+
+        return translations;
       },
       {
         maxRetries: RETRY_CONFIG.MAX_RETRIES,
         delay: RETRY_CONFIG.INITIAL_DELAY,
         backoff: RETRY_CONFIG.BACKOFF,
         onError: (error, attempt) => {
+          console.warn(`[Background:OpenRouterClient] ${timestamp} - Retry attempt ${attempt + 1}:`, {
+            error: error.message,
+            attempt
+          });
           logger.warn(`Translation attempt ${attempt + 1} failed:`, error.message);
         },
       }
@@ -258,6 +314,14 @@ export class OpenRouterClient {
     try {
       if (!this.config) {
         await this.initialize();
+      }
+
+      // Early validation: Check API key before attempting translation
+      if (!this.config?.apiKey || this.config.apiKey.trim() === '') {
+        return {
+          success: false,
+          error: 'API key is required. Please configure your OpenRouter API key.',
+        };
       }
 
       await this.translate(['Hello'], 'Japanese');

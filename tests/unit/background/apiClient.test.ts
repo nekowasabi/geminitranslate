@@ -354,7 +354,37 @@ describe('OpenRouterClient', () => {
       const result = await clientNoKey.testConnection();
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('API key not configured');
+      expect(result.error).toContain('API key');
+    });
+
+    it('should return error when API key is empty string', async () => {
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback({ openRouterApiKey: '' });
+        }
+        return Promise.resolve({ openRouterApiKey: '' });
+      });
+
+      const clientEmptyKey = new OpenRouterClient();
+      const result = await clientEmptyKey.testConnection();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('API key');
+    });
+
+    it('should return error when API key is whitespace only', async () => {
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback({ openRouterApiKey: '   ' });
+        }
+        return Promise.resolve({ openRouterApiKey: '   ' });
+      });
+
+      const clientWhitespaceKey = new OpenRouterClient();
+      const result = await clientWhitespaceKey.testConnection();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('API key');
     });
 
     it('should return error when API request fails', async () => {

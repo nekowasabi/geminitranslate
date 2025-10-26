@@ -128,12 +128,21 @@ export class TranslationEngine {
    * @throws Error if engine not initialized or API request fails after retries
    */
   async translateBatch(texts: string[], targetLanguage: string): Promise<string[]> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatch() called:`, {
+      textsCount: texts.length,
+      targetLanguage,
+      firstText: texts[0]?.substring(0, 50)
+    });
+
     if (!this.initialized) {
+      console.error(`[Background:TranslationEngine] ${timestamp} - Engine not initialized`);
       throw new Error('TranslationEngine not initialized. Call initialize() first.');
     }
 
     // Handle empty input
     if (texts.length === 0) {
+      console.log(`[Background:TranslationEngine] ${timestamp} - Empty input, returning empty array`);
       return [];
     }
 
@@ -141,6 +150,7 @@ export class TranslationEngine {
     const uncachedIndices: number[] = [];
 
     // Check all cache layers
+    console.log(`[Background:TranslationEngine] ${timestamp} - Checking cache for ${texts.length} texts...`);
     for (let i = 0; i < texts.length; i++) {
       const cached = await this.getCachedTranslation(texts[i], targetLanguage);
       if (cached) {
@@ -152,18 +162,37 @@ export class TranslationEngine {
       }
     }
 
+    console.log(`[Background:TranslationEngine] ${timestamp} - Cache check complete:`, {
+      cacheHits: this.cacheHits,
+      cacheMisses: this.cacheMisses,
+      uncachedCount: uncachedIndices.length
+    });
+
     // Translate uncached texts in batches
     if (uncachedIndices.length > 0) {
       const uncachedTexts = uncachedIndices.map((i) => texts[i]);
       const batches = this.chunkArray(uncachedTexts, this.BATCH_SIZE);
 
+      console.log(`[Background:TranslationEngine] ${timestamp} - Translating ${uncachedIndices.length} uncached texts in ${batches.length} batches`);
+
       // Process batches in parallel
       const batchResults = await Promise.all(
-        batches.map((batch) => this.translateWithRetry(batch, targetLanguage))
+        batches.map((batch, index) => {
+          console.log(`[Background:TranslationEngine] ${timestamp} - Processing batch ${index + 1}/${batches.length}:`, {
+            batchSize: batch.length
+          });
+          return this.translateWithRetry(batch, targetLanguage);
+        })
       );
+
+      console.log(`[Background:TranslationEngine] ${timestamp} - All batches processed`);
 
       // Flatten batch results
       const translations = batchResults.flat();
+
+      console.log(`[Background:TranslationEngine] ${timestamp} - Flattened translations:`, {
+        count: translations.length
+      });
 
       // Store results and update cache
       for (let i = 0; i < uncachedIndices.length; i++) {
@@ -174,7 +203,14 @@ export class TranslationEngine {
         // Save to all cache layers
         await this.setCachedTranslation(texts[originalIndex], targetLanguage, translation);
       }
+
+      console.log(`[Background:TranslationEngine] ${timestamp} - Cache updated with new translations`);
     }
+
+    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatch() completed:`, {
+      resultsCount: results.length,
+      firstResult: results[0]?.substring(0, 50)
+    });
 
     return results;
   }

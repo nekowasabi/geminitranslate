@@ -113,11 +113,33 @@ export class MessageHandler {
     sender: chrome.runtime.MessageSender,
     sendResponse: (response?: HandlerResponse) => void
   ): Promise<boolean> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:MessageHandler] ${timestamp} - handle() called:`, {
+      messageType: message.type,
+      action: message.action,
+      payload: message.payload,
+      sender: {
+        tabId: sender.tab?.id,
+        url: sender.url
+      }
+    });
+
     try {
       // Validate message format with fallback support
       const action = message.action || this.inferActionFromType(message.type);
 
+      console.log(`[Background:MessageHandler] ${timestamp} - Action resolved:`, {
+        originalAction: message.action,
+        inferredAction: this.inferActionFromType(message.type),
+        finalAction: action
+      });
+
       if (!action) {
+        console.error(`[Background:MessageHandler] ${timestamp} - Invalid message format:`, {
+          type: message.type,
+          hasAction: !!message.action,
+          message
+        });
         logger.error('MessageHandler: Invalid message format', {
           type: message.type,
           hasAction: !!message.action,
@@ -135,14 +157,24 @@ export class MessageHandler {
       const handler = this.actionHandlers.get(action);
 
       if (handler) {
+        console.log(`[Background:MessageHandler] ${timestamp} - Routing to handler:`, {
+          action,
+          payload
+        });
         await handler(payload, sendResponse);
       } else {
+        console.error(`[Background:MessageHandler] ${timestamp} - Unknown action:`, action);
         sendResponse({
           success: false,
           error: `Unknown action: ${action}`,
         });
       }
     } catch (error) {
+      console.error(`[Background:MessageHandler] ${timestamp} - Unexpected error:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       logger.error('MessageHandler: Unexpected error', error);
       sendResponse({
         success: false,
@@ -176,10 +208,23 @@ export class MessageHandler {
     payload: any,
     sendResponse: (response: HandlerResponse) => void
   ): Promise<void> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:MessageHandler] ${timestamp} - handleRequestTranslation() called:`, {
+      payload
+    });
+
     try {
       const { texts, targetLanguage } = payload;
 
+      console.log(`[Background:MessageHandler] ${timestamp} - Validating payload:`, {
+        hasTexts: !!texts,
+        isArray: Array.isArray(texts),
+        textsCount: Array.isArray(texts) ? texts.length : 0,
+        targetLanguage
+      });
+
       if (!texts || !Array.isArray(texts)) {
+        console.error(`[Background:MessageHandler] ${timestamp} - Invalid payload: texts must be an array`);
         sendResponse({
           success: false,
           error: 'Invalid payload: texts must be an array',
@@ -188,6 +233,7 @@ export class MessageHandler {
       }
 
       if (!targetLanguage) {
+        console.error(`[Background:MessageHandler] ${timestamp} - Invalid payload: targetLanguage is required`);
         sendResponse({
           success: false,
           error: 'Invalid payload: targetLanguage is required',
@@ -196,13 +242,29 @@ export class MessageHandler {
       }
 
       // Call TranslationEngine
+      console.log(`[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`, {
+        textsCount: texts.length,
+        targetLanguage,
+        firstText: texts[0]?.substring(0, 50)
+      });
+
       const translations = await this.engine.translateBatch(texts, targetLanguage);
+
+      console.log(`[Background:MessageHandler] ${timestamp} - Translation successful:`, {
+        translationsCount: translations.length,
+        firstTranslation: translations[0]?.substring(0, 50)
+      });
 
       sendResponse({
         success: true,
         data: { translations },
       });
     } catch (error) {
+      console.error(`[Background:MessageHandler] ${timestamp} - Translation error:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       logger.error('MessageHandler: Translation error', error);
       sendResponse({
         success: false,

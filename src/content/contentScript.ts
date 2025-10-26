@@ -60,35 +60,57 @@ export class ContentScript {
     sender: any,
     sendResponse: (response?: any) => void
   ): Promise<void> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Content:ContentScript] ${timestamp} - handleMessage() called:`, {
+      messageType: message.type,
+      payload: 'payload' in message ? message.payload : undefined
+    });
+
     logger.log('ContentScript received message:', message.type);
 
     try {
       switch (message.type) {
         case MessageType.TRANSLATE_PAGE:
-          await this.translatePage(message.payload?.targetLanguage || 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - Handling TRANSLATE_PAGE:`, {
+            targetLanguage: 'payload' in message ? message.payload.targetLanguage : 'en'
+          });
+          await this.translatePage('payload' in message ? message.payload.targetLanguage : 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - TRANSLATE_PAGE completed successfully`);
           sendResponse({ success: true });
           break;
 
         case MessageType.TRANSLATE_SELECTION:
-          await this.translateSelection(message.payload?.targetLanguage || 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - Handling TRANSLATE_SELECTION`);
+          await this.translateSelection('payload' in message ? message.payload.targetLanguage : 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - TRANSLATE_SELECTION completed successfully`);
           sendResponse({ success: true });
           break;
 
         case MessageType.TRANSLATE_CLIPBOARD:
-          await this.translateClipboard(message.payload?.targetLanguage || 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - Handling TRANSLATE_CLIPBOARD`);
+          await this.translateClipboard('payload' in message ? message.payload.targetLanguage : 'en');
+          console.log(`[Content:ContentScript] ${timestamp} - TRANSLATE_CLIPBOARD completed successfully`);
           sendResponse({ success: true });
           break;
 
         case MessageType.RESET:
+          console.log(`[Content:ContentScript] ${timestamp} - Handling RESET`);
           this.reset();
+          console.log(`[Content:ContentScript] ${timestamp} - RESET completed successfully`);
           sendResponse({ success: true });
           break;
 
         default:
+          console.warn(`[Content:ContentScript] ${timestamp} - Unknown message type:`, message.type);
           logger.log('Unknown message type:', message.type);
           sendResponse({ success: false, error: 'Unknown message type' });
       }
     } catch (error) {
+      console.error(`[Content:ContentScript] ${timestamp} - Error handling message:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       logger.error('Error handling message:', error);
       sendResponse({ success: false, error: String(error) });
     }
@@ -98,13 +120,22 @@ export class ContentScript {
    * Translate entire page
    */
   private async translatePage(targetLanguage: string): Promise<void> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Content:ContentScript] ${timestamp} - translatePage() called:`, { targetLanguage });
+
     try {
       logger.log('Translating page to', targetLanguage);
 
       // Extract text nodes
+      console.log(`[Content:ContentScript] ${timestamp} - Extracting text nodes from DOM...`);
       this.extractedNodes = this.domManipulator.extractTextNodes();
 
+      console.log(`[Content:ContentScript] ${timestamp} - Text nodes extracted:`, {
+        count: this.extractedNodes.length
+      });
+
       if (this.extractedNodes.length === 0) {
+        console.warn(`[Content:ContentScript] ${timestamp} - No text nodes to translate`);
         logger.log('No text nodes to translate');
         return;
       }
@@ -112,9 +143,21 @@ export class ContentScript {
       // Extract texts
       const texts = this.extractedNodes.map(node => node.text);
 
+      console.log(`[Content:ContentScript] ${timestamp} - Prepared texts for translation:`, {
+        count: texts.length,
+        firstText: texts[0]?.substring(0, 50)
+      });
+
       logger.log(`Extracted ${texts.length} text nodes`);
 
       // Request translations from background
+      console.log(`[Content:ContentScript] ${timestamp} - Sending REQUEST_TRANSLATION to background:`, {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        textsCount: texts.length,
+        targetLanguage
+      });
+
       const response = await this.messageBus.send({
         type: MessageType.REQUEST_TRANSLATION,
         action: 'requestTranslation',
@@ -124,19 +167,38 @@ export class ContentScript {
         },
       });
 
-      if (response?.payload?.translations) {
-        const translations = response.payload.translations;
+      console.log(`[Content:ContentScript] ${timestamp} - Received response from background:`, {
+        response,
+        success: response?.success,
+        hasData: !!response?.data,
+        hasTranslations: !!response?.data?.translations
+      });
+
+      if (response?.success && response?.data?.translations) {
+        const translations = response.data.translations;
+
+        console.log(`[Content:ContentScript] ${timestamp} - Applying translations to DOM:`, {
+          translationsCount: translations.length,
+          firstTranslation: translations[0]?.substring(0, 50)
+        });
 
         // Apply translations
         this.domManipulator.applyTranslations(this.extractedNodes, translations);
 
         this.isTranslated = true;
 
+        console.log(`[Content:ContentScript] ${timestamp} - Page translation completed successfully`);
         logger.log('Page translation completed');
       } else {
+        console.warn(`[Content:ContentScript] ${timestamp} - No translations received in response:`, response);
         logger.warn('No translations received');
       }
     } catch (error) {
+      console.error(`[Content:ContentScript] ${timestamp} - Failed to translate page:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
       logger.error('Failed to translate page:', error);
       throw error;
     }

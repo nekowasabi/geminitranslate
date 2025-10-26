@@ -78,25 +78,53 @@ class BackgroundService {
    */
   private setupMessageListener(): void {
     browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      const timestamp = new Date().toISOString();
+      console.log(`[Background:Firefox] ${timestamp} - Received message:`, {
+        type: message.type,
+        action: message.action,
+        payload: message.payload,
+        sender: {
+          tabId: sender.tab?.id,
+          url: sender.url,
+          frameId: sender.frameId
+        }
+      });
+
       // CommandHandler: TRANSLATE_PAGE, TRANSLATE_SELECTION, TRANSLATE_CLIPBOARD
       if (
         message.type === 'translate' ||
         message.type === 'translateSelection' ||
         message.type === 'translateClipboard'
       ) {
+        console.log(`[Background:Firefox] ${timestamp} - Routing to CommandHandler:`, {
+          messageType: message.type,
+          tabId: sender.tab?.id
+        });
+
         if (this.commandHandler && sender.tab?.id) {
           // CommandHandler は content script への転送のみを担当
           this.commandHandler.handleMessage(message, sender.tab.id);
+        } else {
+          console.error(`[Background:Firefox] ${timestamp} - Cannot route to CommandHandler:`, {
+            hasHandler: !!this.commandHandler,
+            hasTabId: !!sender.tab?.id
+          });
         }
         return true; // async response
       }
 
       // MessageHandler: requestTranslation, clearCache, getCacheStats, testConnection
+      console.log(`[Background:Firefox] ${timestamp} - Routing to MessageHandler:`, {
+        messageType: message.type,
+        action: message.action
+      });
+
       if (this.messageHandler) {
         this.messageHandler.handle(message, sender, sendResponse);
         return true; // async response
       }
 
+      console.warn(`[Background:Firefox] ${timestamp} - No handler available for message:`, message);
       return false;
     });
 

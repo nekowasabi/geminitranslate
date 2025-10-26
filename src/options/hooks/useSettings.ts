@@ -102,12 +102,13 @@ export function useSettings(): UseSettingsReturn {
 
       const response = await MessageBus.send({
         type: MessageType.TEST_CONNECTION,
+        action: 'testConnection',
       });
 
       const endTime = Date.now();
       const responseTime = endTime - startTime;
 
-      if (response.status === 'success') {
+      if (response.success) {
         return {
           success: true,
           responseTime: response.data?.responseTime || responseTime,
