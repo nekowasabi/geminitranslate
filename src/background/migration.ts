@@ -23,8 +23,9 @@ const CURRENT_VERSION = '3.0.0';
 
 /**
  * Default OpenRouter model
+ * Empty string to require users to explicitly set the model
  */
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-exp:free';
+const DEFAULT_MODEL = '';
 
 /**
  * Storage keys for v2.x

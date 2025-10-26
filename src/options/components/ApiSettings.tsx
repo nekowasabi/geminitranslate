@@ -16,7 +16,7 @@ export interface ApiSettingsProps {
 
 export const ApiSettings: React.FC<ApiSettingsProps> = ({
   apiKey,
-  model = 'google/gemini-2.0-flash-exp:free',
+  model = '',
   provider = '',
   onChange,
   onModelChange,

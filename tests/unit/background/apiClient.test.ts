@@ -63,7 +63,7 @@ describe('OpenRouterClient', () => {
       );
     });
 
-    it('should use default model when not configured', async () => {
+    it('should throw error when model is not configured', async () => {
       (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
         if (callback) {
           callback({ openRouterApiKey: 'test-key' });
@@ -71,22 +71,13 @@ describe('OpenRouterClient', () => {
         return Promise.resolve({ openRouterApiKey: 'test-key' });
       });
 
-      await client.initialize();
+      const clientNoModel = new OpenRouterClient();
+      await clientNoModel.initialize();
 
-      // Test with translate to verify default model is used
-      const mockResponse = {
-        ok: true,
-        json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'こんにちは' } }],
-        }),
-      };
-      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
-
-      await client.translate(['Hello'], 'Japanese');
-
-      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
-      const requestBody = JSON.parse(fetchCall[1].body);
-      expect(requestBody.model).toBe('google/gemini-2.0-flash-exp:free');
+      // Should throw error because model is not configured
+      await expect(clientNoModel.translate(['Hello'], 'Japanese')).rejects.toThrow(
+        'Model not configured'
+      );
     });
   });
 
@@ -107,6 +98,21 @@ describe('OpenRouterClient', () => {
 
       await expect(clientNoKey.translate(['Hello'], 'Japanese')).rejects.toThrow(
         'API key not configured'
+      );
+    });
+
+    it('should throw error when model is not configured', async () => {
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback({ openRouterApiKey: 'test-api-key' });
+        }
+        return Promise.resolve({ openRouterApiKey: 'test-api-key' });
+      });
+
+      const clientNoModel = new OpenRouterClient();
+
+      await expect(clientNoModel.translate(['Hello'], 'Japanese')).rejects.toThrow(
+        'Model not configured'
       );
     });
 
@@ -461,26 +467,14 @@ describe('OpenRouterClient', () => {
       expect(result.error).toContain('API key');
     });
 
-    it('should use default model when not specified in temporary config', async () => {
-      const mockResponse = {
-        ok: true,
-        json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'こんにちは' } }],
-        }),
-      };
-      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
-
+    it('should return error when model is empty in temporary config', async () => {
       const result = await client.testConnectionWithConfig({
         apiKey: 'temp-api-key',
         model: '', // Empty model
       });
 
-      expect(result.success).toBe(true);
-
-      // Verify default model was used
-      const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
-      const requestBody = JSON.parse(fetchCall[1].body);
-      expect(requestBody.model).toBe('google/gemini-2.0-flash-exp:free');
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Model');
     });
 
     it('should restore original config after testing', async () => {

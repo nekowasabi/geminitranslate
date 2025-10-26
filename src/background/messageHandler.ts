@@ -342,7 +342,7 @@ export class MessageHandler {
         // Mode 1: Test temporary config (Options UI - before saving)
         result = await this.client.testConnectionWithConfig({
           apiKey: payload.apiKey || '',
-          model: payload.model || 'google/gemini-2.0-flash-exp:free',
+          model: payload.model || '',
           provider: payload.provider,
         });
       } else {

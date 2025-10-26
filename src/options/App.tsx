@@ -170,7 +170,7 @@ const App: React.FC = () => {
               >
                 <ApiSettings
                   apiKey={settings.openRouterApiKey ?? ''}
-                  model={settings.openRouterModel ?? 'google/gemini-2.0-flash-exp:free'}
+                  model={settings.openRouterModel ?? ''}
                   provider={settings.openRouterProvider ?? ''}
                   onChange={(value) => updateSettings('openRouterApiKey', value)}
                   onModelChange={(value) => updateSettings('openRouterModel', value)}

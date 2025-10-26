@@ -75,7 +75,7 @@ describe('MigrationManager', () => {
       // Should save new data
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith({
         version: '3.0.0',
-        openRouterModel: 'google/gemini-2.0-flash-exp:free',
+        openRouterModel: '',
         openRouterApiKey: 'old-api-key',
         targetLanguage: 'ja',
         fontSize: 16,
@@ -106,7 +106,7 @@ describe('MigrationManager', () => {
 
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith({
         version: '3.0.0',
-        openRouterModel: 'google/gemini-2.0-flash-exp:free',
+        openRouterModel: '',
         targetLanguage: 'en',
       });
 
@@ -123,7 +123,7 @@ describe('MigrationManager', () => {
 
       expect(mockBrowser.storage.local.set).toHaveBeenCalledWith({
         version: '3.0.0',
-        openRouterModel: 'google/gemini-2.0-flash-exp:free',
+        openRouterModel: '',
       });
     });
 
@@ -167,7 +167,7 @@ describe('MigrationManager', () => {
       await migrationManager.migrate();
 
       const setCall = mockBrowser.storage.local.set.mock.calls[0][0];
-      expect(setCall.openRouterModel).toBe('google/gemini-2.0-flash-exp:free');
+      expect(setCall.openRouterModel).toBe('');
     });
 
     it('should add version field', async () => {

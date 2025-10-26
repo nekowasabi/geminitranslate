@@ -113,7 +113,7 @@ export class OpenRouterClient {
 
     this.config = {
       apiKey: data.openRouterApiKey || '',
-      model: data.openRouterModel || 'google/gemini-2.0-flash-exp:free',
+      model: data.openRouterModel || '',
       provider: data.openRouterProvider,
     };
   }
@@ -151,6 +151,12 @@ export class OpenRouterClient {
     if (!this.config?.apiKey || this.config.apiKey.trim() === '') {
       console.error(`[Background:OpenRouterClient] ${timestamp} - API key not configured or empty`);
       throw new Error('API key not configured or empty');
+    }
+
+    // Validate model - check for empty or whitespace-only strings
+    if (!this.config?.model || this.config.model.trim() === '') {
+      console.error(`[Background:OpenRouterClient] ${timestamp} - Model not configured or empty`);
+      throw new Error('Model not configured or empty. Please specify a model in the settings.');
     }
 
     // Use retry wrapper for resilience
@@ -369,11 +375,19 @@ export class OpenRouterClient {
         };
       }
 
+      // Early validation: Check model before attempting translation
+      if (!config.model || config.model.trim() === '') {
+        return {
+          success: false,
+          error: 'Model is required. Please specify a model in the settings.',
+        };
+      }
+
       // Temporarily use provided config
       const originalConfig = this.config;
       this.config = {
         apiKey: config.apiKey,
-        model: config.model || 'google/gemini-2.0-flash-exp:free',
+        model: config.model,
         provider: config.provider,
       };
 

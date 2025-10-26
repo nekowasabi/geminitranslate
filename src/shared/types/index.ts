@@ -35,6 +35,6 @@ export const DEFAULT_STORAGE: StorageData = {
   fontSize: 16,
   lineHeight: 1.5,
   darkMode: false,
-  openRouterModel: 'google/gemini-2.0-flash-exp:free',
+  openRouterModel: '',
   schemaVersion: 3,
 };
