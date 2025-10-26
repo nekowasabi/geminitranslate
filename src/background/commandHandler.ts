@@ -32,7 +32,7 @@ import { logger } from '../shared/utils/logger';
 /**
  * Command handler function type
  */
-type CommandHandlerFunction = (tabId: number) => Promise<void>;
+type CommandHandlerFunction = (tabId: number) => Promise<{success: boolean; error?: string}>;
 
 /**
  * CommandHandler processes browser commands and sends messages to tabs
@@ -104,8 +104,9 @@ export class CommandHandler {
    * Handle message from popup and forward to content script
    * @param message - Message from popup
    * @param tabId - Target tab ID
+   * @returns Response from content script
    */
-  async handleMessage(message: any, tabId: number): Promise<void> {
+  async handleMessage(message: any, tabId: number): Promise<{success: boolean; error?: string}> {
     const timestamp = new Date().toISOString();
     console.log(`[Background:CommandHandler] ${timestamp} - handleMessage() called:`, {
       messageType: message.type,
@@ -114,24 +115,29 @@ export class CommandHandler {
     });
 
     try {
+      let response: {success: boolean; error?: string};
+
       switch (message.type) {
         case MessageType.TRANSLATE_PAGE:
           console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_PAGE to tab ${tabId}`);
-          await this.sendTranslatePageMessage(tabId);
+          response = await this.sendTranslatePageMessage(tabId);
           break;
         case MessageType.TRANSLATE_SELECTION:
           console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_SELECTION to tab ${tabId}`);
-          await this.sendTranslateSelectionMessage(tabId);
+          response = await this.sendTranslateSelectionMessage(tabId);
           break;
         case MessageType.TRANSLATE_CLIPBOARD:
           console.log(`[Background:CommandHandler] ${timestamp} - Routing TRANSLATE_CLIPBOARD to tab ${tabId}`);
-          await this.sendTranslateClipboardMessage(tabId);
+          response = await this.sendTranslateClipboardMessage(tabId);
           break;
         default:
           console.warn(`[Background:CommandHandler] ${timestamp} - Unknown message type:`, message.type);
           logger.warn('CommandHandler: Unknown message type', message.type);
+          return { success: false, error: `Unknown message type: ${message.type}` };
       }
-      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`);
+
+      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`, response);
+      return response;
     } catch (error) {
       console.error(`[Background:CommandHandler] ${timestamp} - Error handling message:`, {
         error,
@@ -139,13 +145,18 @@ export class CommandHandler {
         stack: error instanceof Error ? error.stack : undefined
       });
       logger.error('CommandHandler: Error handling message', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
   /**
    * Send TRANSLATE_PAGE message to tab
+   * @returns Response from content script
    */
-  private async sendTranslatePageMessage(tabId: number): Promise<void> {
+  private async sendTranslatePageMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     const timestamp = new Date().toISOString();
     console.log(`[Background:CommandHandler] ${timestamp} - sendTranslatePageMessage() - Preparing message:`, {
       tabId,
@@ -165,9 +176,11 @@ export class CommandHandler {
         message
       });
 
-      await this.messageBus.sendToTab(tabId, message);
+      const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, message);
 
-      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`);
+      console.log(`[Background:CommandHandler] ${timestamp} - Message sent successfully to tab ${tabId}`, response);
+
+      return response || { success: true };
     } catch (error) {
       console.error(`[Background:CommandHandler] ${timestamp} - Failed to send message:`, {
         error,
@@ -176,41 +189,54 @@ export class CommandHandler {
         tabId
       });
       logger.error('CommandHandler: Failed to send message', error);
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
   /**
    * Send TRANSLATE_SELECTION message to tab
+   * @returns Response from content script
    */
-  private async sendTranslateSelectionMessage(tabId: number): Promise<void> {
+  private async sendTranslateSelectionMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
-      await this.messageBus.sendToTab(tabId, {
+      const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {
         type: MessageType.TRANSLATE_SELECTION,
         payload: {
           targetLanguage: this.targetLanguage,
         },
       });
+      return response || { success: true };
     } catch (error) {
       logger.error('CommandHandler: Failed to send message', error);
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
   /**
    * Send TRANSLATE_CLIPBOARD message to tab
+   * @returns Response from content script
    */
-  private async sendTranslateClipboardMessage(tabId: number): Promise<void> {
+  private async sendTranslateClipboardMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
-      await this.messageBus.sendToTab(tabId, {
+      const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {
         type: MessageType.TRANSLATE_CLIPBOARD,
         payload: {
           targetLanguage: this.targetLanguage,
         },
       });
+      return response || { success: true };
     } catch (error) {
       logger.error('CommandHandler: Failed to send message', error);
-      throw error;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 }

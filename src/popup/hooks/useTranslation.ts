@@ -62,13 +62,19 @@ export function useTranslation(): UseTranslationReturn {
 
       console.log(`[Popup:useTranslation] ${timestamp} - Received response from background:`, response);
 
-      if (response.status === 'completed' || response.status === 'started') {
+      // Check for successful response (supports both status and success fields)
+      if (
+        response?.success === true ||
+        response?.status === 'completed' ||
+        response?.status === 'started'
+      ) {
         console.log(`[Popup:useTranslation] ${timestamp} - Translation successful`);
         setStatus('success');
         setProgress(100);
       } else {
-        console.error(`[Popup:useTranslation] ${timestamp} - Translation failed - unexpected response status:`, response);
-        throw new Error('Translation failed');
+        console.error(`[Popup:useTranslation] ${timestamp} - Translation failed - unexpected response:`, response);
+        const errorMessage = response?.error || 'Translation failed';
+        throw new Error(errorMessage);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

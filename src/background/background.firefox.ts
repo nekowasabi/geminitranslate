@@ -120,11 +120,26 @@ class BackgroundService {
 
         if (this.commandHandler && tabId) {
           // CommandHandler は content script への転送のみを担当
-          this.commandHandler.handleMessage(message, tabId);
+          try {
+            const response = await this.commandHandler.handleMessage(message, tabId);
+            console.log(`[Background:Firefox] ${timestamp} - CommandHandler response:`, response);
+            sendResponse({ status: 'started', ...response });
+          } catch (error) {
+            console.error(`[Background:Firefox] ${timestamp} - CommandHandler error:`, error);
+            sendResponse({
+              status: 'error',
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+          }
         } else {
           console.error(`[Background:Firefox] ${timestamp} - Cannot route to CommandHandler:`, {
             hasHandler: !!this.commandHandler,
             hasTabId: !!tabId
+          });
+          sendResponse({
+            success: false,
+            error: 'CommandHandler not available or tab ID missing'
           });
         }
         return true; // async response
