@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Translation Functionality Fix
+
+#### Fixed
+- **翻訳機能が動作しない問題を修正**
+  - Content ScriptからのREQUEST_TRANSLATIONメッセージに`action`プロパティが欠落していた問題を解決
+  - TranslationRequestMessage型定義に`action: 'requestTranslation'`プロパティを追加
+  - contentScript.ts, selectionHandler.ts, clipboardHandler.tsの3ファイルでメッセージ送信時に`action`を追加
+  - MessageHandlerのactionチェックロジックを強化し、より詳細なエラーメッセージを提供
+  - ページ全体翻訳、選択テキスト翻訳、クリップボード翻訳のすべてが正常に動作
+
+#### Changed
+- **メッセージング仕様の統一**
+  - すべてのメッセージが`type`と`action`の両方を持つように標準化
+  - MessageHandlerに後方互換性を持つフォールバックロジックを追加（`type`から`action`を推測）
+  - 型安全性の向上: TranslationRequestMessageで`action`プロパティが必須に
+
+#### Added
+- **MessageHandlerの改善**
+  - `inferActionFromType()` メソッドを追加し、後方互換性を確保
+  - より詳細なエラーログ出力（message.type、hasActionフラグを含む）
+  - エラーメッセージにメッセージタイプ情報を含めることでデバッグを容易に
+
+#### Technical Details
+- **型定義の変更**:
+  - `src/shared/messages/types.ts`: TranslationRequestMessageに`action: 'requestTranslation'`を追加
+  - 充実したJSDocコメントでメッセージング仕様を文書化
+- **Content Script修正**:
+  - `src/content/contentScript.ts` (118-124行): ページ全体翻訳のメッセージに`action`追加
+  - `src/content/selectionHandler.ts` (90-96行): 選択翻訳のメッセージに`action`追加
+  - `src/content/clipboardHandler.ts` (68-74行): クリップボード翻訳のメッセージに`action`追加
+- **Background Script改善**:
+  - `src/background/messageHandler.ts`: 後方互換性を持つフォールバックロジック実装
+  - エラーメッセージの改善: `Invalid message format: missing action property (type: ${message.type})`
+- **テスト更新**:
+  - `tests/unit/content/contentScript.test.ts`: `action`プロパティの検証を追加
+  - `tests/unit/background/messageHandler.test.ts`: 後方互換性テストケースを追加
+  - `tests/unit/content/selectionHandler.test.ts`: `action`プロパティのアサーション追加
+  - `tests/unit/content/clipboardHandler.test.ts`: `action`プロパティのアサーション追加
+
+---
+
 ### 🐛 Firefox UI/UX Bug Fixes
 
 #### Fixed

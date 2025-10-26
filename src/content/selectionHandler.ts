@@ -89,6 +89,7 @@ export class SelectionHandler {
 
       const response = await this.messageBus.send({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: [selectedText],
           targetLanguage,

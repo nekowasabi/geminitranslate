@@ -34,9 +34,25 @@ export interface BaseMessage {
 
 /**
  * Translation Request Message
+ *
+ * Content ScriptからBackground Scriptへ翻訳リクエストを送信する際に使用。
+ * MessageHandlerは`action`プロパティを使用してハンドラーをルーティングする。
+ *
+ * @example
+ * ```typescript
+ * const message: TranslationRequestMessage = {
+ *   type: MessageType.REQUEST_TRANSLATION,
+ *   action: 'requestTranslation',
+ *   payload: {
+ *     texts: ['Hello', 'World'],
+ *     targetLanguage: 'Japanese',
+ *   },
+ * };
+ * ```
  */
 export interface TranslationRequestMessage extends BaseMessage {
   type: MessageType.REQUEST_TRANSLATION;
+  action: 'requestTranslation';
   payload: {
     texts: string[];
     targetLanguage: string;
@@ -118,6 +134,8 @@ export interface ResetMessage extends BaseMessage {
  */
 export interface TestConnectionMessage extends BaseMessage {
   type: MessageType.TEST_CONNECTION;
+  action: 'testConnection';
+  payload?: any;
 }
 
 /**

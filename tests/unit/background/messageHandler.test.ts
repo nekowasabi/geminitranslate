@@ -265,7 +265,32 @@ describe('MessageHandler', () => {
         expect(result).toBe(true);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'Invalid message format: missing action',
+          error: expect.stringContaining('Invalid message format: missing action'),
+        });
+      });
+
+      it('should infer action from type for backward compatibility', async () => {
+        // Arrange
+        const message = {
+          type: 'requestTranslation',
+          payload: {
+            texts: ['Hello'],
+            targetLanguage: 'Japanese',
+          },
+        };
+
+        const mockTranslations = ['こんにちは'];
+        mockEngine.translateBatch = jest.fn().mockResolvedValue(mockTranslations);
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockEngine.translateBatch).toHaveBeenCalledWith(['Hello'], 'Japanese');
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: true,
+          data: { translations: mockTranslations },
         });
       });
     });

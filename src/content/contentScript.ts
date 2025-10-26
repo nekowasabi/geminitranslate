@@ -117,6 +117,7 @@ export class ContentScript {
       // Request translations from background
       const response = await this.messageBus.send({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts,
           targetLanguage,

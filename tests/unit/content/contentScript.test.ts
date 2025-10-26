@@ -110,6 +110,7 @@ describe('ContentScript', () => {
 
       expect(mockSend).toHaveBeenCalledWith({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: expect.any(Array),
           targetLanguage: 'ja',

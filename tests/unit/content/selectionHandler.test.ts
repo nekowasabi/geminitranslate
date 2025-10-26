@@ -167,6 +167,7 @@ describe('SelectionHandler', () => {
 
       expect(mockSend).toHaveBeenCalledWith({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: ['Hello World'],
           targetLanguage: 'ja',

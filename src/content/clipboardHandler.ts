@@ -67,6 +67,7 @@ export class ClipboardHandler {
       // Request translation
       const response = await this.messageBus.send({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: [clipboardText],
           targetLanguage,

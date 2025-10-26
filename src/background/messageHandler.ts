@@ -114,17 +114,23 @@ export class MessageHandler {
     sendResponse: (response?: HandlerResponse) => void
   ): Promise<boolean> {
     try {
-      // Validate message format
-      if (!message.action) {
+      // Validate message format with fallback support
+      const action = message.action || this.inferActionFromType(message.type);
+
+      if (!action) {
+        logger.error('MessageHandler: Invalid message format', {
+          type: message.type,
+          hasAction: !!message.action,
+          message,
+        });
         sendResponse({
           success: false,
-          error: 'Invalid message format: missing action',
+          error: `Invalid message format: missing action property (type: ${message.type})`,
         });
         return true;
       }
 
       // Route to appropriate handler using action map
-      const action = message.action;
       const payload = message.payload || {};
       const handler = this.actionHandlers.get(action);
 
@@ -146,6 +152,21 @@ export class MessageHandler {
 
     // Return true to indicate async response
     return true;
+  }
+
+  /**
+   * Infer action from message type for backward compatibility
+   * @param type - Message type
+   * @returns Inferred action or undefined
+   */
+  private inferActionFromType(type: string): string | undefined {
+    const typeToActionMap: Record<string, string> = {
+      'requestTranslation': 'requestTranslation',
+      'testConnection': 'testConnection',
+      'clearCache': 'clearCache',
+      'getCacheStats': 'getCacheStats',
+    };
+    return typeToActionMap[type];
   }
 
   /**

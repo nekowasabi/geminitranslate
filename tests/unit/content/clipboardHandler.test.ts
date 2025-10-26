@@ -122,6 +122,7 @@ describe('ClipboardHandler', () => {
       expect(navigator.clipboard.readText).toHaveBeenCalled();
       expect(mockSend).toHaveBeenCalledWith({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: [mockClipboardText],
           targetLanguage: 'ja',
@@ -211,6 +212,7 @@ describe('ClipboardHandler', () => {
 
       expect(mockSend).toHaveBeenCalledWith({
         type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
         payload: {
           texts: [specialText],
           targetLanguage: 'en',
