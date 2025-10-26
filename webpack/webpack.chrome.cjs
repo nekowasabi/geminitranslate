@@ -1,6 +1,7 @@
 const { merge } = require('webpack-merge');
 const common = require('./webpack.common.cjs');
 const CopyPlugin = require('copy-webpack-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
 const path = require('path');
 
 module.exports = merge(common, {
@@ -18,12 +19,22 @@ module.exports = merge(common, {
   },
 
   plugins: [
+    new HtmlWebpackPlugin({
+      template: 'public/popup.html',
+      filename: 'popup.html',
+      chunks: ['popup'],
+      inject: 'body',
+    }),
+    new HtmlWebpackPlugin({
+      template: 'public/options.html',
+      filename: 'options.html',
+      chunks: ['options'],
+      inject: 'body',
+    }),
     new CopyPlugin({
       patterns: [
         { from: 'public/manifest.v3.json', to: 'manifest.json' },
         { from: 'public/offscreen.html', to: 'offscreen.html', noErrorOnMissing: true },
-        { from: 'public/popup.html', to: 'popup.html', noErrorOnMissing: true },
-        { from: 'public/options.html', to: 'options.html', noErrorOnMissing: true },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
       ],
     }),
