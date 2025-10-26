@@ -295,6 +295,71 @@ describe('MessageHandler', () => {
       });
     });
 
+    describe('reloadConfig action', () => {
+      it('should call OpenRouterClient.initialize() and return success', async () => {
+        // Arrange
+        const message = {
+          type: MessageType.RELOAD_CONFIG,
+          action: 'reloadConfig',
+          payload: {},
+        };
+        mockClient.initialize = jest.fn().mockResolvedValue(undefined);
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockClient.initialize).toHaveBeenCalledTimes(1);
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: true,
+          data: { message: 'Configuration reloaded successfully' },
+        });
+      });
+
+      it('should return error when initialize() fails', async () => {
+        // Arrange
+        const message = {
+          type: MessageType.RELOAD_CONFIG,
+          action: 'reloadConfig',
+          payload: {},
+        };
+        const error = new Error('Storage read failed');
+        mockClient.initialize = jest.fn().mockRejectedValue(error);
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockClient.initialize).toHaveBeenCalledTimes(1);
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: false,
+          error: 'Storage read failed',
+        });
+      });
+
+      it('should handle unknown error in initialize()', async () => {
+        // Arrange
+        const message = {
+          type: MessageType.RELOAD_CONFIG,
+          action: 'reloadConfig',
+          payload: {},
+        };
+        mockClient.initialize = jest.fn().mockRejectedValue('Unknown error');
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: false,
+          error: 'Failed to reload config',
+        });
+      });
+    });
+
     describe('Unknown action', () => {
       it('should return error for unknown action', async () => {
         // Arrange

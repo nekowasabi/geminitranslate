@@ -327,6 +327,98 @@ describe('useSettings Hook', () => {
     });
   });
 
+  describe('saveSettings() - Config Reload Notification', () => {
+    it('should send RELOAD_CONFIG message after successful save', async () => {
+      // Arrange
+      mockMessageBus.send.mockResolvedValue({ success: true, data: { message: 'Config reloaded' } });
+      mockStorageManager.set.mockResolvedValue(undefined);
+      mockStorageManager.get.mockResolvedValue({
+        openRouterApiKey: 'test-key',
+        openRouterModel: 'test-model',
+        openRouterProvider: undefined,
+      });
+
+      const { result } = renderHook(() => useSettings());
+
+      // Wait for initial load
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // Set some settings
+      act(() => {
+        result.current.updateSettings('openRouterApiKey', 'test-key');
+        result.current.updateSettings('openRouterModel', 'test-model');
+      });
+
+      // Act
+      await act(async () => {
+        await result.current.saveSettings();
+      });
+
+      // Assert
+      expect(mockStorageManager.set).toHaveBeenCalled();
+      expect(mockMessageBus.send).toHaveBeenCalledWith({
+        type: MessageType.RELOAD_CONFIG,
+        action: 'reloadConfig',
+        payload: {},
+      });
+    });
+
+    it('should continue saving even if config reload fails', async () => {
+      // Arrange
+      mockMessageBus.send.mockResolvedValue({
+        success: false,
+        error: 'Background script not ready',
+      });
+      mockStorageManager.set.mockResolvedValue(undefined);
+      mockStorageManager.get.mockResolvedValue({
+        openRouterApiKey: 'test-key',
+      });
+
+      const { result } = renderHook(() => useSettings());
+
+      // Wait for initial load
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // Act
+      await act(async () => {
+        await result.current.saveSettings();
+      });
+
+      // Assert - 保存自体は成功していること
+      expect(mockStorageManager.set).toHaveBeenCalled();
+      expect(result.current.error).toBeNull();
+    });
+
+    it('should continue saving even if MessageBus.send throws', async () => {
+      // Arrange
+      mockMessageBus.send.mockRejectedValue(new Error('Network error'));
+      mockStorageManager.set.mockResolvedValue(undefined);
+      mockStorageManager.get.mockResolvedValue({
+        openRouterApiKey: 'test-key',
+      });
+
+      const { result } = renderHook(() => useSettings());
+
+      // Wait for initial load
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // Act
+      await act(async () => {
+        await result.current.saveSettings();
+      });
+
+      // Assert - 保存自体は成功していること
+      expect(mockStorageManager.set).toHaveBeenCalled();
+      expect(result.current.error).toBeNull();
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle storage load errors gracefully', async () => {
       mockStorageManager.get.mockRejectedValue(new Error('Load error'));
