@@ -620,19 +620,19 @@
 （実装後に仕様変更などが発生した場合は、ここにProcessを追加する）
 
 ### process100: リファクタリング
-- [ ] コードレビュー実施
-- [ ] ESLint警告解消
-- [ ] 型定義の厳密化
-- [ ] パフォーマンス改善
-- [ ] コメント・ドキュメント追加
+- [x] コードレビュー実施
+- [x] ESLint警告解消
+- [x] 型定義の厳密化
+- [x] パフォーマンス改善
+- [x] コメント・ドキュメント追加
 
 ### process200: ドキュメンテーション
 - [x] `ARCHITECTURE.md` 作成済み
-- [ ] `README.md` 更新
-- [ ] `CHANGELOG.md` 作成
-- [ ] `CONTRIBUTING.md` 作成
-- [ ] API仕様書作成（OpenRouter連携部分）
-- [ ] ユーザーガイド作成
+- [x] `README.md` 更新
+- [x] `CHANGELOG.md` 作成
+- [x] `CONTRIBUTING.md` 作成
+- [x] API仕様書作成（OpenRouter連携部分）
+- [x] ユーザーガイド作成
 
 ---
 
