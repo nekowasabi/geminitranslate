@@ -91,6 +91,24 @@ export function useSettings(): UseSettingsReturn {
       console.log('[useSettings] Saved openRouterApiKey:', saved.openRouterApiKey);
       console.log('[useSettings] Saved openRouterModel:', saved.openRouterModel);
 
+      // Background Scriptに設定変更を通知して再初期化
+      try {
+        console.log('[useSettings] Notifying background to reload config...');
+        const response = await MessageBus.send({
+          type: MessageType.RELOAD_CONFIG,
+          action: 'reloadConfig',
+          payload: {},
+        });
+        console.log('[useSettings] Config reload response:', response);
+
+        if (!response.success) {
+          console.warn('[useSettings] Config reload failed but continuing:', response.error);
+        }
+      } catch (reloadErr) {
+        console.warn('[useSettings] Failed to notify config reload:', reloadErr);
+        // 通知失敗してもエラーにしない（設定保存自体は成功している）
+      }
+
       setError(null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';

@@ -98,6 +98,7 @@ export class MessageHandler {
       ['clearCache', this.handleClearCache.bind(this)],
       ['getCacheStats', this.handleGetCacheStats.bind(this)],
       ['testConnection', this.handleTestConnection.bind(this)],
+      ['reloadConfig', this.handleReloadConfig.bind(this)],
     ]);
   }
 
@@ -359,6 +360,34 @@ export class MessageHandler {
       sendResponse({
         success: false,
         error: error instanceof Error ? error.message : 'Connection test failed',
+      });
+    }
+  }
+
+  /**
+   * Handle config reload request
+   *
+   * Options画面で設定を保存した後に呼ばれ、OpenRouterClientの設定を再初期化する。
+   * これにより、拡張機能を再起動せずに新しい設定を反映できる。
+   */
+  private async handleReloadConfig(
+    payload: any,
+    sendResponse: (response: HandlerResponse) => void
+  ): Promise<void> {
+    try {
+      console.log('[MessageHandler] Reloading OpenRouterClient config...');
+      await this.client.initialize();
+      console.log('[MessageHandler] Config reloaded successfully');
+
+      sendResponse({
+        success: true,
+        data: { message: 'Configuration reloaded successfully' },
+      });
+    } catch (error) {
+      console.error('[MessageHandler] Failed to reload config:', error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to reload config',
       });
     }
   }

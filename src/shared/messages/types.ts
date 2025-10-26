@@ -19,6 +19,7 @@ export enum MessageType {
   // Settings
   SETTINGS_CHANGED = 'settingsChanged',
   API_KEY_UPDATED = 'apiKeyUpdated',
+  RELOAD_CONFIG = 'reloadConfig',
 
   // Connection Test
   TEST_CONNECTION = 'testConnection',
@@ -175,6 +176,28 @@ export interface TestConnectionMessage extends BaseMessage {
 }
 
 /**
+ * Reload Config Message
+ *
+ * Options画面で設定を保存した後、Background Scriptに通知してOpenRouterClientの
+ * 設定を再初期化する際に使用。
+ *
+ * @example
+ * ```typescript
+ * // Settings保存後に送信
+ * const message: ReloadConfigMessage = {
+ *   type: MessageType.RELOAD_CONFIG,
+ *   action: 'reloadConfig',
+ *   payload: {},
+ * };
+ * ```
+ */
+export interface ReloadConfigMessage extends BaseMessage {
+  type: MessageType.RELOAD_CONFIG;
+  action: 'reloadConfig';
+  payload?: Record<string, never>;
+}
+
+/**
  * Union Type for All Messages
  */
 export type Message =
@@ -186,7 +209,8 @@ export type Message =
   | TranslationProgressMessage
   | TranslationErrorMessage
   | ResetMessage
-  | TestConnectionMessage;
+  | TestConnectionMessage
+  | ReloadConfigMessage;
 
 /**
  * Message Listener Callback Type
