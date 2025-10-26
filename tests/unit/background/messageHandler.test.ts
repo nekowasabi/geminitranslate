@@ -180,7 +180,7 @@ describe('MessageHandler', () => {
     });
 
     describe('testConnection action', () => {
-      it('should call OpenRouterClient.testConnection() and return result', async () => {
+      it('should call OpenRouterClient.testConnection() when no payload provided', async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
@@ -190,8 +190,7 @@ describe('MessageHandler', () => {
 
         const mockResult = {
           success: true,
-          model: 'google/gemini-2.0-flash-exp:free',
-          latency: 150,
+          message: 'Connection successful!',
         };
         mockClient.testConnection = jest.fn().mockResolvedValue(mockResult);
 
@@ -201,6 +200,73 @@ describe('MessageHandler', () => {
         // Assert
         expect(result).toBe(true);
         expect(mockClient.testConnection).toHaveBeenCalled();
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: true,
+          data: mockResult,
+        });
+      });
+
+      it('should call OpenRouterClient.testConnectionWithConfig() when payload contains apiKey', async () => {
+        // Arrange
+        const message = {
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'testConnection',
+          payload: {
+            apiKey: 'test-api-key',
+            model: 'google/gemini-2.0-flash-exp:free',
+            provider: 'Google',
+          },
+        };
+
+        const mockResult = {
+          success: true,
+          message: 'Connection successful!',
+        };
+        mockClient.testConnectionWithConfig = jest.fn().mockResolvedValue(mockResult);
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockClient.testConnectionWithConfig).toHaveBeenCalledWith({
+          apiKey: 'test-api-key',
+          model: 'google/gemini-2.0-flash-exp:free',
+          provider: 'Google',
+        });
+        expect(mockSendResponse).toHaveBeenCalledWith({
+          success: true,
+          data: mockResult,
+        });
+      });
+
+      it('should return error when API key is empty in payload', async () => {
+        // Arrange
+        const message = {
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'testConnection',
+          payload: {
+            apiKey: '',
+            model: 'google/gemini-2.0-flash-exp:free',
+          },
+        };
+
+        const mockResult = {
+          success: false,
+          error: 'API key is required. Please configure your OpenRouter API key.',
+        };
+        mockClient.testConnectionWithConfig = jest.fn().mockResolvedValue(mockResult);
+
+        // Act
+        const result = await handler.handle(message, mockSender, mockSendResponse);
+
+        // Assert
+        expect(result).toBe(true);
+        expect(mockClient.testConnectionWithConfig).toHaveBeenCalledWith({
+          apiKey: '',
+          model: 'google/gemini-2.0-flash-exp:free',
+          provider: undefined,
+        });
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
           data: mockResult,
@@ -251,10 +317,10 @@ describe('MessageHandler', () => {
     });
 
     describe('Invalid message format', () => {
-      it('should return error for message without action', async () => {
+      it('should return error for message without action and unknown type', async () => {
         // Arrange
         const message = {
-          type: MessageType.REQUEST_TRANSLATION,
+          type: 'unknownMessageType',
           payload: {},
         };
 
@@ -327,8 +393,8 @@ describe('MessageHandler', () => {
     it('should catch and handle unexpected errors at top level', async () => {
       // Arrange - Create a message that will cause an error at the handler level
       const message = {
-        type: MessageType.REQUEST_TRANSLATION,
-        action: null as any, // This will cause an error at the switch level
+        type: 'unknownType',
+        action: null as any, // This will cause an error at the validation level
         payload: {},
       };
 
@@ -339,7 +405,7 @@ describe('MessageHandler', () => {
       expect(result).toBe(true);
       expect(mockSendResponse).toHaveBeenCalledWith({
         success: false,
-        error: 'Invalid message format: missing action',
+        error: expect.stringContaining('Invalid message format: missing action'),
       });
     });
   });

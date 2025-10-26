@@ -54,42 +54,24 @@ export const ConnectionTest: React.FC<ConnectionTestProps> = ({ onTest, testing 
           onClick={handleTest}
           disabled={testing}
           className={`
-            px-4 py-2 rounded-md font-medium
+            px-4 py-2 rounded-md font-medium transition-all
             ${
               testing
-                ? 'bg-gray-400 cursor-not-allowed'
+                ? 'bg-gray-400 text-gray-700 cursor-not-allowed opacity-50'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
             }
-            disabled:opacity-50 disabled:cursor-not-allowed
             focus:outline-none focus:ring-2 focus:ring-blue-500
           `}
         >
           {testing ? 'Testing...' : 'Test Connection'}
         </button>
 
-        {/* Loading Spinner */}
+        {/* Testing Status */}
         {testing && (
           <div role="status" className="inline-block ml-3">
-            <svg
-              className="animate-spin h-5 w-5 text-blue-600"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
+            <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+              ⟳ 接続テスト中...
+            </span>
           </div>
         )}
       </div>

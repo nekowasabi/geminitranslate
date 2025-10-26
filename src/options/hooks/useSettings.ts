@@ -117,10 +117,14 @@ export function useSettings(): UseSettingsReturn {
       const endTime = Date.now();
       const responseTime = endTime - startTime;
 
-      if (response.success) {
+      // IMPORTANT: Check both outer response.success (MessageHandler success)
+      // and inner response.data.success (actual connection test result)
+      if (response.success && response.data) {
+        // response.data contains the actual ConnectionTestResult from apiClient
         return {
-          success: true,
-          responseTime: response.data?.responseTime || responseTime,
+          success: response.data.success,
+          responseTime: response.data.responseTime || responseTime,
+          error: response.data.error,
         };
       } else {
         return {

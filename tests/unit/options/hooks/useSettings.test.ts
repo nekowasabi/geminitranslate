@@ -213,16 +213,25 @@ describe('useSettings Hook', () => {
   });
 
   describe('testConnection', () => {
-    it('should send test connection message via MessageBus', async () => {
+    it('should send test connection message via MessageBus with current settings', async () => {
       mockMessageBus.send.mockResolvedValue({
         success: true,
-        data: { responseTime: 123 },
+        data: {
+          success: true,
+          message: 'Connection successful!',
+          responseTime: 123,
+        },
       });
 
       const { result } = renderHook(() => useSettings());
 
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // Update API key to test with current UI state
+      act(() => {
+        result.current.updateSettings('openRouterApiKey', 'test-key-123');
       });
 
       let testResult;
@@ -233,12 +242,44 @@ describe('useSettings Hook', () => {
       expect(mockMessageBus.send).toHaveBeenCalledWith({
         type: MessageType.TEST_CONNECTION,
         action: 'testConnection',
+        payload: {
+          apiKey: 'test-key-123',
+          model: 'google/gemini-2.0-flash-exp:free',
+          provider: undefined,
+        },
       });
 
       expect(testResult).toEqual({
         success: true,
         responseTime: 123,
+        error: undefined,
       });
+    });
+
+    it('should return error when API key is empty', async () => {
+      mockMessageBus.send.mockResolvedValue({
+        success: true,
+        data: {
+          success: false,
+          error: 'API key is required. Please configure your OpenRouter API key.',
+        },
+      });
+
+      const { result } = renderHook(() => useSettings());
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      // Settings has empty API key by default
+      let testResult;
+      await act(async () => {
+        testResult = await result.current.testConnection();
+      });
+
+      expect(testResult.success).toBe(false);
+      expect(testResult.error).toBe('API key is required. Please configure your OpenRouter API key.');
+      expect(typeof testResult.responseTime).toBe('number');
     });
 
     it('should set testing state during connection test', async () => {
