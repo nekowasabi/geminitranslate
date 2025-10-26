@@ -1,9 +1,7 @@
 // Popup.js Unit Tests (TDD Red-Green-Refactor)
-import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import { describe, test, expect, beforeEach } from '@jest/globals';
 
 describe('Popup.js - WebExtension Polyfill Integration', () => {
-  let mockDocument;
-
   beforeEach(() => {
     // Reset browser API mocks
     global.browser.storage.local.get.mockClear();
@@ -11,35 +9,6 @@ describe('Popup.js - WebExtension Polyfill Integration', () => {
     global.browser.runtime.sendMessage.mockClear();
     global.browser.tabs.query.mockClear();
     global.browser.tabs.sendMessage.mockClear();
-
-    // Setup mock DOM
-    mockDocument = {
-      getElementById: jest.fn((id) => {
-        // Return mock elements based on ID
-        const mockElement = {
-          id: id,
-          value: '',
-          textContent: '',
-          style: {},
-          classList: {
-            add: jest.fn(),
-            remove: jest.fn(),
-            contains: jest.fn(() => false),
-          },
-          addEventListener: jest.fn(),
-          parentElement: {
-            querySelector: jest.fn(() => ({
-              style: {}
-            }))
-          }
-        };
-        return mockElement;
-      }),
-      querySelector: jest.fn(),
-      body: {
-        appendChild: jest.fn(),
-      }
-    };
   });
 
   describe('Process10-Red: API Key Management', () => {
@@ -50,7 +19,6 @@ describe('Popup.js - WebExtension Polyfill Integration', () => {
       // Simulate user input
       const apiKeyInput = { value: 'test-api-key-123' };
       const modelSelect = { value: 'google/gemini-2.0-flash-exp:free' };
-      const providerInput = { value: '' };
 
       // Mock storage.local.set
       global.browser.storage.local.set.mockResolvedValueOnce(undefined);

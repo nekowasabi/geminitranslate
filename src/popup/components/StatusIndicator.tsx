@@ -12,7 +12,7 @@ export interface StatusIndicatorProps {
   error?: string | null;
 }
 
-export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, progress, error }) => {
+export const StatusIndicator: React.FC<StatusIndicatorProps> = React.memo(({ status, progress, error }) => {
   if (status === 'idle') {
     return null;
   }
@@ -67,4 +67,4 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ status, progre
       )}
     </div>
   );
-};
+});

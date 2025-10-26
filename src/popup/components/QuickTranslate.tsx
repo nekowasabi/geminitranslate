@@ -6,16 +6,16 @@
 import React from 'react';
 import { useTranslation } from '@popup/hooks/useTranslation';
 
-export const QuickTranslate: React.FC = () => {
+export const QuickTranslate: React.FC = React.memo(() => {
   const { translate, reset, status } = useTranslation();
 
-  const handleTranslate = async () => {
+  const handleTranslate = React.useCallback(async () => {
     await translate();
-  };
+  }, [translate]);
 
-  const handleReset = async () => {
+  const handleReset = React.useCallback(async () => {
     await reset();
-  };
+  }, [reset]);
 
   const isTranslating = status === 'translating';
   const isSuccess = status === 'success';
@@ -42,4 +42,4 @@ export const QuickTranslate: React.FC = () => {
       </button>
     </div>
   );
-};
+});

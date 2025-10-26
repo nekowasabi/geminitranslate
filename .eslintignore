@@ -1,0 +1,22 @@
+# Build outputs
+dist-chrome/
+dist-firefox/
+dist/
+build/
+
+# Legacy code (archived, not actively maintained)
+src/legacy/
+popup/popup.js
+
+# Node modules
+node_modules/
+
+# Build scripts (CommonJS, different env)
+*.cjs
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+*.tmp

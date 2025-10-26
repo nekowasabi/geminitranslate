@@ -46,7 +46,7 @@ jest.unstable_mockModule('../openrouter.js', () => ({
       this.provider = provider;
     }
 
-    async translate(content, targetLanguage, _maxTokens) {
+    async translate(content, targetLanguage) {
       // APIキーの検証
       if (this.apiKey === 'invalid-key') {
         throw new Error('無効なAPIキーです');

@@ -3,12 +3,19 @@ export default [
     ignores: [
       'node_modules/**',
       'dist-chrome/**',
+      'dist-firefox/**',
+      'dist/**',
+      'build/**',
       'web-ext-artifacts/**',
       'coverage/**',
       '.serena/**',
       '*.min.js',
       'browser-polyfill.min.js',
-      'popup/browser-polyfill.min.js'
+      'popup/browser-polyfill.min.js',
+      'popup/popup.js',
+      'src/legacy/**',
+      'tmp/**',
+      '*.tmp'
     ]
   },
   {
@@ -66,7 +73,7 @@ export default [
     }
   },
   {
-    files: ['**/*.cjs'],
+    files: ['**/*.cjs', '**/tailwind.config.js'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: {

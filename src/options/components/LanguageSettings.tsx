@@ -16,7 +16,7 @@ export interface LanguageSettingsProps {
   ) => void;
 }
 
-export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
+export const LanguageSettings: React.FC<LanguageSettingsProps> = React.memo(({
   targetLanguage,
   fontSize,
   lineHeight,
@@ -119,4 +119,4 @@ export const LanguageSettings: React.FC<LanguageSettingsProps> = ({
       </div>
     </div>
   );
-};
+});

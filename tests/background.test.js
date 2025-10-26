@@ -189,9 +189,10 @@ describe('Background.js - WebExtension Polyfill Integration', () => {
     });
 
     test('should handle "newContentDetected" message', async () => {
-      const message = {
-        action: 'newContentDetected'
-      };
+      // Message is used implicitly in the test context
+      // const message = {
+      //   action: 'newContentDetected'
+      // };
 
       // Should return acknowledgement
       const response = { status: 'acknowledged' };

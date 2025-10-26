@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
-const path = require('path');
 
 const htmlPath = process.argv[2] || './dist-chrome/popup/popup.html';
 

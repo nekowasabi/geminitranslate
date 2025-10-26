@@ -146,7 +146,151 @@ This extension is compatible with both Firefox and Chromium-based browsers (Chro
 - WebExtension Polyfill (v0.10.0) provides Firefox-style Promise-based APIs in Chrome
 - Automated build script (`npm run build:chrome`) converts Firefox extension to Chrome format
 - All browser API calls (`browser.storage`, `browser.tabs`, `browser.runtime`) work identically across browsers
-- Comprehensive test suite (73 tests) ensures cross-browser functionality
+- Comprehensive test suite (380+ tests) ensures cross-browser functionality
+
+## 🛠️ Development
+
+### Prerequisites
+- Node.js 16+ and npm 8+
+- Firefox or Chrome browser
+
+### Setup
+```bash
+# Clone repository
+git clone https://github.com/doganaylab/geminitranslate.git
+cd geminitranslate
+
+# Install dependencies
+npm install
+
+# Run tests
+npm test
+
+# Run tests with coverage
+npm test -- --coverage
+
+# Lint code
+npm run lint
+
+# Type check
+npx tsc --noEmit
+```
+
+### Build Commands
+```bash
+# Build for Chrome
+npm run build:chrome
+
+# Build for Firefox
+npm run build:firefox
+
+# Build for both browsers
+npm run build:all
+
+# Development mode (watch mode)
+npm run dev:chrome   # Chrome development mode
+npm run dev:firefox  # Firefox development mode
+```
+
+### Project Structure
+```
+geminitranslate/
+├── src/
+│   ├── shared/          # Shared utilities and types
+│   │   ├── adapters/    # BrowserAdapter for cross-browser compatibility
+│   │   ├── storage/     # StorageManager for type-safe storage
+│   │   ├── messages/    # MessageBus for type-safe messaging
+│   │   ├── utils/       # Utilities (logger, retry, LRU cache, etc.)
+│   │   └── constants/   # Constants (languages, models, config)
+│   ├── background/      # Background service worker
+│   │   ├── translationEngine.ts  # Core translation engine with 3-tier cache
+│   │   ├── apiClient.ts          # OpenRouter API client
+│   │   └── messageHandler.ts     # Message handling logic
+│   ├── content/         # Content script (DOM manipulation)
+│   │   ├── domManipulator.ts     # DOM traversal and translation
+│   │   ├── selectionHandler.ts   # Selection translation
+│   │   ├── clipboardHandler.ts   # Clipboard translation
+│   │   └── floatingUI.ts         # Floating UI for selection translation
+│   ├── popup/           # Popup UI (React)
+│   │   ├── components/  # React components
+│   │   └── hooks/       # Custom hooks (useTranslation, etc.)
+│   └── options/         # Options UI (React)
+│       ├── components/  # React components
+│       └── hooks/       # Custom hooks (useSettings)
+├── tests/               # Test files
+├── __tests__/           # Integration tests
+└── dist-chrome/         # Chrome build output
+└── dist-firefox/        # Firefox build output
+```
+
+### Architecture
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
+
+## 🐛 Troubleshooting
+
+### Translation Not Working
+1. **Check API Key**
+   - Open Options UI (click extension icon → Options)
+   - Verify API key is correct
+   - Click "Test Connection" to verify connectivity
+
+2. **Check Console for Errors**
+   - Open DevTools (F12)
+   - Check Console tab for error messages
+   - Common errors:
+     - `401 Unauthorized`: Invalid API key
+     - `429 Too Many Requests`: Rate limit exceeded
+     - `Network error`: Internet connection issue
+
+3. **Check Browser Version**
+   - Chrome: Version 88+ required (Manifest V3 support)
+   - Firefox: Version 91+ recommended
+
+### Service Worker Issues (Chrome)
+If the service worker stops responding:
+1. Open `chrome://serviceworker-internals/`
+2. Find "DoganayLab API Translate"
+3. Click "Stop" then reload extension
+4. The keep-alive mechanism should restart automatically
+
+### Cache Issues
+If translations are outdated or incorrect:
+1. Open Options UI
+2. Scroll to "Cache Management"
+3. Click "Clear Cache"
+4. Reload the page and try again
+
+### Performance Issues
+If translation is slow:
+1. **Reduce Batch Size**
+   - Larger batches = faster but more memory
+   - Smaller batches = slower but more stable
+   - Default: 50 texts per batch
+
+2. **Check Network**
+   - Slow internet = slow translation
+   - Use "Test Connection" to check latency
+
+3. **Try Different Model**
+   - Some models are faster than others
+   - Gemini 2.0 Flash is fastest free model
+
+### Dark Mode Not Working
+1. Check browser theme settings
+2. Reload extension
+3. If still not working, check `prefers-color-scheme` in DevTools
+
+### Known Limitations
+- **Large Pages**: Pages with 10,000+ text nodes may take several minutes
+- **Dynamic Content**: Some SPA frameworks may interfere with translation
+- **Special Characters**: RTL languages (Arabic, Hebrew) may have layout issues
+- **Iframes**: Content inside iframes is not translated
+
+## 📝 Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+## 📄 License
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
