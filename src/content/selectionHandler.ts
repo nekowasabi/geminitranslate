@@ -22,11 +22,43 @@ export class SelectionHandler {
   private enabled = false;
   private mouseUpHandler: ((e: MouseEvent) => void) | null = null;
   private isTranslating = false;
+  private selectionFontSizeCache: number | null = null;
 
   constructor() {
     this.messageBus = new MessageBus();
     this.iconBadge = new IconBadge();
     this.storageManager = new StorageManager();
+    this.setupStorageListener();
+  }
+
+  /**
+   * Setup storage change listener to invalidate cache
+   */
+  private setupStorageListener(): void {
+    if (typeof browser !== 'undefined' && browser.storage && browser.storage.onChanged) {
+      browser.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === 'local' && changes.selectionFontSize) {
+          this.selectionFontSizeCache = null;
+          logger.log('Selection font size cache invalidated');
+        }
+      });
+    }
+  }
+
+  /**
+   * Get selection font size from cache or storage
+   * @returns Font size in pixels
+   */
+  private async getSelectionFontSize(): Promise<number> {
+    if (this.selectionFontSizeCache !== null) {
+      return this.selectionFontSizeCache;
+    }
+
+    const storageData = await this.storageManager.get(['selectionFontSize']);
+    const fontSize = storageData.selectionFontSize ?? 14;
+    this.selectionFontSizeCache = fontSize;
+
+    return fontSize;
   }
 
   /**
@@ -189,7 +221,7 @@ export class SelectionHandler {
 
                 // Show FloatingUI with translation result
                 if (translatedText && selectedText) {
-                  this.iconBadge.showTranslationResult(
+                  await this.iconBadge.showTranslationResult(
                     selectedText,
                     translatedText,
                     targetLanguage,

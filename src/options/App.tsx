@@ -206,6 +206,7 @@ const App: React.FC = () => {
               >
                 <AppearanceSettings
                   darkMode={settings.darkMode ?? false}
+                  selectionFontSize={settings.selectionFontSize ?? 14}
                   onChange={(key, value) => {
                     updateSettings(key as any, value as any);
                   }}

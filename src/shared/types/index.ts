@@ -25,6 +25,7 @@ export interface StorageData {
   darkMode?: boolean;
   schemaVersion?: number;
   migrationNoticeShown?: boolean;
+  selectionFontSize?: number;
 }
 
 export type StorageKeys = keyof StorageData;
@@ -37,4 +38,5 @@ export const DEFAULT_STORAGE: StorageData = {
   darkMode: false,
   openRouterModel: '',
   schemaVersion: 3,
+  selectionFontSize: 14,
 };

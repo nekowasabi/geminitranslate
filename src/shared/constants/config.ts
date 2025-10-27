@@ -122,6 +122,21 @@ export const UI_CONFIG = {
    * Floating UI positioning offset (pixels)
    */
   FLOATING_UI_OFFSET: 10,
+
+  /**
+   * Default selection translation font size (pixels)
+   */
+  DEFAULT_SELECTION_FONT_SIZE: 14,
+
+  /**
+   * Minimum selection translation font size (pixels)
+   */
+  MIN_SELECTION_FONT_SIZE: 10,
+
+  /**
+   * Maximum selection translation font size (pixels)
+   */
+  MAX_SELECTION_FONT_SIZE: 24,
 } as const;
 
 /**
@@ -136,6 +151,7 @@ export const STORAGE_KEYS = {
   // User Preferences
   TARGET_LANGUAGE: 'targetLanguage',
   FONT_SIZE: 'fontSize',
+  SELECTION_FONT_SIZE: 'selectionFontSize',
   AUTO_TRANSLATE: 'autoTranslate',
   DARK_MODE: 'darkMode',
 

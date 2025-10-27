@@ -12,11 +12,17 @@
 import { logger } from '@shared/utils';
 import { UI_CONFIG } from '@shared/constants';
 import { Position } from './floatingUI';
+import StorageManager from '@shared/storage/StorageManager';
 
 export class IconBadge {
   private badgeElement: HTMLElement | null = null;
   private clickHandler: (() => void) | null = null;
   private floatingResultElement: HTMLElement | null = null;
+  private storageManager: StorageManager;
+
+  constructor() {
+    this.storageManager = new StorageManager();
+  }
 
   /**
    * Show icon badge at specified position
@@ -64,17 +70,17 @@ export class IconBadge {
    * @param targetLanguage - Target language name
    * @param position - Position to display FloatingUI
    */
-  showTranslationResult(
+  async showTranslationResult(
     originalText: string,
     translatedText: string,
     targetLanguage: string,
     position: Position
-  ): void {
+  ): Promise<void> {
     // Hide existing FloatingUI
     this.hideFloatingResult();
 
     // Create FloatingUI element
-    this.floatingResultElement = this.createFloatingResultElement(
+    this.floatingResultElement = await this.createFloatingResultElement(
       originalText,
       translatedText,
       targetLanguage
@@ -214,13 +220,18 @@ export class IconBadge {
    * @param targetLanguage - Target language name
    * @returns HTMLElement
    */
-  private createFloatingResultElement(
+  private async createFloatingResultElement(
     originalText: string,
     translatedText: string,
     targetLanguage: string
-  ): HTMLElement {
+  ): Promise<HTMLElement> {
     const container = document.createElement('div');
     container.className = 'gemini-translate-floating-result';
+
+    // Get selection font size from storage and set CSS variable
+    const storageData = await this.storageManager.get(['selectionFontSize']);
+    const fontSize = storageData.selectionFontSize ?? UI_CONFIG.DEFAULT_SELECTION_FONT_SIZE;
+    container.style.setProperty('--selection-font-size', `${fontSize}px`);
 
     // Close button
     const closeButton = document.createElement('button');

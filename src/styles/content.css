@@ -124,6 +124,7 @@
   background: #eff6ff;
   border-color: #bfdbfe;
   color: #1e40af;
+  font-size: var(--selection-font-size, 14px);
 }
 
 /* Actions */

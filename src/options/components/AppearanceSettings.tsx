@@ -7,11 +7,16 @@ import React from 'react';
 
 export interface AppearanceSettingsProps {
   darkMode: boolean;
-  onChange: (key: 'darkMode', value: boolean) => void;
+  selectionFontSize: number;
+  onChange: <K extends 'darkMode' | 'selectionFontSize'>(
+    key: K,
+    value: K extends 'darkMode' ? boolean : number
+  ) => void;
 }
 
 export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
   darkMode,
+  selectionFontSize,
   onChange,
 }) => {
   return (
@@ -42,6 +47,38 @@ export const AppearanceSettings: React.FC<AppearanceSettingsProps> = ({
                        dark:border-gray-600 peer-checked:bg-blue-600"
           ></div>
         </label>
+      </div>
+
+      {/* Selection Translation Font Size Setting */}
+      <div>
+        <label
+          htmlFor="selection-font-size"
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
+          Selection Translation Font Size: {selectionFontSize}px
+        </label>
+        <input
+          id="selection-font-size"
+          type="range"
+          min="10"
+          max="24"
+          step="2"
+          value={selectionFontSize}
+          onChange={(e) => onChange('selectionFontSize', Number(e.target.value))}
+          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+        />
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <span>10px</span>
+          <span>24px</span>
+        </div>
+
+        {/* Selection Font Size Preview */}
+        <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-md">
+          <p className="text-gray-600 dark:text-gray-400 text-xs mb-1">Preview:</p>
+          <p style={{ fontSize: `${selectionFontSize}px` }} className="text-gray-800 dark:text-gray-200">
+            This is how the selected text translation will appear
+          </p>
+        </div>
       </div>
 
       {/* Theme Preview */}

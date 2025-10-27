@@ -20,20 +20,7 @@ jest.mock('@options/components/ApiSettings', () => ({
   ),
 }));
 
-jest.mock('@options/components/ModelSelector', () => ({
-  ModelSelector: ({ selectedModel, onChange }: any) => (
-    <div data-testid="model-selector">
-      <select
-        data-testid="model-select"
-        value={selectedModel}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0</option>
-        <option value="openai/gpt-4-turbo">GPT-4</option>
-      </select>
-    </div>
-  ),
-}));
+// ModelSelector component no longer exists - removed mock
 
 jest.mock('@options/components/LanguageSettings', () => ({
   LanguageSettings: ({ targetLanguage, fontSize, onChange }: any) => (
@@ -57,13 +44,22 @@ jest.mock('@options/components/LanguageSettings', () => ({
 }));
 
 jest.mock('@options/components/AppearanceSettings', () => ({
-  AppearanceSettings: ({ darkMode, onChange }: any) => (
+  AppearanceSettings: ({ darkMode, selectionFontSize, onChange }: any) => (
     <div data-testid="appearance-settings">
       <input
         data-testid="dark-mode-toggle"
         type="checkbox"
         checked={darkMode}
         onChange={(e) => onChange('darkMode', e.target.checked)}
+      />
+      <input
+        data-testid="selection-font-size-input"
+        type="range"
+        min="10"
+        max="24"
+        step="2"
+        value={selectionFontSize}
+        onChange={(e) => onChange('selectionFontSize', Number(e.target.value))}
       />
     </div>
   ),
@@ -91,6 +87,8 @@ let mockUseSettings = jest.fn(() => ({
     targetLanguage: 'en',
     fontSize: 16,
     lineHeight: 1.5,
+    selectionFontSize: 14,
+    darkMode: false,
   },
   loading: false,
   saving: false,
@@ -138,7 +136,6 @@ describe('Options App Component', () => {
       render(<App />);
 
       expect(screen.getByTestId('api-settings')).toBeInTheDocument();
-      expect(screen.getByTestId('model-selector')).toBeInTheDocument();
       expect(screen.getByTestId('connection-test')).toBeInTheDocument();
     });
 
@@ -184,16 +181,16 @@ describe('Options App Component', () => {
       expect(mockUpdateSettings).toHaveBeenCalledWith('openRouterApiKey', 'new-key');
     });
 
-    it('should call updateSettings when model changes', () => {
+    it('should call updateSettings when selection font size changes', () => {
       render(<App />);
 
-      const modelSelect = screen.getByTestId('model-select');
-      fireEvent.change(modelSelect, { target: { value: 'openai/gpt-4-turbo' } });
+      const appearanceTab = screen.getByRole('tab', { name: /appearance/i });
+      fireEvent.click(appearanceTab);
 
-      expect(mockUpdateSettings).toHaveBeenCalledWith(
-        'openRouterModel',
-        'openai/gpt-4-turbo'
-      );
+      const selectionFontSizeInput = screen.getByTestId('selection-font-size-input');
+      fireEvent.change(selectionFontSizeInput, { target: { value: '18' } });
+
+      expect(mockUpdateSettings).toHaveBeenCalledWith('selectionFontSize', 18);
     });
 
     it('should call saveSettings when save button is clicked', async () => {
