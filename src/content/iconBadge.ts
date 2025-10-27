@@ -76,6 +76,9 @@ export class IconBadge {
     targetLanguage: string,
     position: Position
   ): Promise<void> {
+    // Hide badge before showing translation result
+    this.hide();
+
     // Hide existing FloatingUI
     this.hideFloatingResult();
 
@@ -209,8 +212,8 @@ export class IconBadge {
       this.clickHandler();
     }
 
-    // Hide badge after click
-    this.hide();
+    // NOTE: hide() is now called by showTranslationResult() or error handlers
+    // to ensure proper timing with async operations
   }
 
   /**

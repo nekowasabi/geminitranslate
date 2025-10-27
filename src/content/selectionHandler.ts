@@ -212,6 +212,7 @@ export class SelectionHandler {
 
                 if (!targetLanguage) {
                   logger.warn('No target language configured');
+                  this.iconBadge.hide();
                   return;
                 }
 
@@ -230,9 +231,13 @@ export class SelectionHandler {
                       y: rect.bottom,
                     }
                   );
+                } else {
+                  // Translation failed - hide badge
+                  this.iconBadge.hide();
                 }
               } catch (error) {
                 logger.error('Failed to handle IconBadge click:', error);
+                this.iconBadge.hide();
               }
             }
           );
