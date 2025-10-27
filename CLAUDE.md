@@ -58,6 +58,58 @@ npm run build
 ## API Integration
 Uses Gemini 2.0 Flash model with batch processing for performance optimization. Text filtering excludes script/style elements and invisible content.
 
+### Translation Text Separator
+The API client uses a special separator `---NEXT-TEXT---` to distinguish multiple texts in translation requests. This approach enables proper handling of multi-paragraph texts while maintaining batch translation functionality.
+
+**Implementation Details:**
+- **Separator constant**: `TEXT_SEPARATOR = '---NEXT-TEXT---'` (defined in `OpenRouterClient`)
+- **buildPrompt()**: Joins multiple texts using `\n---NEXT-TEXT---\n` separator
+- **parseResponse()**: Splits response by `---NEXT-TEXT---` separator
+- **Purpose**: Prevents confusion between multi-paragraph single texts and multiple separate texts
+
+**Example Flow:**
+```typescript
+// Input: Single text with multiple paragraphs
+texts = ["Paragraph 1\n\nParagraph 2\n\nParagraph 3"]
+
+// Prompt sent to LLM:
+"Translate the following texts to Japanese.
+Texts are separated by \"---NEXT-TEXT---\".
+Return translations in the same format, separated by \"---NEXT-TEXT---\":
+
+Paragraph 1
+
+Paragraph 2
+
+Paragraph 3"
+
+// Expected LLM response:
+"段落1\n\n段落2\n\n段落3"
+
+// Parsed result:
+["段落1\n\n段落2\n\n段落3"]  // Single element with all paragraphs preserved
+```
+
+**Multi-text Example:**
+```typescript
+// Input: Multiple separate texts
+texts = ["Hello", "Goodbye"]
+
+// Prompt:
+"...
+Hello
+---NEXT-TEXT---
+Goodbye"
+
+// Expected LLM response:
+"こんにちは---NEXT-TEXT---さようなら"
+
+// Parsed result:
+["こんにちは", "さようなら"]  // Two separate elements
+```
+
+**Note**: This separator approach requires the LLM to follow instructions correctly. If the LLM returns responses without the separator, the parsing may not work as expected (future improvement: add fallback mechanism).
+
 ## Messaging Architecture
 
 ### Message Format Standard

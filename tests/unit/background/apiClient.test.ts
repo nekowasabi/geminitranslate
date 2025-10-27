@@ -152,7 +152,7 @@ describe('OpenRouterClient', () => {
       const mockResponse = {
         ok: true,
         json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'こんにちは\nさようなら' } }],
+          choices: [{ message: { content: 'こんにちは---NEXT-TEXT---さようなら' } }],
         }),
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
@@ -258,7 +258,7 @@ describe('OpenRouterClient', () => {
       const mockResponse = {
         ok: true,
         json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'Bonjour\nAu revoir' } }],
+          choices: [{ message: { content: 'Bonjour---NEXT-TEXT---Au revoir' } }],
         }),
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
@@ -272,6 +272,67 @@ describe('OpenRouterClient', () => {
       expect(prompt).toContain('Hello');
       expect(prompt).toContain('Goodbye');
     });
+
+    it('should use separator for multi-paragraph texts', async () => {
+      await client.initialize();
+
+      const multiParagraphText = 'First paragraph\n\nSecond paragraph\n\nThird paragraph';
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: '最初の段落\n\n2番目の段落\n\n3番目の段落',
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      await client.translate([multiParagraphText], 'Japanese');
+
+      const requestBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+      const prompt = requestBody.messages[0].content;
+
+      // Prompt should contain separator instruction
+      expect(prompt).toContain('---NEXT-TEXT---');
+      expect(prompt).toContain('separated by "---NEXT-TEXT---"');
+      // Should contain the multi-paragraph text
+      expect(prompt).toContain('First paragraph');
+      expect(prompt).toContain('Second paragraph');
+      expect(prompt).toContain('Third paragraph');
+    });
+
+    it('should separate multiple texts with separator', async () => {
+      await client.initialize();
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: 'こんにちは---NEXT-TEXT---さようなら',
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      await client.translate(['Hello', 'Goodbye'], 'Japanese');
+
+      const requestBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+      const prompt = requestBody.messages[0].content;
+
+      // Should use separator instead of newline
+      expect(prompt).toContain('---NEXT-TEXT---');
+      expect(prompt).toContain('Hello');
+      expect(prompt).toContain('Goodbye');
+    });
   });
 
   describe('parseResponse', () => {
@@ -279,11 +340,17 @@ describe('OpenRouterClient', () => {
       await client.initialize();
     });
 
-    it('should parse newline-separated translations', async () => {
+    it('should parse separator-separated translations', async () => {
       const mockResponse = {
         ok: true,
         json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: '  こんにちは  \n  さようなら  \n  ありがとう  ' } }],
+          choices: [
+            {
+              message: {
+                content: '  こんにちは  ---NEXT-TEXT---  さようなら  ---NEXT-TEXT---  ありがとう  ',
+              },
+            },
+          ],
         }),
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
@@ -293,17 +360,50 @@ describe('OpenRouterClient', () => {
       expect(result).toEqual(['こんにちは', 'さようなら', 'ありがとう']);
     });
 
-    it('should handle empty lines in response', async () => {
+    it('should handle multi-paragraph text with separator', async () => {
+      const multiParagraphText = 'First paragraph\n\nSecond paragraph\n\nThird paragraph';
+
       const mockResponse = {
         ok: true,
         json: jest.fn().mockResolvedValue({
-          choices: [{ message: { content: 'こんにちは\n\nさようなら' } }],
+          choices: [
+            {
+              message: {
+                content: '最初の段落\n\n2番目の段落\n\n3番目の段落',
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate([multiParagraphText], 'Japanese');
+
+      // Should return single element with all paragraphs preserved
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain('最初の段落');
+      expect(result[0]).toContain('2番目の段落');
+      expect(result[0]).toContain('3番目の段落');
+    });
+
+    it('should handle empty separators in response', async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: 'こんにちは---NEXT-TEXT------NEXT-TEXT---さようなら',
+              },
+            },
+          ],
         }),
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
 
       const result = await client.translate(['Hello', 'Goodbye'], 'Japanese');
 
+      // Empty strings between separators should be filtered out
       expect(result).toEqual(['こんにちは', 'さようなら']);
     });
 

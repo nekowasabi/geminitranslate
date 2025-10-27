@@ -100,6 +100,13 @@ export class OpenRouterClient {
   private readonly API_ENDPOINT = API_CONFIG.ENDPOINT;
 
   /**
+   * Separator used to distinguish multiple texts in translation requests
+   * This allows proper handling of multi-paragraph texts while maintaining
+   * batch translation functionality
+   */
+  private readonly TEXT_SEPARATOR = '---NEXT-TEXT---';
+
+  /**
    * Current configuration
    */
   private config: OpenRouterConfig | null = null;
@@ -300,7 +307,15 @@ export class OpenRouterClient {
     // Convert language code to English language name for better LLM understanding
     // e.g., 'ja' → 'Japanese', 'tr' → 'Turkish', 'en' → 'English'
     const languageName = getLanguageName(targetLanguage, false);
-    return `Translate the following texts to ${languageName}. Return only the translations, one per line, without numbering:\n\n${texts.join('\n')}`;
+
+    // Use special separator to distinguish multi-paragraph texts
+    const combined = texts.join(`\n${this.TEXT_SEPARATOR}\n`);
+
+    return `Translate the following texts to ${languageName}.
+Texts are separated by "${this.TEXT_SEPARATOR}".
+Return translations in the same format, separated by "${this.TEXT_SEPARATOR}":
+
+${combined}`;
   }
 
   /**
@@ -311,17 +326,17 @@ export class OpenRouterClient {
    * @returns Array of translations
    */
   private parseResponse(content: string, expectedCount: number): string[] {
-    const lines = content
+    const translations = content
       .trim()
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line);
+      .split(this.TEXT_SEPARATOR)
+      .map((text) => text.trim())
+      .filter((text) => text);
 
-    if (lines.length !== expectedCount) {
-      logger.warn(`Expected ${expectedCount} translations, got ${lines.length}`);
+    if (translations.length !== expectedCount) {
+      logger.warn(`Expected ${expectedCount} translations, got ${translations.length}`);
     }
 
-    return lines;
+    return translations;
   }
 
   /**
