@@ -155,14 +155,15 @@ export class ContentScript {
   }
 
   /**
-   * Translate entire page
+   * Translate entire page with viewport-priority translation
    *
-   * Extracts all translatable text nodes from the DOM, sends them to the background
-   * script for translation, and applies the translated text back to the page.
+   * Implements a two-phase translation strategy:
+   * - **Phase 1**: Translates viewport nodes first using semi-parallel processing
+   * - **Phase 2**: Translates out-of-viewport nodes using parallel processing
    *
    * **Progress Notification Flow**:
-   * 1. Shows initial progress notification (0%)
-   * 2. Background script sends TRANSLATION_PROGRESS messages during translation
+   * 1. Shows Phase 1 progress notification (viewport translation)
+   * 2. Shows Phase 2 progress notification (full-page translation)
    * 3. Shows completion notification (auto-hides after 3s) or error notification
    *
    * @param targetLanguage - Target language for translation (e.g., 'Japanese', 'French')
@@ -189,65 +190,106 @@ export class ContentScript {
         return;
       }
 
-      // Show progress notification
-      this.progressNotification.show(this.extractedNodes.length);
+      // Separate viewport and out-of-viewport nodes
+      console.log(`[Content:ContentScript] ${timestamp} - Detecting viewport nodes...`);
+      const { viewport, outOfViewport } = this.domManipulator.detectViewportNodes(this.extractedNodes);
 
-      // Extract texts
-      const texts = this.extractedNodes.map(node => node.text);
-
-      console.log(`[Content:ContentScript] ${timestamp} - Prepared texts for translation:`, {
-        count: texts.length,
-        firstText: texts[0]?.substring(0, 50)
+      console.log(`[Content:ContentScript] ${timestamp} - Viewport detection completed:`, {
+        viewportCount: viewport.length,
+        outOfViewportCount: outOfViewport.length,
       });
 
-      logger.log(`Extracted ${texts.length} text nodes`);
+      // Phase 1: Translate viewport nodes first
+      if (viewport.length > 0) {
+        console.log(`[Content:ContentScript] ${timestamp} - Starting Phase 1: Viewport translation`);
+        this.progressNotification.showPhase(1, viewport.length);
 
-      // Request translations from background
-      console.log(`[Content:ContentScript] ${timestamp} - Sending REQUEST_TRANSLATION to background:`, {
-        type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
-        textsCount: texts.length,
-        targetLanguage
-      });
+        const viewportTexts = viewport.map(node => node.text);
 
-      const response = await this.messageBus.send({
-        type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
-        payload: {
-          texts,
+        console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`, {
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          textsCount: viewportTexts.length,
           targetLanguage,
-        },
-      });
-
-      console.log(`[Content:ContentScript] ${timestamp} - Received response from background:`, {
-        response,
-        success: response?.success,
-        hasData: !!response?.data,
-        hasTranslations: !!response?.data?.translations
-      });
-
-      if (response?.success && response?.data?.translations) {
-        const translations = response.data.translations;
-
-        console.log(`[Content:ContentScript] ${timestamp} - Applying translations to DOM:`, {
-          translationsCount: translations.length,
-          firstTranslation: translations[0]?.substring(0, 50)
+          semiParallel: true,
+          priorityCount: 3,
         });
 
-        // Apply translations
-        this.domManipulator.applyTranslations(this.extractedNodes, translations);
+        const response1 = await this.messageBus.send({
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          payload: {
+            texts: viewportTexts,
+            targetLanguage,
+            semiParallel: true,
+            priorityCount: 3,
+          },
+        });
 
-        this.isTranslated = true;
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 response received:`, {
+          success: response1?.success,
+          hasTranslations: !!response1?.data?.translations,
+        });
 
-        // Show completion notification
-        this.progressNotification.complete();
-
-        console.log(`[Content:ContentScript] ${timestamp} - Page translation completed successfully`);
-        logger.log('Page translation completed');
+        if (response1?.success && response1?.data?.translations) {
+          console.log(`[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`);
+          this.domManipulator.applyTranslations(viewport, response1.data.translations);
+          this.progressNotification.completePhase(1);
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 completed`);
+        } else {
+          console.warn(`[Content:ContentScript] ${timestamp} - Phase 1 failed:`, response1);
+        }
       } else {
-        console.warn(`[Content:ContentScript] ${timestamp} - No translations received in response:`, response);
-        logger.warn('No translations received');
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`);
       }
+
+      // Phase 2: Translate out-of-viewport nodes
+      if (outOfViewport.length > 0) {
+        console.log(`[Content:ContentScript] ${timestamp} - Starting Phase 2: Full-page translation`);
+        this.progressNotification.showPhase(2, outOfViewport.length);
+
+        const outOfViewportTexts = outOfViewport.map(node => node.text);
+
+        console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 2 REQUEST_TRANSLATION:`, {
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          textsCount: outOfViewportTexts.length,
+          targetLanguage,
+          semiParallel: false,
+        });
+
+        const response2 = await this.messageBus.send({
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          payload: {
+            texts: outOfViewportTexts,
+            targetLanguage,
+            semiParallel: false,
+          },
+        });
+
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 2 response received:`, {
+          success: response2?.success,
+          hasTranslations: !!response2?.data?.translations,
+        });
+
+        if (response2?.success && response2?.data?.translations) {
+          console.log(`[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`);
+          this.domManipulator.applyTranslations(outOfViewport, response2.data.translations);
+          this.progressNotification.completePhase(2);
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 2 completed`);
+        } else {
+          console.warn(`[Content:ContentScript] ${timestamp} - Phase 2 failed:`, response2);
+        }
+      } else {
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 2 skipped: No out-of-viewport nodes`);
+      }
+
+      this.isTranslated = true;
+      this.progressNotification.complete();
+
+      console.log(`[Content:ContentScript] ${timestamp} - Page translation completed successfully`);
+      logger.log('Page translation completed');
     } catch (error) {
       console.error(`[Content:ContentScript] ${timestamp} - Failed to translate page:`, {
         error,

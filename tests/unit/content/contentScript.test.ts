@@ -30,6 +30,9 @@ const mockProgressNotification = {
   complete: jest.fn(),
   error: jest.fn(),
   remove: jest.fn(),
+  showPhase: jest.fn(),
+  updatePhase: jest.fn(),
+  completePhase: jest.fn(),
 };
 jest.mock('@content/progressNotification', () => ({
   ProgressNotification: jest.fn(() => mockProgressNotification),
@@ -319,6 +322,332 @@ describe('ContentScript', () => {
         success: false,
         error: expect.any(String),
       });
+    });
+  });
+
+  // Process2: Viewport-priority translation tests
+  describe('Viewport-priority translation (Process2)', () => {
+    let mockDetectViewportNodes: jest.Mock;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      // Mock DOMManipulator.detectViewportNodes()
+      mockDetectViewportNodes = jest.fn(() => ({
+        viewport: [
+          { element: testContainer.querySelector('p'), text: 'Hello World' },
+        ],
+        outOfViewport: [
+          { element: testContainer.querySelector('span'), text: 'Test content' },
+        ],
+      }));
+
+      // Apply mock to contentScript's domManipulator instance
+      contentScript['domManipulator'].detectViewportNodes = mockDetectViewportNodes;
+    });
+
+    it('should separate viewport and out-of-viewport nodes', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['こんにちは世界'],
+        },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // detectViewportNodes() should be called
+      expect(mockDetectViewportNodes).toHaveBeenCalled();
+    });
+
+    it('should translate viewport nodes first with semiParallel=true (Phase 1)', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['こんにちは世界'],
+        },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // Phase 1 should use semiParallel: true
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          payload: expect.objectContaining({
+            texts: ['Hello World'],
+            targetLanguage: 'ja',
+            semiParallel: true,
+            priorityCount: 3,
+          }),
+        })
+      );
+    });
+
+    it('should translate out-of-viewport nodes after viewport with semiParallel=false (Phase 2)', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['こんにちは世界'],
+          },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['テストコンテンツ'],
+          },
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // Phase 2 should use semiParallel: false
+      expect(mockSend).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          type: MessageType.REQUEST_TRANSLATION,
+          action: 'requestTranslation',
+          payload: expect.objectContaining({
+            texts: ['Test content'],
+            targetLanguage: 'ja',
+            semiParallel: false,
+          }),
+        })
+      );
+    });
+
+    it('should call showPhase(1) before Phase 1 translation', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['こんにちは世界'],
+        },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // showPhase(1) should be called with viewport node count
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('should call completePhase(1) after Phase 1 completes', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['こんにちは世界'],
+          },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['テストコンテンツ'],
+          },
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // completePhase(1) should be called
+      expect(mockProgressNotification.completePhase).toHaveBeenCalledWith(1);
+    });
+
+    it('should call showPhase(2) before Phase 2 translation', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['こんにちは世界'],
+          },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['テストコンテンツ'],
+          },
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // showPhase(2) should be called with out-of-viewport node count
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(2, 1);
+    });
+
+    it('should call completePhase(2) after Phase 2 completes', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['こんにちは世界'],
+          },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ['テストコンテンツ'],
+          },
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // completePhase(2) should be called
+      expect(mockProgressNotification.completePhase).toHaveBeenCalledWith(2);
+    });
+
+    it('should skip Phase 2 when outOfViewport is empty', async () => {
+      // Override mock for this test
+      mockDetectViewportNodes.mockReturnValueOnce({
+        viewport: [
+          { element: testContainer.querySelector('p'), text: 'Hello World' },
+        ],
+        outOfViewport: [], // No out-of-viewport nodes
+      });
+
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['こんにちは世界'],
+        },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // Only Phase 1 should be executed
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledTimes(1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 1);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip Phase 1 when viewport is empty', async () => {
+      // Override mock for this test
+      mockDetectViewportNodes.mockReturnValueOnce({
+        viewport: [], // No viewport nodes
+        outOfViewport: [
+          { element: testContainer.querySelector('span'), text: 'Test content' },
+        ],
+      });
+
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['テストコンテンツ'],
+        },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: 'ja' },
+        },
+        {},
+        sendResponse
+      );
+
+      // Only Phase 2 should be executed
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledTimes(1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(2, 1);
+      expect(mockSend).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -220,9 +220,9 @@ DOM更新（ページ全体完了）
 **@target**: `src/content/domManipulator.ts`
 **@ref**: `src/content/floatingUI.ts`（getBoundingClientRect使用例）
 
-- [ ] detectViewportNodes(nodes: TextNode[]): { viewport: TextNode[], outOfViewport: TextNode[] }メソッド追加
-- [ ] getBoundingClientRect()でビューポート内判定（window.innerHeight, window.innerWidthと比較）
-- [ ] extractTextNodes()にビューポート判定オプション追加（withViewportDetection: boolean）
+- [x] detectViewportNodes(nodes: TextNode[]): { viewport: TextNode[], outOfViewport: TextNode[] }メソッド追加
+- [x] getBoundingClientRect()でビューポート内判定（window.innerHeight, window.innerWidthと比較）
+- [x] extractTextNodes()にビューポート判定オプション追加（withViewportDetection: boolean）
 
 **実装詳細**:
 ```typescript
@@ -264,10 +264,10 @@ detectViewportNodes(nodes: TextNode[]): { viewport: TextNode[], outOfViewport: T
 **@target**: `src/content/contentScript.ts`
 **@ref**: `src/content/domManipulator.ts`
 
-- [ ] translatePage()内でビューポート内/外の分離処理追加
-- [ ] this.domManipulator.detectViewportNodes(this.extractedNodes)呼び出し
-- [ ] Phase 1: viewportNodesを優先処理
-- [ ] Phase 2: outOfViewportNodesを後続処理
+- [x] translatePage()内でビューポート内/外の分離処理追加
+- [x] this.domManipulator.detectViewportNodes(this.extractedNodes)呼び出し
+- [x] Phase 1: viewportNodesを優先処理
+- [x] Phase 2: outOfViewportNodesを後続処理
 
 **実装詳細**:
 ```typescript
@@ -341,11 +341,11 @@ private async translatePage(targetLanguage: string): Promise<void> {
 **@target**: `src/background/translationEngine.ts`
 **@ref**: なし
 
-- [ ] translateBatchSemiParallel(texts: string[], targetLanguage: string, priorityCount: number)メソッド追加
-- [ ] priorityCountで最初の順次処理バッチ数指定（デフォルト: 3）
-- [ ] 最初のpriorityCountバッチは順次処理（awaitで待機）
-- [ ] 残りのバッチは並列処理（Promise.all()）
-- [ ] translateBatch()にsemiParallel, priorityCountオプション追加
+- [x] translateBatchSemiParallel(texts: string[], targetLanguage: string, priorityCount: number)メソッド追加
+- [x] priorityCountで最初の順次処理バッチ数指定（デフォルト: 3）
+- [x] 最初のpriorityCountバッチは順次処理（awaitで待機）
+- [x] 残りのバッチは並列処理（Promise.all()）
+- [x] translateBatch()にsemiParallel, priorityCountオプション追加
 
 **実装詳細**:
 ```typescript
@@ -422,10 +422,10 @@ async translateBatch(
 **@target**: `src/content/progressNotification.ts`
 **@ref**: なし
 
-- [ ] updatePhase(phase: 1 | 2, current: number, total: number)メソッド追加
-- [ ] Phase 1: "ビューポート内を翻訳中... X%"
-- [ ] Phase 2: "ページ全体を翻訳中... Y%"
-- [ ] contentScript.tsからupdatePhase()呼び出し実装
+- [x] updatePhase(phase: 1 | 2, current: number, total: number)メソッド追加
+- [x] Phase 1: "ビューポート内を翻訳中... X%"
+- [x] Phase 2: "ページ全体を翻訳中... Y%"
+- [x] contentScript.tsからupdatePhase()呼び出し実装
 
 **実装詳細**:
 ```typescript
@@ -487,8 +487,8 @@ completePhase(phase: 1 | 2): void {
 **@target**: `src/shared/types/index.ts`
 **@ref**: なし
 
-- [ ] ViewportQueue型追加（viewport: TextNode[], outOfViewport: TextNode[]）
-- [ ] TranslationPhase型追加（type TranslationPhase = 1 | 2）
+- [x] ViewportQueue型追加（viewport: TextNode[], outOfViewport: TextNode[]）
+- [x] TranslationPhase型追加（type TranslationPhase = 1 | 2）
 
 **実装詳細**:
 ```typescript
@@ -657,9 +657,9 @@ describe('ProgressNotification - updatePhase', () => {
 **@target**: `CLAUDE.md`
 **@ref**: なし
 
-- [ ] Translation Flowセクションにビューポート優先翻訳の説明追加
-- [ ] 段階的表示の仕組み、セミ並列処理、フェーズ別進捗の説明
-- [ ] Content Script Featuresセクションに"Viewport-priority translation with progressive rendering"追加
+- [x] Translation Flowセクションにビューポート優先翻訳の説明追加
+- [x] 段階的表示の仕組み、セミ並列処理、フェーズ別進捗の説明
+- [x] Content Script Featuresセクションに"Viewport-priority translation with progressive rendering"追加
 
 **実装詳細**:
 

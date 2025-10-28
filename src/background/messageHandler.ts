@@ -204,6 +204,10 @@ export class MessageHandler {
 
   /**
    * Handle requestTranslation action
+   *
+   * Supports viewport-priority translation with semi-parallel processing:
+   * - `semiParallel`: Enable semi-parallel batch processing (first N batches sequential, rest parallel)
+   * - `priorityCount`: Number of batches to process sequentially (default: 3)
    */
   private async handleRequestTranslation(
     payload: any,
@@ -215,13 +219,15 @@ export class MessageHandler {
     });
 
     try {
-      const { texts, targetLanguage } = payload;
+      const { texts, targetLanguage, semiParallel, priorityCount } = payload;
 
       console.log(`[Background:MessageHandler] ${timestamp} - Validating payload:`, {
         hasTexts: !!texts,
         isArray: Array.isArray(texts),
         textsCount: Array.isArray(texts) ? texts.length : 0,
-        targetLanguage
+        targetLanguage,
+        semiParallel,
+        priorityCount,
       });
 
       if (!texts || !Array.isArray(texts)) {
@@ -242,14 +248,19 @@ export class MessageHandler {
         return;
       }
 
-      // Call TranslationEngine
+      // Call TranslationEngine with optional semi-parallel processing
       console.log(`[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`, {
         textsCount: texts.length,
         targetLanguage,
+        semiParallel: semiParallel || false,
+        priorityCount: priorityCount || undefined,
         firstText: texts[0]?.substring(0, 50)
       });
 
-      const translations = await this.engine.translateBatch(texts, targetLanguage);
+      const translations = await this.engine.translateBatch(texts, targetLanguage, {
+        semiParallel,
+        priorityCount,
+      });
 
       console.log(`[Background:MessageHandler] ${timestamp} - Translation successful:`, {
         translationsCount: translations.length,

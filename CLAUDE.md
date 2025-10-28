@@ -25,14 +25,36 @@ npm run build
 ## Architecture
 
 ### Translation Flow
+
+#### Viewport-Priority Translation Flow
 1. User triggers translation via popup button or keyboard shortcut (Alt+W)
 2. background.js receives command and forwards to content.js via message passing
-3. content.js scans DOM, extracts translatable text, and sends batched requests to Gemini API
-4. Translated content replaces original while preserving DOM structure and styling
+3. content.js performs the following phases:
+
+**Phase 1: Viewport-Priority Translation**
+- Scan DOM and extract all text nodes using TreeWalker
+- Detect viewport nodes using getBoundingClientRect()
+- Separate nodes into viewport/outOfViewport queues
+- Send viewport texts to background for semi-parallel translation:
+  - First 2-3 batches processed sequentially for quick initial display
+  - Remaining batches processed in parallel
+- Apply translations to viewport nodes immediately
+- Show Phase 1 progress: "ビューポート内を翻訳中... X%"
+
+**Phase 2: Full-Page Translation**
+- Send outOfViewport texts to background for parallel translation
+- All batches processed in parallel (standard CONCURRENCY_LIMIT: 10)
+- Apply translations to remaining nodes
+- Show Phase 2 progress: "ページ全体を翻訳中... Y%"
+
+4. MutationObserver detects dynamic content changes for real-time translation
 
 ### Key Components
 - **Translation Cache**: Map-based caching system to avoid duplicate API calls
-- **Batch Processing**: Groups text elements for efficient API usage (CONCURRENCY_LIMIT = 10)
+- **Batch Processing**: Groups text elements for efficient API usage (BATCH_SIZE = 10)
+- **Semi-Parallel Processing**: First 2-3 batches sequential for UX, remaining parallel for performance
+- **Viewport Detection**: getBoundingClientRect() for accurate viewport identification
+- **Phase-Based Progress**: Real-time progress updates with phase distinction (Phase 1/2)
 - **MutationObserver**: Detects dynamic content changes for real-time translation
 - **Font Size Preservation**: Maintains original styling after translation
 
@@ -41,7 +63,9 @@ npm run build
 - Clipboard content translation
 - Dynamic content detection and translation
 - Dark mode support with automatic theme detection
-- **Progress notification during page translation** - Real-time progress updates with visual feedback
+- **Viewport-priority translation with progressive rendering** - Translates visible content first
+- **Phase-based progress notification** - Shows "Phase 1: Viewport" → "Phase 2: Full-page" progress
+- **Semi-parallel batch processing** - Balances UX and performance
 
 ### Storage Management
 - API keys stored in browser.storage.local
