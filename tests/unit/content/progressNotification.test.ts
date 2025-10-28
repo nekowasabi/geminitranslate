@@ -473,4 +473,231 @@ describe('ProgressNotification', () => {
       expect(notification.style.right).toBe('20px');
     });
   });
+
+  describe('Phase-based progress (viewport priority translation)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    describe('showPhase()', () => {
+      it('should display Phase 1 message (viewport translation)', () => {
+        progressNotification.showPhase(1, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ビューポート内を翻訳中');
+        expect(text).toContain('0%');
+      });
+
+      it('should display Phase 2 message (full page translation)', () => {
+        progressNotification.showPhase(2, 20);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ページ全体を翻訳中');
+        expect(text).toContain('0%');
+      });
+
+      it('should show notification element in DOM', () => {
+        progressNotification.showPhase(1, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification).toBeTruthy();
+        expect(notification?.parentNode).toBeTruthy();
+      });
+
+      it('should initialize progress bar at 0%', () => {
+        progressNotification.showPhase(1, 10);
+
+        const progressBar = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar.style.width).toBe('0%');
+      });
+    });
+
+    describe('updatePhase()', () => {
+      it('should update Phase 1 progress with percentage', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.updatePhase(1, 5, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ビューポート内を翻訳中');
+        expect(text).toContain('50%');
+      });
+
+      it('should update Phase 2 progress with percentage', () => {
+        progressNotification.showPhase(2, 20);
+        progressNotification.updatePhase(2, 10, 20);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ページ全体を翻訳中');
+        expect(text).toContain('50%');
+      });
+
+      it('should update progress bar width for Phase 1', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.updatePhase(1, 7, 10);
+
+        const progressBar = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar.style.width).toBe('70%');
+      });
+
+      it('should update progress bar width for Phase 2', () => {
+        progressNotification.showPhase(2, 20);
+        progressNotification.updatePhase(2, 15, 20);
+
+        const progressBar = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar.style.width).toBe('75%');
+      });
+
+      it('should handle 0% progress in Phase 1', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.updatePhase(1, 0, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification?.textContent).toContain('0%');
+      });
+
+      it('should handle 100% progress in Phase 2', () => {
+        progressNotification.showPhase(2, 10);
+        progressNotification.updatePhase(2, 10, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification?.textContent).toContain('100%');
+
+        const progressBar = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar.style.width).toBe('100%');
+      });
+
+      it('should calculate percentage correctly for Phase 1', () => {
+        progressNotification.showPhase(1, 8);
+        progressNotification.updatePhase(1, 2, 8);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification?.textContent).toContain('25%');
+      });
+
+      it('should calculate percentage correctly for Phase 2', () => {
+        progressNotification.showPhase(2, 12);
+        progressNotification.updatePhase(2, 3, 12);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification?.textContent).toContain('25%');
+      });
+    });
+
+    describe('completePhase()', () => {
+      it('should display Phase 1 completion message', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.completePhase(1);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ビューポート内の翻訳完了');
+      });
+
+      it('should display Phase 2 completion message', () => {
+        progressNotification.showPhase(2, 20);
+        progressNotification.completePhase(2);
+
+        const notification = document.querySelector('.progress-notification');
+        const text = notification?.textContent;
+        expect(text).toContain('ページ全体の翻訳完了');
+      });
+
+      it('should not auto-hide after Phase 1 completion', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.completePhase(1);
+
+        jest.advanceTimersByTime(3000);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification).toBeTruthy(); // Should still be visible
+      });
+
+      it('should not auto-hide after Phase 2 completion', () => {
+        progressNotification.showPhase(2, 20);
+        progressNotification.completePhase(2);
+
+        jest.advanceTimersByTime(3000);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification).toBeTruthy(); // Should still be visible
+      });
+    });
+
+    describe('Phase transition workflow', () => {
+      it('should transition from Phase 1 to Phase 2 correctly', () => {
+        // Start Phase 1
+        progressNotification.showPhase(1, 10);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('ビューポート内');
+
+        // Update Phase 1 progress
+        progressNotification.updatePhase(1, 5, 10);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('50%');
+
+        // Complete Phase 1
+        progressNotification.completePhase(1);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('ビューポート内の翻訳完了');
+
+        // Start Phase 2
+        progressNotification.showPhase(2, 20);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('ページ全体を翻訳中');
+
+        // Update Phase 2 progress
+        progressNotification.updatePhase(2, 10, 20);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('50%');
+
+        // Complete Phase 2
+        progressNotification.completePhase(2);
+        expect(document.querySelector('.progress-notification')?.textContent).toContain('ページ全体の翻訳完了');
+      });
+
+      it('should maintain progress bar continuity during phase transition', () => {
+        // Phase 1: 100%
+        progressNotification.showPhase(1, 10);
+        progressNotification.updatePhase(1, 10, 10);
+
+        const progressBar1 = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar1.style.width).toBe('100%');
+
+        // Phase 2: Reset to 0%
+        progressNotification.showPhase(2, 20);
+
+        const progressBar2 = document.querySelector('.progress-bar') as HTMLElement;
+        expect(progressBar2.style.width).toBe('0%');
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('should handle updatePhase() without showPhase()', () => {
+        // Should not throw error even if notification not shown
+        expect(() => {
+          progressNotification.updatePhase(1, 5, 10);
+        }).not.toThrow();
+      });
+
+      it('should handle completePhase() without showPhase()', () => {
+        // Should not throw error even if notification not shown
+        expect(() => {
+          progressNotification.completePhase(1);
+        }).not.toThrow();
+      });
+
+      it('should handle rapid phase updates', () => {
+        progressNotification.showPhase(1, 10);
+        progressNotification.updatePhase(1, 1, 10);
+        progressNotification.updatePhase(1, 2, 10);
+        progressNotification.updatePhase(1, 3, 10);
+
+        const notification = document.querySelector('.progress-notification');
+        expect(notification?.textContent).toContain('30%');
+      });
+    });
+  });
 });

@@ -306,4 +306,258 @@ describe('DOMManipulator', () => {
       expect(textNodes[2].node.textContent).toBe(' Last');
     });
   });
+
+  describe('detectViewportNodes', () => {
+    beforeEach(() => {
+      // Mock window dimensions
+      Object.defineProperty(window, 'innerHeight', {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+      Object.defineProperty(window, 'innerWidth', {
+        writable: true,
+        configurable: true,
+        value: 1200,
+      });
+    });
+
+    it('should detect nodes in viewport', () => {
+      testContainer.innerHTML = '<p>Viewport Text</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect to return viewport position
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 100,
+        bottom: 200,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 100,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(1);
+      expect(result.outOfViewport.length).toBe(0);
+      expect(result.viewport[0].text).toBe('Viewport Text');
+    });
+
+    it('should detect nodes out of viewport (below)', () => {
+      testContainer.innerHTML = '<p>Below Viewport</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect to return position below viewport
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 900, // Below window.innerHeight (800)
+        bottom: 1000,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 900,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(0);
+      expect(result.outOfViewport.length).toBe(1);
+      expect(result.outOfViewport[0].text).toBe('Below Viewport');
+    });
+
+    it('should detect nodes out of viewport (above)', () => {
+      testContainer.innerHTML = '<p>Above Viewport</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect to return position above viewport
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: -200,
+        bottom: -100, // Above viewport (bottom < 0)
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: -200,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(0);
+      expect(result.outOfViewport.length).toBe(1);
+    });
+
+    it('should detect nodes out of viewport (left)', () => {
+      testContainer.innerHTML = '<p>Left of Viewport</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect to return position left of viewport
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 100,
+        bottom: 200,
+        left: -300,
+        right: -100, // Left of viewport (right < 0)
+        width: 200,
+        height: 100,
+        x: -300,
+        y: 100,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(0);
+      expect(result.outOfViewport.length).toBe(1);
+    });
+
+    it('should detect nodes out of viewport (right)', () => {
+      testContainer.innerHTML = '<p>Right of Viewport</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect to return position right of viewport
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 100,
+        bottom: 200,
+        left: 1300, // Right of window.innerWidth (1200)
+        right: 1500,
+        width: 200,
+        height: 100,
+        x: 1300,
+        y: 100,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(0);
+      expect(result.outOfViewport.length).toBe(1);
+    });
+
+    it('should handle boundary cases - partially visible nodes', () => {
+      testContainer.innerHTML = '<p>Partially Visible</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect - node crosses viewport boundary
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 750, // Starts in viewport
+        bottom: 850, // Ends below viewport
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 750,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      // Partially visible nodes should be counted as IN viewport
+      expect(result.viewport.length).toBe(1);
+      expect(result.outOfViewport.length).toBe(0);
+    });
+
+    it('should handle multiple nodes - mixed viewport/out-of-viewport', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p id="p1">In Viewport 1</p>
+          <p id="p2">Out of Viewport</p>
+          <p id="p3">In Viewport 2</p>
+        </div>
+      `;
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Mock getBoundingClientRect for each node
+      const p1 = document.getElementById('p1')!;
+      p1.getBoundingClientRect = jest.fn(() => ({
+        top: 100,
+        bottom: 200,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 100,
+        toJSON: () => {},
+      }));
+
+      const p2 = document.getElementById('p2')!;
+      p2.getBoundingClientRect = jest.fn(() => ({
+        top: 900,
+        bottom: 1000,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 900,
+        toJSON: () => {},
+      }));
+
+      const p3 = document.getElementById('p3')!;
+      p3.getBoundingClientRect = jest.fn(() => ({
+        top: 300,
+        bottom: 400,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 300,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport.length).toBe(2);
+      expect(result.outOfViewport.length).toBe(1);
+      expect(result.viewport[0].text).toBe('In Viewport 1');
+      expect(result.viewport[1].text).toBe('In Viewport 2');
+      expect(result.outOfViewport[0].text).toBe('Out of Viewport');
+    });
+
+    it('should return empty arrays for empty input', () => {
+      const result = domManipulator.detectViewportNodes([]);
+
+      expect(result.viewport.length).toBe(0);
+      expect(result.outOfViewport.length).toBe(0);
+    });
+
+    it('should preserve TextNode properties in result', () => {
+      testContainer.innerHTML = '<p>Test Node</p>';
+      const textNodes = domManipulator.extractTextNodes();
+
+      const mockElement = textNodes[0].node.parentElement!;
+      mockElement.getBoundingClientRect = jest.fn(() => ({
+        top: 100,
+        bottom: 200,
+        left: 100,
+        right: 300,
+        width: 200,
+        height: 100,
+        x: 100,
+        y: 100,
+        toJSON: () => {},
+      }));
+
+      const result = domManipulator.detectViewportNodes(textNodes);
+
+      expect(result.viewport[0]).toHaveProperty('node');
+      expect(result.viewport[0]).toHaveProperty('text');
+      expect(result.viewport[0]).toHaveProperty('index');
+      expect(result.viewport[0].index).toBe(0);
+    });
+  });
 });

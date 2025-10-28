@@ -47,6 +47,13 @@ export const BATCH_CONFIG = {
    * Minimum text length to translate (characters)
    */
   MIN_TEXT_LENGTH: 1,
+
+  /**
+   * Number of priority batches to process sequentially in viewport-priority translation
+   * Higher values = more stable initial display, but slower to show first results
+   * Recommended: 2-3 for optimal UX
+   */
+  VIEWPORT_PRIORITY_BATCHES: 3,
 } as const;
 
 /**

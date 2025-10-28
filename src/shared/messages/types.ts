@@ -35,6 +35,13 @@ export interface BaseMessage {
 }
 
 /**
+ * 翻訳フェーズ
+ * 1: ビューポート内優先翻訳
+ * 2: ページ全体翻訳
+ */
+export type TranslationPhase = 1 | 2;
+
+/**
  * Translation Request Message
  *
  * Content ScriptからBackground Scriptへ翻訳リクエストを送信する際に使用。
@@ -42,6 +49,7 @@ export interface BaseMessage {
  *
  * @example
  * ```typescript
+ * // Standard parallel translation
  * const message: TranslationRequestMessage = {
  *   type: MessageType.REQUEST_TRANSLATION,
  *   action: 'requestTranslation',
@@ -50,14 +58,55 @@ export interface BaseMessage {
  *     targetLanguage: 'Japanese',
  *   },
  * };
+ *
+ * // Semi-parallel translation (viewport priority)
+ * const message: TranslationRequestMessage = {
+ *   type: MessageType.REQUEST_TRANSLATION,
+ *   action: 'requestTranslation',
+ *   payload: {
+ *     texts: ['Hello', 'World'],
+ *     targetLanguage: 'Japanese',
+ *     semiParallel: true,
+ *     priorityCount: 3,
+ *     phase: 1,
+ *   },
+ * };
  * ```
  */
 export interface TranslationRequestMessage extends BaseMessage {
   type: MessageType.REQUEST_TRANSLATION;
   action: 'requestTranslation';
   payload: {
+    /**
+     * Array of texts to translate
+     */
     texts: string[];
+
+    /**
+     * Target language name (e.g., "Japanese", "French")
+     */
     targetLanguage: string;
+
+    /**
+     * Enable semi-parallel processing (optional)
+     * When true, first priorityCount batches are processed sequentially,
+     * remaining batches are processed in parallel
+     */
+    semiParallel?: boolean;
+
+    /**
+     * Number of priority batches to process sequentially (optional)
+     * Only used when semiParallel is true
+     * Default: 3
+     */
+    priorityCount?: number;
+
+    /**
+     * Translation phase (optional)
+     * 1: Viewport priority translation
+     * 2: Full page translation
+     */
+    phase?: TranslationPhase;
   };
 }
 

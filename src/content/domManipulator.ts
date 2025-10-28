@@ -16,6 +16,21 @@ export interface TextNode {
   index: number;
 }
 
+/**
+ * ビューポート内/外のキュー
+ */
+export interface ViewportQueue {
+  /**
+   * ビューポート内のテキストノード
+   */
+  viewport: TextNode[];
+
+  /**
+   * ビューポート外のテキストノード
+   */
+  outOfViewport: TextNode[];
+}
+
 export class DOMManipulator {
   private originalTextMap: WeakMap<Node, string> = new WeakMap();
   private readonly IGNORED_TAGS: string[] = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'];
@@ -109,5 +124,60 @@ export class DOMManipulator {
     if (!this.originalTextMap.has(node)) {
       this.originalTextMap.set(node, node.textContent || '');
     }
+  }
+
+  /**
+   * Detect viewport nodes and separate them from out-of-viewport nodes
+   *
+   * Uses getBoundingClientRect() to determine if a node's parent element
+   * is currently visible in the viewport. Partially visible nodes are
+   * counted as IN viewport.
+   *
+   * @param nodes - Array of TextNode objects to check
+   * @returns ViewportQueue with separated viewport and outOfViewport arrays
+   *
+   * @example
+   * ```typescript
+   * const textNodes = domManipulator.extractTextNodes();
+   * const { viewport, outOfViewport } = domManipulator.detectViewportNodes(textNodes);
+   * console.log(`Viewport: ${viewport.length}, Out: ${outOfViewport.length}`);
+   * ```
+   */
+  detectViewportNodes(nodes: TextNode[]): ViewportQueue {
+    const viewport: TextNode[] = [];
+    const outOfViewport: TextNode[] = [];
+
+    nodes.forEach(node => {
+      const element = node.node.parentElement;
+
+      if (!element) {
+        // No parent element, treat as out of viewport
+        outOfViewport.push(node);
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+
+      // Check if element is in viewport
+      // An element is visible if:
+      // - Its top is above the bottom of the viewport (rect.top < window.innerHeight)
+      // - Its bottom is below the top of the viewport (rect.bottom > 0)
+      // - Its left is before the right edge of the viewport (rect.left < window.innerWidth)
+      // - Its right is after the left edge of the viewport (rect.right > 0)
+      const isInViewport = (
+        rect.top < window.innerHeight &&
+        rect.bottom > 0 &&
+        rect.left < window.innerWidth &&
+        rect.right > 0
+      );
+
+      if (isInViewport) {
+        viewport.push(node);
+      } else {
+        outOfViewport.push(node);
+      }
+    });
+
+    return { viewport, outOfViewport };
   }
 }

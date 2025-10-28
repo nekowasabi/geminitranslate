@@ -120,14 +120,128 @@ export class TranslationEngine {
   }
 
   /**
+   * Translate batch of texts with semi-parallel processing
+   *
+   * Processes first priorityCount batches sequentially, then remaining batches in parallel.
+   * Useful for viewport-priority translation where immediate feedback is important.
+   *
+   * @param texts - Array of texts to translate
+   * @param targetLanguage - Target language name
+   * @param priorityCount - Number of batches to process sequentially (default: 3)
+   * @returns Array of translated texts in same order as input
+   * @throws Error if engine not initialized or API request fails after retries
+   *
+   * @example
+   * ```typescript
+   * // First 3 batches sequential, rest parallel
+   * const results = await engine.translateBatchSemiParallel(texts, 'Japanese', 3);
+   * ```
+   */
+  async translateBatchSemiParallel(
+    texts: string[],
+    targetLanguage: string,
+    priorityCount: number = BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES
+  ): Promise<string[]> {
+    const timestamp = new Date().toISOString();
+    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatchSemiParallel() called:`, {
+      textsCount: texts.length,
+      targetLanguage,
+      priorityCount,
+    });
+
+    if (!this.initialized) {
+      throw new Error('TranslationEngine not initialized. Call initialize() first.');
+    }
+
+    if (texts.length === 0) {
+      return [];
+    }
+
+    const results: string[] = new Array(texts.length);
+    const uncachedIndices: number[] = [];
+
+    // Check cache
+    for (let i = 0; i < texts.length; i++) {
+      const cached = await this.getCachedTranslation(texts[i], targetLanguage);
+      if (cached) {
+        results[i] = cached;
+        this.cacheHits++;
+      } else {
+        uncachedIndices.push(i);
+        this.cacheMisses++;
+      }
+    }
+
+    if (uncachedIndices.length === 0) {
+      return results;
+    }
+
+    // Create batches
+    const uncachedTexts = uncachedIndices.map((i) => texts[i]);
+    const batches = this.chunkArray(uncachedTexts, this.BATCH_SIZE);
+
+    const priorityBatches = batches.slice(0, priorityCount);
+    const remainingBatches = batches.slice(priorityCount);
+
+    console.log(`[Background:TranslationEngine] ${timestamp} - Semi-parallel: ${priorityBatches.length} sequential, ${remainingBatches.length} parallel`);
+
+    let translatedTexts: string[] = [];
+
+    // Process priority batches sequentially
+    for (const batch of priorityBatches) {
+      const batchResults = await this.translateWithRetry(batch, targetLanguage);
+      translatedTexts.push(...batchResults);
+    }
+
+    // Process remaining batches in parallel
+    if (remainingBatches.length > 0) {
+      const parallelPromises = remainingBatches.map(batch =>
+        this.translateWithRetry(batch, targetLanguage)
+      );
+      const parallelResults = await Promise.all(parallelPromises);
+      parallelResults.forEach(batchResults => {
+        translatedTexts.push(...batchResults);
+      });
+    }
+
+    // Store results and update cache
+    for (let i = 0; i < uncachedIndices.length; i++) {
+      const originalIndex = uncachedIndices[i];
+      const translation = translatedTexts[i];
+      results[originalIndex] = translation;
+      await this.setCachedTranslation(texts[originalIndex], targetLanguage, translation);
+    }
+
+    return results;
+  }
+
+  /**
    * Translate batch of texts with 3-tier caching
    *
    * @param texts - Array of texts to translate
    * @param targetLanguage - Target language name (e.g., 'Japanese', 'French')
+   * @param options - Optional processing options
    * @returns Array of translated texts in same order as input
    * @throws Error if engine not initialized or API request fails after retries
    */
-  async translateBatch(texts: string[], targetLanguage: string): Promise<string[]> {
+  async translateBatch(
+    texts: string[],
+    targetLanguage: string,
+    options?: {
+      semiParallel?: boolean;
+      priorityCount?: number;
+    }
+  ): Promise<string[]> {
+    // Use semi-parallel processing if requested
+    if (options?.semiParallel) {
+      return this.translateBatchSemiParallel(
+        texts,
+        targetLanguage,
+        options.priorityCount
+      );
+    }
+
+    // Original parallel processing logic
     const timestamp = new Date().toISOString();
     console.log(`[Background:TranslationEngine] ${timestamp} - translateBatch() called:`, {
       textsCount: texts.length,

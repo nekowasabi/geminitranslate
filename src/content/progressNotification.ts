@@ -91,6 +91,7 @@ export class ProgressNotification {
   private messageElement: HTMLElement | null = null;
   private autoHideTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly isDarkMode: boolean;
+  private currentPhase: 1 | 2 | null = null;
 
   constructor() {
     this.isDarkMode = this.detectDarkMode();
@@ -322,5 +323,135 @@ export class ProgressNotification {
       style.textContent = KEYFRAMES;
       document.head.appendChild(style);
     }
+  }
+
+  /**
+   * Show phase-based progress notification
+   *
+   * Displays a progress notification with phase-specific messaging.
+   * Used for viewport-priority translation to show Phase 1 (viewport)
+   * and Phase 2 (full page) progress separately.
+   *
+   * @param phase - Translation phase (1: Viewport, 2: Full page)
+   * @param total - Total number of items to process in this phase
+   *
+   * @example
+   * ```typescript
+   * // Phase 1: Viewport translation
+   * progressNotification.showPhase(1, 10);
+   * progressNotification.updatePhase(1, 5, 10); // 50%
+   * progressNotification.completePhase(1);
+   *
+   * // Phase 2: Full page translation
+   * progressNotification.showPhase(2, 20);
+   * progressNotification.updatePhase(2, 10, 20); // 50%
+   * progressNotification.completePhase(2);
+   * ```
+   */
+  showPhase(phase: 1 | 2, total: number): void {
+    this.currentPhase = phase;
+
+    // Remove existing notification first
+    this.remove();
+
+    // Create notification container
+    this.container = document.createElement('div');
+    this.container.className = 'progress-notification';
+
+    // Apply styles
+    this.applyContainerStyles(this.container, false);
+
+    // Create message element with phase-specific message
+    this.messageElement = this.createMessageElement();
+    const phaseMessage = phase === 1
+      ? 'ビューポート内を翻訳中... 0%'
+      : 'ページ全体を翻訳中... 0%';
+    this.messageElement.textContent = phaseMessage;
+
+    // Create progress bar
+    const progressBarContainer = this.createProgressBarContainer();
+    this.progressBar = this.createProgressBar();
+    progressBarContainer.appendChild(this.progressBar);
+
+    // Assemble notification
+    this.container.appendChild(this.messageElement);
+    this.container.appendChild(progressBarContainer);
+
+    // Add to DOM
+    document.body.appendChild(this.container);
+
+    logger.log(`ProgressNotification.showPhase(${phase}, ${total}) called`);
+  }
+
+  /**
+   * Update phase-based progress
+   *
+   * Updates the progress notification with current progress for the specified phase.
+   * Displays phase-specific messaging and updates progress bar.
+   *
+   * @param phase - Translation phase (1: Viewport, 2: Full page)
+   * @param current - Current progress count
+   * @param total - Total count for this phase
+   *
+   * @example
+   * ```typescript
+   * progressNotification.updatePhase(1, 5, 10); // Phase 1: 50%
+   * progressNotification.updatePhase(2, 15, 20); // Phase 2: 75%
+   * ```
+   */
+  updatePhase(phase: 1 | 2, current: number, total: number): void {
+    if (!this.container || !this.progressBar || !this.messageElement) {
+      logger.warn('ProgressNotification.updatePhase() called but notification not shown');
+      return;
+    }
+
+    this.currentPhase = phase;
+
+    // Calculate percentage (handle division by zero)
+    const percentage = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+
+    // Phase-specific message
+    const phaseMessage = phase === 1
+      ? `ビューポート内を翻訳中... ${percentage}%`
+      : `ページ全体を翻訳中... ${percentage}%`;
+
+    // Update message
+    this.messageElement.textContent = phaseMessage;
+
+    // Update progress bar width
+    this.progressBar.style.width = `${percentage}%`;
+
+    logger.log(`ProgressNotification.updatePhase(${phase}, ${current}, ${total}) - ${percentage}%`);
+  }
+
+  /**
+   * Complete current phase
+   *
+   * Shows phase completion message. Unlike complete(), this does NOT
+   * auto-hide the notification, allowing smooth transition to the next phase.
+   *
+   * @param phase - Translation phase being completed
+   *
+   * @example
+   * ```typescript
+   * progressNotification.completePhase(1); // "ビューポート内の翻訳完了"
+   * progressNotification.completePhase(2); // "ページ全体の翻訳完了"
+   * ```
+   */
+  completePhase(phase: 1 | 2): void {
+    if (!this.container || !this.messageElement) {
+      logger.warn('ProgressNotification.completePhase() called but notification not shown');
+      return;
+    }
+
+    // Phase-specific completion message
+    const phaseMessage = phase === 1
+      ? 'ビューポート内の翻訳完了'
+      : 'ページ全体の翻訳完了';
+
+    // Update message
+    this.messageElement.textContent = phaseMessage;
+
+    logger.log(`ProgressNotification.completePhase(${phase})`);
   }
 }
