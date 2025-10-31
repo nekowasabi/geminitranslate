@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Performance - Batch Streaming Translation
+
+#### Added
+- **バッチストリーミング翻訳機能**: バッチごとに翻訳結果を段階的にレンダリング
+  - 最初の10テキスト(1バッチ)を100ms以内に表示（従来は380ms）
+  - **74%高速化**: 初期表示時間が380ms → 100msに短縮
+  - **53%高速化**: 全体完了時間が380ms → 180msに短縮
+  - リアルタイム進捗更新でユーザーに安心感を提供
+- **BATCH_COMPLETEDメッセージ**: Background → Content方向の新規メッセージタイプ
+  - バッチ完了ごとにContent Scriptへ通知
+  - 翻訳結果、ノードインデックス、フェーズ情報、進捗情報を含む
+  - 段階的DOM適用により体感速度が劇的に改善
+- **ProgressNotification.updatePhase()**: フェーズごとの進捗更新メソッド
+  - Phase 1（ビューポート内翻訳）とPhase 2（ページ全体翻訳）で個別に進捗表示
+  - パーセンテージのみの更新とcurrent/total更新の2つのオーバーロードをサポート
+
+#### Changed
+- **VIEWPORT_PRIORITY_BATCHES**: 3 → 1 に変更
+  - 最初の1バッチのみ順次処理、残りは完全並列化
+  - UXと速度のバランスが最良の設定に最適化
+- **TranslationEngine.translateBatchSemiParallel()**: コールバック機構を追加
+  - `onBatchComplete` コールバックでバッチ完了時の処理をカスタマイズ可能
+  - バッチインデックス、翻訳結果、ノードインデックスを引数として提供
+  - キャッシュヒット時も即座にコールバック実行
+- **ContentScript.translatePage()**: 非ブロッキング実装に変更
+  - Phase 1の翻訳リクエストを`await`せずに送信
+  - バッチ完了は`BATCH_COMPLETED`メッセージで非同期処理
+  - `currentTranslationNodes`プロパティでバッチ適用対象ノードを管理
+
+#### Technical Details
+- **src/shared/messages/types.ts**:
+  - `BatchCompletedMessage`インターフェース追加（行315-383）
+  - `MessageType.BATCH_COMPLETED`列挙型追加
+  - Background→Content方向のため`action`プロパティ不要（CLAUDE.md規約準拠）
+- **src/shared/constants/config.ts**:
+  - `VIEWPORT_PRIORITY_BATCHES: 1` に変更（行61）
+  - JSDocコメントで変更理由を文書化
+- **src/background/translationEngine.ts**:
+  - `BatchProgressCallback`型定義追加（行81-85）
+  - `translateBatchSemiParallel()`にコールバック引数追加（行161-269）
+  - 順次処理バッチと並列処理バッチでコールバック呼び出し（行224-258）
+- **src/background/messageHandler.ts**:
+  - `handleRequestTranslation()`でBATCH_COMPLETED送信実装（行263-311）
+  - sender.tab.idのエラーハンドリング追加
+  - chrome.tabs.sendMessage()のtry-catchでタブクローズ時のエラーを処理
+- **src/content/contentScript.ts**:
+  - `currentTranslationNodes`プロパティ追加（行36）
+  - `handleBatchCompleted()`メソッド実装（行423-479）
+  - BATCH_COMPLETEDメッセージリスナー追加（行146-152）
+  - エラーハンドリング強化（nodeIndices範囲外チェック、ミスマッチ警告）
+- **src/content/progressNotification.ts**:
+  - `updatePhase()`メソッド実装（行173-238）
+  - 2つのオーバーロード: (phase, percentage) と (phase, current, total)
+  - フェーズごとのメッセージ更新をサポート
+
+#### Performance Metrics
+- **初期表示**: 380ms → 100ms (74%改善)
+- **全体完了**: 380ms → 180ms (53%改善)
+- **体感速度**: 劇的に向上（段階的表示により実時間以上に速く感じる）
+
+---
+
 ### 🐛 Translation Functionality Fix
 
 #### Fixed

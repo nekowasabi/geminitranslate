@@ -1628,6 +1628,243 @@ describe('Viewport Translation - E2E', () => {
 | 日付 | バージョン | 変更内容 | 著者 |
 |-----|-----------|---------|-----|
 | 2025-10-31 | 2.0 | バッチストリーミング実装計画作成 | Claude Code |
+| 2025-10-31 | 2.1 | さらなる高速化改善案調査完了 | Claude Code |
+
+---
+
+## 10. 翻訳・表示スピード高速化改善（フェーズ1+2統合実装）
+
+## 概要
+- ビューポート内優先翻訳とページ全体翻訳の両フェーズにおいて、翻訳速度と表示速度を大幅に改善します
+- キャッシュ効率化、不要な要素除外、GPU アクセラレーション、遅延翻訳により、総合的に 50-95% の高速化を実現します
+
+### goal
+- ユーザが翻訳を実行した際、ビューポート内のコンテンツが**即座に**翻訳表示される
+- スクロールしても遅延なくスムーズに翻訳コンテンツが表示される
+- 大規模ページでもメモリ使用量を抑えながら高速に翻訳できる
+- 再翻訳時は永続化キャッシュにより瞬時に表示される
+
+## 必須のルール
+- 必ず `CLAUDE.md` を参照し、ルールを守ること
+- `MessageType` と `action` の両方を含むメッセージフォーマットに従うこと
+- TypeScript の型安全性を維持すること
+- 既存の Viewport-Priority Translation Flow を破壊しないこと
+- 段階的な実装とテストを行い、各 process ごとにコミットすること
+
+## 開発のゴール
+- **フェーズ1（ビューポート内翻訳）**: 初期表示を 15-30% 高速化
+- **フェーズ2（ページ全体翻訳）**: スクロール時の体感速度を 20-40% 改善
+- **メモリ効率**: 大規模ページでのメモリ使用量を 30-50% 削減
+- **再翻訳**: 永続化キャッシュにより 90% 以上の高速化
+
+## 実装仕様
+
+### 1. キャッシュ戦略改善
+- **LRUキャッシュ拡張**: 現在の 1000 エントリから 5000 エントリに拡大
+- **IndexedDB 永続化**: ブラウザセッションを跨いだキャッシュ保持
+- **キャッシュキー最適化**: 言語ペアとテキストの組み合わせでキー生成
+- **期待効果**: 再翻訳時に 90% 以上のキャッシュヒット率、15-30% の高速化
+
+### 2. テキスト抽出最適化
+- **不可視要素フィルタリング**: `display:none`, `visibility:hidden`, `opacity:0` の要素を除外
+- **アクセシビリティ属性チェック**: `aria-hidden="true"` の要素を除外
+- **サイズフィルタリング**: `width: 0`, `height: 0` の要素を除外
+- **期待効果**: 翻訳対象テキスト数を 10-20% 削減、API リクエスト数削減
+
+### 3. CSS アニメーション最適化
+- **GPU アクセラレーション**: 翻訳適用時に `will-change: contents`, `transform: translate3d(0, 0, 0)` を追加
+- **レイヤー最適化**: 翻訳完了後に `will-change` を削除してメモリを解放
+- **リフロー最小化**: `DocumentFragment` を活用してバッチ DOM 更新
+- **期待効果**: 翻訳適用時の描画速度を 3-5% 改善
+
+### 4. Intersection Observer 遅延翻訳
+- **LazyTranslationManager 実装**: ビューポート外の要素を監視し、進入時に翻訳
+- **プリロード戦略**: `rootMargin: '200px'` でスクロール前に先行翻訳
+- **優先度キュー**: ビューポート中心に近い要素を優先的に翻訳
+- **動的コンテンツ対応**: MutationObserver と連携して新規要素を自動監視
+- **期待効果**: 大規模ページで初期翻訳時間を 20-40% 短縮、スクロール体感速度向上
+
+## 生成AIの学習用コンテキスト
+### ファイルポインタ
+- `src/content/content.js`
+  - `scanAndTranslate()`: 翻訳フロー全体の制御、フェーズ1/2の実行
+  - `extractTextNodes()`: テキストノード抽出ロジック（最適化対象）
+  - `applyTranslation()`: 翻訳適用ロジック（CSS最適化対象）
+  - `MutationObserver`: 動的コンテンツ検知
+
+- `src/background/translationEngine.js`
+  - `TranslationCache`: 現在のメモリキャッシュ実装（拡張対象）
+  - `batchTranslate()`: バッチ翻訳処理
+
+- `src/background/openRouterClient.js`
+  - `translate()`: API クライアント実装
+
+- `manifest.json`
+  - `permissions`: IndexedDB 使用のための権限確認
+
+## Process
+
+### process11 キャッシュ戦略改善（IndexedDB永続化）
+#### sub1 IndexedDB キャッシュストア実装
+@target: `src/background/persistentCache.js` (新規作成)
+@ref: `src/background/translationEngine.js`
+- [ ] `PersistentCache` クラスを実装
+- [ ] IndexedDB スキーマ定義: `translations` オブジェクトストア (key: `${sourceLang}-${targetLang}-${text}`, value: `{translation, timestamp}`)
+- [ ] `init()`: データベース初期化とバージョン管理
+- [ ] `get(key)`: キャッシュ取得
+- [ ] `set(key, value)`: キャッシュ保存
+- [ ] `clear()`: 古いキャッシュクリア（30日以上経過したエントリ）
+- [ ] エラーハンドリング: QuotaExceededError の処理
+
+#### sub2 LRUキャッシュサイズ拡張
+@target: `src/background/translationEngine.js`
+@ref: なし
+- [ ] `TranslationCache` の `MAX_SIZE` を 1000 → 5000 に変更
+- [ ] メモリ使用量の監視ロジック追加（オプション）
+- [ ] LRU アルゴリズムの動作確認テスト
+
+#### sub3 ハイブリッドキャッシュ戦略実装
+@target: `src/background/translationEngine.js`
+@ref: `src/background/persistentCache.js`
+- [ ] `PersistentCache` インスタンスを `TranslationEngine` に統合
+- [ ] キャッシュ取得ロジック: メモリキャッシュ → IndexedDB の順で検索
+- [ ] キャッシュ保存ロジック: メモリと IndexedDB の両方に保存
+- [ ] バックグラウンド同期: メモリキャッシュを定期的に IndexedDB に同期
+
+#### sub4 キャッシュ統計とモニタリング
+@target: `src/background/translationEngine.js`
+@ref: なし
+- [ ] キャッシュヒット率の追跡
+- [ ] `getCacheStats()` メソッド実装: `{memoryHits, dbHits, misses, hitRate}`
+- [ ] デバッグログ追加: キャッシュヒット/ミスの記録
+
+### process12 テキスト抽出最適化（不可視要素フィルタリング）
+#### sub1 不可視要素判定ユーティリティ実装
+@target: `src/content/utils/visibility.js` (新規作成)
+@ref: なし
+- [ ] `isElementVisible(element)` 関数を実装
+- [ ] CSS スタイルチェック: `display: none`, `visibility: hidden`, `opacity: 0`
+- [ ] サイズチェック: `width === 0`, `height === 0`, `getBoundingClientRect()` で面積 0
+- [ ] アクセシビリティ属性チェック: `aria-hidden="true"`
+- [ ] 祖先要素の再帰的チェック: 親要素が不可視なら子も不可視
+
+#### sub2 extractTextNodes にフィルタリング統合
+@target: `src/content/content.js`
+@ref: `src/content/utils/visibility.js`
+- [ ] `extractTextNodes()` 内で `isElementVisible()` を呼び出し
+- [ ] 不可視要素をスキップするロジック追加
+- [ ] TreeWalker のフィルタ条件に統合
+- [ ] 除外された要素数をデバッグログに記録
+
+#### sub3 パフォーマンス最適化
+@target: `src/content/utils/visibility.js`
+@ref: なし
+- [ ] 可視性判定結果をキャッシュ（WeakMap 使用）
+- [ ] `getBoundingClientRect()` 呼び出しを最小化
+- [ ] 早期リターンで不要な計算を回避
+
+### process13 CSSアニメーション最適化（GPU アクセラレーション）
+#### sub1 翻訳適用時の GPU レイヤー最適化
+@target: `src/content/content.js`
+@ref: なし
+- [ ] `applyTranslation()` 関数を修正
+- [ ] 翻訳適用前に `element.style.willChange = 'contents'` を設定
+- [ ] 翻訳適用前に `element.style.transform = 'translate3d(0, 0, 0)'` を設定
+- [ ] 翻訳適用後（アニメーション完了後）に `will-change` を削除
+
+#### sub2 バッチ DOM 更新でリフロー最小化
+@target: `src/content/content.js`
+@ref: なし
+- [ ] `DocumentFragment` を使用したバッチ更新実装
+- [ ] 同一親要素配下のノードをグループ化
+- [ ] `requestAnimationFrame()` でフレーム境界に合わせて適用
+- [ ] 更新前に `display: none` で一時的に非表示（オプション）
+
+#### sub3 フォントサイズ保持ロジックの最適化
+@target: `src/content/content.js`
+@ref: なし
+- [ ] 現在の `computedStyle.fontSize` 取得ロジックを維持
+- [ ] スタイル取得を `DocumentFragment` 生成前に実行してリフロー削減
+- [ ] スタイル適用を `willChange` 設定と同時に実行
+
+### process14 Intersection Observer 遅延翻訳
+#### sub1 LazyTranslationManager クラス実装
+@target: `src/content/lazyTranslationManager.js` (新規作成)
+@ref: なし
+- [ ] `LazyTranslationManager` クラスを実装
+- [ ] `IntersectionObserver` インスタンス作成: `rootMargin: '200px'`, `threshold: 0.01`
+- [ ] 遅延翻訳キューの管理: `Map<Element, TextNode[]>`
+- [ ] `observe(element, textNodes)`: 要素を監視対象に追加
+- [ ] `handleIntersection(entries)`: ビューポート進入時の翻訳実行
+- [ ] 優先度キュー: ビューポート中心からの距離で優先順位決定
+
+#### sub2 scanAndTranslate にビューポート外遅延翻訳統合
+@target: `src/content/content.js`
+@ref: `src/content/lazyTranslationManager.js`
+- [ ] `LazyTranslationManager` インスタンスをグローバルに初期化
+- [ ] フェーズ2（ページ全体翻訳）を以下に変更:
+  - ビューポート外のテキストノードを即時翻訳**しない**
+  - 代わりに `LazyTranslationManager.observe()` で監視登録
+- [ ] フェーズ1完了後にフェーズ2の遅延翻訳準備を開始
+
+#### sub3 MutationObserver との連携
+@target: `src/content/content.js`
+@ref: `src/content/lazyTranslationManager.js`
+- [ ] 既存の `MutationObserver` で検知した新規ノードを `LazyTranslationManager` に登録
+- [ ] 動的に追加された要素の可視性判定
+- [ ] ビューポート内なら即時翻訳、外なら遅延翻訳
+
+#### sub4 遅延翻訳のバッチ処理最適化
+@target: `src/content/lazyTranslationManager.js`
+@ref: なし
+- [ ] 複数要素が同時にビューポート進入した場合のバッチ処理
+- [ ] `requestIdleCallback()` で低優先度タスクとして実行
+- [ ] 既存のバッチサイズ（10）とコンカレンシー制限（10）を尊重
+
+#### sub5 スクロールパフォーマンス最適化
+@target: `src/content/lazyTranslationManager.js`
+@ref: なし
+- [ ] `IntersectionObserver` のデバウンス処理（必要に応じて）
+- [ ] 過去に翻訳済みの要素は再監視しない
+- [ ] `unobserve()` で不要な監視を解除してメモリリーク防止
+
+### process50 フォローアップ
+#### sub1 メッセージング仕様への準拠確認
+@target: `src/content/content.js`, `src/background/messageHandler.js`
+@ref: `CLAUDE.md` (Messaging Architecture セクション)
+- [ ] 新規メッセージタイプに `type` と `action` の両方が含まれているか確認
+- [ ] `MessageType` enum に新規タイプを追加（必要な場合）
+- [ ] `MessageHandler` の `actionHandlers` Map に新規ハンドラを登録（必要な場合）
+
+#### sub2 エラーハンドリングとフォールバック
+@target: `src/background/persistentCache.js`, `src/content/lazyTranslationManager.js`
+@ref: なし
+- [ ] IndexedDB が利用不可の場合はメモリキャッシュのみで動作
+- [ ] `QuotaExceededError` 発生時に古いキャッシュを自動削除
+- [ ] `IntersectionObserver` が利用不可の場合は従来の即時翻訳にフォールバック
+- [ ] すべてのエラーをコンソールに記録（デバッグ用）
+
+#### sub3 パフォーマンス測定とログ
+@target: `src/content/content.js`
+@ref: なし
+- [ ] `performance.mark()` で各フェーズの開始/終了を記録
+- [ ] `performance.measure()` でフェーズ1/2の所要時間を計測
+- [ ] デバッグモードでパフォーマンスログを出力
+- [ ] キャッシュヒット率、翻訳対象テキスト数、遅延翻訳数をログ記録
+
+### process100 リファクタリング
+- [ ] `src/content/content.js` のコードを機能ごとにモジュール分割（visibility, animation, lazy translation）
+- [ ] 共通ユーティリティを `src/content/utils/` に集約
+- [ ] マジックナンバー（5000, 200px など）を定数化
+- [ ] 型定義を `src/shared/types.ts` に追加（PersistentCacheEntry など）
+- [ ] 不要なコメントや冗長なコードを削除
+
+### process200 ドキュメンテーション
+- [ ] `CLAUDE.md` の Architecture セクションに高速化改善の説明を追加
+- [ ] 各新規クラス/関数に JSDoc コメントを追加
+- [ ] `README.md` に高速化機能の概要を追加（Performance Optimizations セクション）
+- [ ] IndexedDB スキーマとキャッシュ戦略を図解（オプション）
+- [ ] パフォーマンス測定結果をドキュメント化（実装後）
 
 ---
 
