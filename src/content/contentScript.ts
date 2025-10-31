@@ -29,6 +29,11 @@ export class ContentScript {
   private messageBus: MessageBus;
   private isTranslated = false;
   private extractedNodes: TextNode[] = [];
+  /**
+   * Current translation nodes for batch-by-batch application
+   * Set during translatePage() before sending translation request
+   */
+  private currentTranslationNodes: TextNode[] = [];
 
   constructor() {
     this.domManipulator = new DOMManipulator();
@@ -138,6 +143,14 @@ export class ContentScript {
           sendResponse({ success: true });
           break;
 
+        case MessageType.BATCH_COMPLETED:
+          console.log(`[Content:ContentScript] ${timestamp} - Handling BATCH_COMPLETED`);
+          if ('payload' in message && message.payload) {
+            this.handleBatchCompleted(message.payload);
+          }
+          sendResponse({ success: true });
+          break;
+
         default:
           console.warn(`[Content:ContentScript] ${timestamp} - Unknown message type:`, message.type);
           logger.log('Unknown message type:', message.type);
@@ -204,6 +217,9 @@ export class ContentScript {
         console.log(`[Content:ContentScript] ${timestamp} - Starting Phase 1: Viewport translation`);
         this.progressNotification.showPhase(1, viewport.length);
 
+        // Store nodes for batch-by-batch application
+        this.currentTranslationNodes = viewport;
+
         const viewportTexts = viewport.map(node => node.text);
 
         console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`, {
@@ -212,33 +228,24 @@ export class ContentScript {
           textsCount: viewportTexts.length,
           targetLanguage,
           semiParallel: true,
-          priorityCount: 3,
+          priorityCount: 1,
+          phase: 1,
         });
 
-        const response1 = await this.messageBus.send({
+        // Non-blocking send: batches will be applied via BATCH_COMPLETED messages
+        this.messageBus.send({
           type: MessageType.REQUEST_TRANSLATION,
           action: 'requestTranslation',
           payload: {
             texts: viewportTexts,
             targetLanguage,
             semiParallel: true,
-            priorityCount: 3,
+            priorityCount: 1,
+            phase: 1,
           },
         });
 
-        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 response received:`, {
-          success: response1?.success,
-          hasTranslations: !!response1?.data?.translations,
-        });
-
-        if (response1?.success && response1?.data?.translations) {
-          console.log(`[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`);
-          this.domManipulator.applyTranslations(viewport, response1.data.translations);
-          this.progressNotification.completePhase(1);
-          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 completed`);
-        } else {
-          console.warn(`[Content:ContentScript] ${timestamp} - Phase 1 failed:`, response1);
-        }
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 request sent (non-blocking, batches will be applied via BATCH_COMPLETED)`);
       } else {
         console.log(`[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`);
       }
@@ -403,6 +410,73 @@ export class ContentScript {
   disableDynamicTranslation(): void {
     this.mutationObserver.disconnect();
     logger.log('Dynamic translation disabled');
+  }
+
+  /**
+   * Handle batch completed notification
+   *
+   * Invoked by Background Script when each batch completes during semi-parallel translation.
+   * Applies translations immediately to corresponding nodes and updates progress UI.
+   *
+   * @param payload - BatchCompletedMessage payload
+   */
+  private handleBatchCompleted(payload: any): void {
+    const timestamp = new Date().toISOString();
+    console.log(`[Content:ContentScript] ${timestamp} - handleBatchCompleted() called:`, payload);
+
+    try {
+      const { translations, nodeIndices, phase, progress } = payload as {
+        translations: string[];
+        nodeIndices: number[];
+        phase: 1 | 2;
+        progress: { current: number; total: number; percentage: number };
+      };
+
+      if (!this.currentTranslationNodes || this.currentTranslationNodes.length === 0) {
+        console.warn(`[Content:ContentScript] ${timestamp} - currentTranslationNodes is empty, skipping batch application`);
+        return;
+      }
+
+      // Extract corresponding nodes using nodeIndices
+      const nodes = nodeIndices
+        .filter((i: number) => i < this.currentTranslationNodes.length)
+        .map((i: number) => this.currentTranslationNodes[i]);
+
+      if (nodes.length !== translations.length) {
+        console.warn(
+          `[Content:ContentScript] ${timestamp} - Mismatch: nodes(${nodes.length}) vs translations(${translations.length})`
+        );
+      }
+
+      console.log(`[Content:ContentScript] ${timestamp} - Applying batch translations:`, {
+        nodesCount: nodes.length,
+        translationsCount: translations.length,
+        phase,
+        progress,
+      });
+
+      // Apply translations immediately to DOM
+      this.domManipulator.applyTranslations(nodes, translations);
+
+      // Update progress notification
+      if (typeof progress?.percentage === 'number') {
+        this.progressNotification.updatePhase(phase, progress.percentage);
+      }
+
+      console.log(
+        `[Content:ContentScript] ${timestamp} - Batch applied successfully:`,
+        `Progress: ${progress.current}/${progress.total} (${progress.percentage}%)`
+      );
+
+      logger.log(`Batch ${payload.batchIndex} completed: ${translations.length} texts translated`);
+    } catch (error) {
+      console.error(`[Content:ContentScript] ${timestamp} - Failed to handle batch completed:`, {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      logger.error('Failed to handle batch completed:', error);
+    }
   }
 
   /**

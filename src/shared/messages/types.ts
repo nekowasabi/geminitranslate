@@ -16,6 +16,7 @@ export enum MessageType {
   TRANSLATION_COMPLETED = 'translationCompleted',
   TRANSLATION_ERROR = 'translationError',
   SELECTION_TRANSLATED = 'selectionTranslated',
+  BATCH_COMPLETED = 'batchCompleted',
 
   // Settings
   SETTINGS_CHANGED = 'settingsChanged',
@@ -311,6 +312,77 @@ export interface ReloadConfigMessage extends BaseMessage {
 }
 
 /**
+ * Batch Completed Message
+ *
+ * Sent from Background Script to Content Script when a batch translation completes.
+ * Content Script applies translations immediately upon receiving this message.
+ *
+ * **Direction**: Background → Content
+ * **Trigger**: Each batch completes during semi-parallel translation
+ * **Handler**: ContentScript.handleBatchCompleted()
+ * **Note**: Background→Content direction, so `action` property is NOT required
+ *
+ * @example
+ * ```typescript
+ * // Background Script sends batch completion notification
+ * browser.tabs.sendMessage(tabId, {
+ *   type: MessageType.BATCH_COMPLETED,
+ *   payload: {
+ *     batchIndex: 0,
+ *     translations: ['翻訳1', '翻訳2', ..., '翻訳10'],
+ *     nodeIndices: [0, 1, 2, ..., 9],
+ *     phase: 1,
+ *     progress: { current: 1, total: 5, percentage: 20 },
+ *   },
+ * });
+ * ```
+ */
+export interface BatchCompletedMessage extends BaseMessage {
+  type: MessageType.BATCH_COMPLETED;
+  payload: {
+    /**
+     * Batch number (0-indexed)
+     */
+    batchIndex: number;
+
+    /**
+     * Translation results (max BATCH_SIZE elements)
+     */
+    translations: string[];
+
+    /**
+     * Corresponding node indices in currentTranslationNodes array
+     */
+    nodeIndices: number[];
+
+    /**
+     * Translation phase (1: Viewport, 2: Full-page)
+     */
+    phase: TranslationPhase;
+
+    /**
+     * Progress information
+     */
+    progress: {
+      /**
+       * Number of completed batches
+       */
+      current: number;
+
+      /**
+       * Total number of batches
+       */
+      total: number;
+
+      /**
+       * Completion percentage (0-100)
+       */
+      percentage: number;
+    };
+  };
+}
+
+/**
  * Selection Translated Message
  *
  * Sent from Content Script to Popup when a text selection has been successfully translated.
@@ -370,6 +442,7 @@ export type Message =
   | ClipboardTranslationMessage
   | TranslationProgressMessage
   | TranslationErrorMessage
+  | BatchCompletedMessage
   | ResetMessage
   | TestConnectionMessage
   | ReloadConfigMessage

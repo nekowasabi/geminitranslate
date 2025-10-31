@@ -50,10 +50,15 @@ export const BATCH_CONFIG = {
 
   /**
    * Number of priority batches to process sequentially in viewport-priority translation
-   * Higher values = more stable initial display, but slower to show first results
-   * Recommended: 2-3 for optimal UX
+   *
+   * @remarks
+   * - 1: Only first batch (10 texts) sequential, remaining parallel
+   * - Achieves fastest initial display (100ms target)
+   * - Balances UX and performance optimally
+   *
+   * Changed from 3 → 1 for progressive rendering improvement
    */
-  VIEWPORT_PRIORITY_BATCHES: 3,
+  VIEWPORT_PRIORITY_BATCHES: 1,
 } as const;
 
 /**

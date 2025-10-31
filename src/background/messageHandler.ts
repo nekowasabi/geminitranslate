@@ -36,6 +36,8 @@
 import { TranslationEngine, CacheLayer } from './translationEngine';
 import { OpenRouterClient } from './apiClient';
 import { logger } from '../shared/utils/logger';
+import { MessageType, BatchCompletedMessage, TranslationPhase } from '../shared/messages/types';
+import { BATCH_CONFIG } from '../shared/constants/config';
 
 /**
  * Message format expected by MessageHandler
@@ -72,7 +74,8 @@ export type HandlerResponse = SuccessResponse | ErrorResponse;
  */
 type ActionHandler = (
   payload: any,
-  sendResponse: (response: HandlerResponse) => void
+  sendResponse: (response: HandlerResponse) => void,
+  sender?: chrome.runtime.MessageSender
 ) => Promise<void>;
 
 /**
@@ -162,7 +165,7 @@ export class MessageHandler {
           action,
           payload
         });
-        await handler(payload, sendResponse);
+        await handler(payload, sendResponse, sender);
       } else {
         console.error(`[Background:MessageHandler] ${timestamp} - Unknown action:`, action);
         sendResponse({
@@ -207,19 +210,28 @@ export class MessageHandler {
    *
    * Supports viewport-priority translation with semi-parallel processing:
    * - `semiParallel`: Enable semi-parallel batch processing (first N batches sequential, rest parallel)
-   * - `priorityCount`: Number of batches to process sequentially (default: 3)
+   * - `priorityCount`: Number of batches to process sequentially (default: 1)
+   * - `phase`: Translation phase (1: Viewport, 2: Full-page)
+   *
+   * When semiParallel is enabled, sends BATCH_COMPLETED messages to Content Script
+   * after each batch completes for progressive rendering.
    */
   private async handleRequestTranslation(
     payload: any,
-    sendResponse: (response: HandlerResponse) => void
+    sendResponse: (response: HandlerResponse) => void,
+    sender?: chrome.runtime.MessageSender
   ): Promise<void> {
     const timestamp = new Date().toISOString();
     console.log(`[Background:MessageHandler] ${timestamp} - handleRequestTranslation() called:`, {
-      payload
+      payload,
+      sender: {
+        tabId: sender?.tab?.id,
+        url: sender?.url,
+      },
     });
 
     try {
-      const { texts, targetLanguage, semiParallel, priorityCount } = payload;
+      const { texts, targetLanguage, semiParallel, priorityCount, phase } = payload;
 
       console.log(`[Background:MessageHandler] ${timestamp} - Validating payload:`, {
         hasTexts: !!texts,
@@ -248,19 +260,74 @@ export class MessageHandler {
         return;
       }
 
+      // Setup BATCH_COMPLETED callback for semi-parallel mode
+      let onBatchComplete;
+      if (semiParallel && sender?.tab?.id) {
+        const tabId = sender.tab.id;
+        const totalBatches = Math.ceil(texts.length / BATCH_CONFIG.BATCH_SIZE);
+        let completedBatches = 0;
+        const translationPhase: TranslationPhase = phase || 1;
+
+        onBatchComplete = (
+          batchIndex: number,
+          translations: string[],
+          nodeIndices: number[]
+        ): void => {
+          completedBatches++;
+          const percentage = Math.round((completedBatches / totalBatches) * 100);
+
+          console.log(`[Background:MessageHandler] ${timestamp} - Batch ${batchIndex} completed, sending BATCH_COMPLETED:`, {
+            tabId,
+            batchIndex,
+            translationsCount: translations.length,
+            nodeIndices,
+            phase: translationPhase,
+            progress: { current: completedBatches, total: totalBatches, percentage },
+          });
+
+          try {
+            // Send BATCH_COMPLETED message to Content Script
+            chrome.tabs.sendMessage(tabId, {
+              type: MessageType.BATCH_COMPLETED,
+              payload: {
+                batchIndex,
+                translations,
+                nodeIndices,
+                phase: translationPhase,
+                progress: {
+                  current: completedBatches,
+                  total: totalBatches,
+                  percentage,
+                },
+              },
+            } as BatchCompletedMessage);
+          } catch (error) {
+            console.error(
+              `[Background:MessageHandler] Failed to send BATCH_COMPLETED to tab ${tabId}:`,
+              error
+            );
+          }
+        };
+      }
+
       // Call TranslationEngine with optional semi-parallel processing
       console.log(`[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`, {
         textsCount: texts.length,
         targetLanguage,
         semiParallel: semiParallel || false,
         priorityCount: priorityCount || undefined,
+        hasBatchCallback: !!onBatchComplete,
         firstText: texts[0]?.substring(0, 50)
       });
 
-      const translations = await this.engine.translateBatch(texts, targetLanguage, {
-        semiParallel,
-        priorityCount,
-      });
+      const translations = semiParallel
+        ? await this.engine.translateBatchSemiParallel(
+            texts,
+            targetLanguage,
+            priorityCount || 1,
+            onBatchComplete
+          )
+        : await this.engine.translateBatch(texts, targetLanguage);
 
       console.log(`[Background:MessageHandler] ${timestamp} - Translation successful:`, {
         translationsCount: translations.length,
@@ -290,7 +357,8 @@ export class MessageHandler {
    */
   private async handleClearCache(
     payload: any,
-    sendResponse: (response: HandlerResponse) => void
+    sendResponse: (response: HandlerResponse) => void,
+    sender?: chrome.runtime.MessageSender
   ): Promise<void> {
     try {
       const layer: CacheLayer = payload.layer || 'all';
@@ -316,7 +384,8 @@ export class MessageHandler {
    */
   private async handleGetCacheStats(
     payload: any,
-    sendResponse: (response: HandlerResponse) => void
+    sendResponse: (response: HandlerResponse) => void,
+    sender?: chrome.runtime.MessageSender
   ): Promise<void> {
     try {
       // Call TranslationEngine
@@ -344,7 +413,8 @@ export class MessageHandler {
    */
   private async handleTestConnection(
     payload: any,
-    sendResponse: (response: HandlerResponse) => void
+    sendResponse: (response: HandlerResponse) => void,
+    sender?: chrome.runtime.MessageSender
   ): Promise<void> {
     try {
       let result;
@@ -383,7 +453,8 @@ export class MessageHandler {
    */
   private async handleReloadConfig(
     payload: any,
-    sendResponse: (response: HandlerResponse) => void
+    sendResponse: (response: HandlerResponse) => void,
+    sender?: chrome.runtime.MessageSender
   ): Promise<void> {
     try {
       console.log('[MessageHandler] Reloading OpenRouterClient config...');

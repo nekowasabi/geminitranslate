@@ -165,6 +165,79 @@ export class ProgressNotification {
   }
 
   /**
+   * Update phase progress (overload: percentage only)
+   *
+   * @param phase - Translation phase (1: Viewport, 2: Full-page)
+   * @param percentage - Completion percentage (0-100)
+   */
+  updatePhase(phase: 1 | 2, percentage: number): void;
+
+  /**
+   * Update phase progress (overload: current/total with message update)
+   *
+   * @param phase - Translation phase (1: Viewport, 2: Full-page)
+   * @param current - Current progress count
+   * @param total - Total count for this phase
+   */
+  updatePhase(phase: 1 | 2, current: number, total: number): void;
+
+  /**
+   * Update phase progress (implementation)
+   *
+   * Updates the progress bar and optionally the phase message.
+   * - If only percentage is provided: updates progress bar without changing message
+   * - If current/total are provided: updates both progress bar and phase message
+   *
+   * @param phase - Translation phase (1: Viewport, 2: Full-page)
+   * @param percentageOrCurrent - Progress percentage (0-100) or current count
+   * @param total - Total count (optional, if provided then percentageOrCurrent is current count)
+   *
+   * @example
+   * ```typescript
+   * // Usage 1: Direct percentage update (no message change)
+   * notification.showPhase(1, 50); // Show "ビューポート内を翻訳中..."
+   * notification.updatePhase(1, 20); // Update to 20% without changing message
+   * notification.updatePhase(1, 60); // Update to 60%
+   *
+   * // Usage 2: Current/Total update (with message update)
+   * notification.updatePhase(1, 5, 10); // "ビューポート内を翻訳中... 50%"
+   * notification.updatePhase(2, 15, 20); // "ページ全体を翻訳中... 75%"
+   * ```
+   */
+  updatePhase(phase: 1 | 2, percentageOrCurrent: number, total?: number): void {
+    if (!this.container || !this.progressBar) {
+      logger.warn('ProgressNotification.updatePhase() called but notification not shown');
+      return;
+    }
+
+    let percentage: number;
+
+    if (total !== undefined) {
+      // Called with (phase, current, total) - update message and calculate percentage
+      this.currentPhase = phase;
+
+      // Calculate percentage (handle division by zero)
+      percentage = total > 0 ? Math.min(100, Math.round((percentageOrCurrent / total) * 100)) : 0;
+
+      // Phase-specific message
+      if (this.messageElement) {
+        const phaseMessage = phase === 1
+          ? `ビューポート内を翻訳中... ${percentage}%`
+          : `ページ全体を翻訳中... ${percentage}%`;
+        this.messageElement.textContent = phaseMessage;
+      }
+    } else {
+      // Called with (phase, percentage) - just update progress bar
+      percentage = Math.max(0, Math.min(100, Math.round(percentageOrCurrent)));
+    }
+
+    // Update progress bar width
+    this.progressBar.style.width = `${percentage}%`;
+
+    logger.log('ProgressNotification phase updated', { phase, percentage });
+  }
+
+  /**
    * Show completion state and auto-hide after 3 seconds
    */
   complete(): void {
@@ -383,46 +456,6 @@ export class ProgressNotification {
     logger.log(`ProgressNotification.showPhase(${phase}, ${total}) called`);
   }
 
-  /**
-   * Update phase-based progress
-   *
-   * Updates the progress notification with current progress for the specified phase.
-   * Displays phase-specific messaging and updates progress bar.
-   *
-   * @param phase - Translation phase (1: Viewport, 2: Full page)
-   * @param current - Current progress count
-   * @param total - Total count for this phase
-   *
-   * @example
-   * ```typescript
-   * progressNotification.updatePhase(1, 5, 10); // Phase 1: 50%
-   * progressNotification.updatePhase(2, 15, 20); // Phase 2: 75%
-   * ```
-   */
-  updatePhase(phase: 1 | 2, current: number, total: number): void {
-    if (!this.container || !this.progressBar || !this.messageElement) {
-      logger.warn('ProgressNotification.updatePhase() called but notification not shown');
-      return;
-    }
-
-    this.currentPhase = phase;
-
-    // Calculate percentage (handle division by zero)
-    const percentage = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
-
-    // Phase-specific message
-    const phaseMessage = phase === 1
-      ? `ビューポート内を翻訳中... ${percentage}%`
-      : `ページ全体を翻訳中... ${percentage}%`;
-
-    // Update message
-    this.messageElement.textContent = phaseMessage;
-
-    // Update progress bar width
-    this.progressBar.style.width = `${percentage}%`;
-
-    logger.log(`ProgressNotification.updatePhase(${phase}, ${current}, ${total}) - ${percentage}%`);
-  }
 
   /**
    * Complete current phase

@@ -72,6 +72,19 @@ interface CacheEntry {
 }
 
 /**
+ * Batch processing completion callback type
+ *
+ * @param batchIndex - Batch number (0-indexed)
+ * @param translations - Translation results for this batch
+ * @param nodeIndices - Corresponding node indices in original texts array
+ */
+type BatchProgressCallback = (
+  batchIndex: number,
+  translations: string[],
+  nodeIndices: number[]
+) => void;
+
+/**
  * TranslationEngine with 3-tier cache system
  */
 export class TranslationEngine {
@@ -127,20 +140,29 @@ export class TranslationEngine {
    *
    * @param texts - Array of texts to translate
    * @param targetLanguage - Target language name
-   * @param priorityCount - Number of batches to process sequentially (default: 3)
+   * @param priorityCount - Number of batches to process sequentially (default: 1)
+   * @param onBatchComplete - Callback invoked when each batch completes (optional)
    * @returns Array of translated texts in same order as input
    * @throws Error if engine not initialized or API request fails after retries
    *
    * @example
    * ```typescript
-   * // First 3 batches sequential, rest parallel
-   * const results = await engine.translateBatchSemiParallel(texts, 'Japanese', 3);
+   * // First 1 batch sequential, rest parallel, with callback
+   * const results = await engine.translateBatchSemiParallel(
+   *   texts,
+   *   'Japanese',
+   *   1,
+   *   (batchIndex, translations, nodeIndices) => {
+   *     console.log(`Batch ${batchIndex} completed:`, translations);
+   *   }
+   * );
    * ```
    */
   async translateBatchSemiParallel(
     texts: string[],
     targetLanguage: string,
-    priorityCount: number = BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES
+    priorityCount: number = BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
+    onBatchComplete?: BatchProgressCallback
   ): Promise<string[]> {
     const timestamp = new Date().toISOString();
     console.log(`[Background:TranslationEngine] ${timestamp} - translateBatchSemiParallel() called:`, {
@@ -173,6 +195,11 @@ export class TranslationEngine {
     }
 
     if (uncachedIndices.length === 0) {
+      // All cache hit - invoke callback immediately
+      if (onBatchComplete && texts.length > 0) {
+        const nodeIndices = Array.from({ length: texts.length }, (_, i) => i);
+        onBatchComplete(0, results, nodeIndices);
+      }
       return results;
     }
 
@@ -186,11 +213,24 @@ export class TranslationEngine {
     console.log(`[Background:TranslationEngine] ${timestamp} - Semi-parallel: ${priorityBatches.length} sequential, ${remainingBatches.length} parallel`);
 
     let translatedTexts: string[] = [];
+    let processedCount = 0;
 
     // Process priority batches sequentially
-    for (const batch of priorityBatches) {
+    for (let i = 0; i < priorityBatches.length; i++) {
+      const batch = priorityBatches[i];
       const batchResults = await this.translateWithRetry(batch, targetLanguage);
       translatedTexts.push(...batchResults);
+
+      // Invoke callback for this batch
+      if (onBatchComplete) {
+        const batchNodeIndices = uncachedIndices.slice(
+          processedCount,
+          processedCount + batch.length
+        );
+        onBatchComplete(i, batchResults, batchNodeIndices);
+      }
+
+      processedCount += batch.length;
     }
 
     // Process remaining batches in parallel
@@ -199,8 +239,21 @@ export class TranslationEngine {
         this.translateWithRetry(batch, targetLanguage)
       );
       const parallelResults = await Promise.all(parallelPromises);
-      parallelResults.forEach(batchResults => {
+
+      parallelResults.forEach((batchResults, idx) => {
+        const batchIndex = priorityBatches.length + idx;
         translatedTexts.push(...batchResults);
+
+        // Invoke callback for this batch
+        if (onBatchComplete) {
+          const batchNodeIndices = uncachedIndices.slice(
+            processedCount,
+            processedCount + batchResults.length
+          );
+          onBatchComplete(batchIndex, batchResults, batchNodeIndices);
+        }
+
+        processedCount += batchResults.length;
       });
     }
 

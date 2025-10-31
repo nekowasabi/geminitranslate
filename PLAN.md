@@ -1632,4 +1632,3 @@ describe('Viewport Translation - E2E', () => {
 ---
 
 **このドキュメントは実装開始前に必ずレビューしてください。**
-
