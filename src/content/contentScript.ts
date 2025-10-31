@@ -232,8 +232,8 @@ export class ContentScript {
           phase: 1,
         });
 
-        // Non-blocking send: batches will be applied via BATCH_COMPLETED messages
-        this.messageBus.send({
+        // Wait for Phase 1 completion before starting Phase 2
+        const response1 = await this.messageBus.send({
           type: MessageType.REQUEST_TRANSLATION,
           action: 'requestTranslation',
           payload: {
@@ -245,7 +245,19 @@ export class ContentScript {
           },
         });
 
-        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 request sent (non-blocking, batches will be applied via BATCH_COMPLETED)`);
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 response received:`, {
+          success: response1?.success,
+          hasTranslations: !!response1?.data?.translations,
+        });
+
+        if (response1?.success && response1?.data?.translations) {
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 completed`);
+          this.progressNotification.completePhase(1);
+        } else {
+          console.warn(`[Content:ContentScript] ${timestamp} - Phase 1 failed:`, response1);
+        }
+
+        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`);
       } else {
         console.log(`[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`);
       }

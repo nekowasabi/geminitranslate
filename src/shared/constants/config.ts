@@ -36,7 +36,7 @@ export const BATCH_CONFIG = {
   /**
    * Number of text elements per batch
    */
-  BATCH_SIZE: 10,
+  BATCH_SIZE: 20,
 
   /**
    * Maximum text length per batch (characters)
@@ -52,7 +52,7 @@ export const BATCH_CONFIG = {
    * Number of priority batches to process sequentially in viewport-priority translation
    *
    * @remarks
-   * - 1: Only first batch (10 texts) sequential, remaining parallel
+   * - 1: Only first batch (20 texts) sequential, remaining parallel
    * - Achieves fastest initial display (100ms target)
    * - Balances UX and performance optimally
    *
