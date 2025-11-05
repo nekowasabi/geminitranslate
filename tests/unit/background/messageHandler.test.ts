@@ -474,4 +474,298 @@ describe('MessageHandler', () => {
       });
     });
   });
+
+  describe('requestTranslation - BATCH_COMPLETED streaming', () => {
+    let mockChromeTabs: any;
+
+    beforeEach(() => {
+      // Mock chrome.tabs.sendMessage
+      mockChromeTabs = {
+        sendMessage: jest.fn(),
+      };
+      (global as any).chrome = {
+        tabs: mockChromeTabs,
+      };
+    });
+
+    afterEach(() => {
+      delete (global as any).chrome;
+    });
+
+    it('should send BATCH_COMPLETED message for each batch in semi-parallel mode', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: Array.from({ length: 25 }, (_, i) => `Text ${i}`), // 2 batches
+          targetLanguage: 'Japanese',
+          semiParallel: true,
+          priorityCount: 1,
+          phase: 1,
+        },
+      };
+
+      // Mock translateBatchSemiParallel to invoke callback
+      mockEngine.translateBatchSemiParallel = jest
+        .fn()
+        .mockImplementation(
+          async (
+            texts: string[],
+            lang: string,
+            priority: number,
+            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+          ) => {
+            // Simulate 2 batches
+            if (callback) {
+              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+              callback(1, Array(5).fill('translated'), Array.from({ length: 5 }, (_, i) => 20 + i));
+            }
+            return Array(25).fill('translated');
+          }
+        );
+
+      // Act
+      await handler.handle(message, mockSender, mockSendResponse);
+
+      // Assert
+      expect(mockChromeTabs.sendMessage).toHaveBeenCalledTimes(2);
+
+      // First BATCH_COMPLETED (batch 0)
+      expect(mockChromeTabs.sendMessage).toHaveBeenNthCalledWith(1, 1, {
+        type: MessageType.BATCH_COMPLETED,
+        payload: {
+          batchIndex: 0,
+          translations: expect.any(Array),
+          nodeIndices: expect.any(Array),
+          phase: 1,
+          progress: {
+            current: 1,
+            total: 2,
+            percentage: 50,
+          },
+        },
+      });
+
+      // Second BATCH_COMPLETED (batch 1)
+      expect(mockChromeTabs.sendMessage).toHaveBeenNthCalledWith(2, 1, {
+        type: MessageType.BATCH_COMPLETED,
+        payload: {
+          batchIndex: 1,
+          translations: expect.any(Array),
+          nodeIndices: expect.any(Array),
+          phase: 1,
+          progress: {
+            current: 2,
+            total: 2,
+            percentage: 100,
+          },
+        },
+      });
+    });
+
+    it('should not send BATCH_COMPLETED in non-semiParallel mode', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: Array(25).fill('test'),
+          targetLanguage: 'Japanese',
+          semiParallel: false, // Standard parallel mode
+        },
+      };
+
+      mockEngine.translateBatch = jest.fn().mockResolvedValue(Array(25).fill('translated'));
+
+      // Act
+      await handler.handle(message, mockSender, mockSendResponse);
+
+      // Assert
+      expect(mockChromeTabs.sendMessage).not.toHaveBeenCalled();
+      expect(mockEngine.translateBatch).toHaveBeenCalled();
+    });
+
+    it('should handle missing sender.tab.id gracefully', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: Array(25).fill('test'),
+          targetLanguage: 'Japanese',
+          semiParallel: true,
+          priorityCount: 1,
+        },
+      };
+
+      const senderWithoutTab = {
+        id: 'test-extension-id',
+        url: 'https://example.com',
+      };
+
+      mockEngine.translateBatchSemiParallel = jest
+        .fn()
+        .mockImplementation(
+          async (
+            texts: string[],
+            lang: string,
+            priority: number,
+            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+          ) => {
+            // Callback should not crash even without tabId
+            if (callback) {
+              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+            }
+            return Array(25).fill('translated');
+          }
+        );
+
+      // Act & Assert - Should not throw
+      await expect(
+        handler.handle(message, senderWithoutTab as any, mockSendResponse)
+      ).resolves.not.toThrow();
+
+      // sendMessage should not be called without tabId
+      expect(mockChromeTabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('should handle chrome.tabs.sendMessage errors gracefully', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: Array(25).fill('test'),
+          targetLanguage: 'Japanese',
+          semiParallel: true,
+          priorityCount: 1,
+          phase: 1,
+        },
+      };
+
+      // Mock sendMessage to throw error (e.g., tab closed)
+      mockChromeTabs.sendMessage.mockImplementation(() => {
+        throw new Error('Tab not found');
+      });
+
+      mockEngine.translateBatchSemiParallel = jest
+        .fn()
+        .mockImplementation(
+          async (
+            texts: string[],
+            lang: string,
+            priority: number,
+            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+          ) => {
+            if (callback) {
+              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+            }
+            return Array(25).fill('translated');
+          }
+        );
+
+      // Act & Assert - Should not throw, translation should still succeed
+      await expect(
+        handler.handle(message, mockSender, mockSendResponse)
+      ).resolves.not.toThrow();
+
+      expect(mockSendResponse).toHaveBeenCalledWith({
+        success: true,
+        data: { translations: expect.any(Array) },
+      });
+    });
+
+    it('should calculate progress percentage correctly', async () => {
+      // Arrange
+      const message = {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: Array.from({ length: 60 }, (_, i) => `Text ${i}`), // 3 batches
+          targetLanguage: 'Japanese',
+          semiParallel: true,
+          priorityCount: 1,
+          phase: 1,
+        },
+      };
+
+      mockEngine.translateBatchSemiParallel = jest
+        .fn()
+        .mockImplementation(
+          async (
+            texts: string[],
+            lang: string,
+            priority: number,
+            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+          ) => {
+            if (callback) {
+              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+              callback(
+                1,
+                Array(20).fill('translated'),
+                Array.from({ length: 20 }, (_, i) => 20 + i)
+              );
+              callback(
+                2,
+                Array(20).fill('translated'),
+                Array.from({ length: 20 }, (_, i) => 40 + i)
+              );
+            }
+            return Array(60).fill('translated');
+          }
+        );
+
+      // Act
+      await handler.handle(message, mockSender, mockSendResponse);
+
+      // Assert - Check percentage calculation
+      expect(mockChromeTabs.sendMessage).toHaveBeenCalledTimes(3);
+
+      // Batch 0: 33%
+      expect(mockChromeTabs.sendMessage).toHaveBeenNthCalledWith(
+        1,
+        1,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            progress: {
+              current: 1,
+              total: 3,
+              percentage: 33,
+            },
+          }),
+        })
+      );
+
+      // Batch 1: 67%
+      expect(mockChromeTabs.sendMessage).toHaveBeenNthCalledWith(
+        2,
+        1,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            progress: {
+              current: 2,
+              total: 3,
+              percentage: 67,
+            },
+          }),
+        })
+      );
+
+      // Batch 2: 100%
+      expect(mockChromeTabs.sendMessage).toHaveBeenNthCalledWith(
+        3,
+        1,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            progress: {
+              current: 3,
+              total: 3,
+              percentage: 100,
+            },
+          }),
+        })
+      );
+    });
+  });
 });

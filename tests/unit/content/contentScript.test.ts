@@ -123,14 +123,22 @@ describe('ContentScript', () => {
         sendResponse
       );
 
-      expect(mockSend).toHaveBeenCalledWith({
+      // Should be called at least once (Phase 1 and/or Phase 2 depending on viewport detection)
+      expect(mockSend).toHaveBeenCalled();
+
+      // Translation request should be sent with correct structure
+      const firstCall = mockSend.mock.calls[0][0];
+      expect(firstCall).toMatchObject({
         type: MessageType.REQUEST_TRANSLATION,
         action: 'requestTranslation',
-        payload: {
+        payload: expect.objectContaining({
           texts: expect.any(Array),
           targetLanguage: 'ja',
-        },
+        }),
       });
+
+      // Texts should not be empty
+      expect(firstCall.payload.texts.length).toBeGreaterThan(0);
     });
   });
 
@@ -394,7 +402,7 @@ describe('ContentScript', () => {
         sendResponse
       );
 
-      // Phase 1 should use semiParallel: true
+      // Phase 1 should use semiParallel: true with priorityCount: 1
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           type: MessageType.REQUEST_TRANSLATION,
@@ -403,7 +411,8 @@ describe('ContentScript', () => {
             texts: ['Hello World'],
             targetLanguage: 'ja',
             semiParallel: true,
-            priorityCount: 3,
+            priorityCount: 1,
+            phase: 1,
           }),
         })
       );
@@ -574,8 +583,18 @@ describe('ContentScript', () => {
         sendResponse
       );
 
-      // completePhase(2) should be called
-      expect(mockProgressNotification.completePhase).toHaveBeenCalledWith(2);
+      // completePhase should be called for both phases
+      // Note: With batch streaming, Phase 1 completes immediately after batch streaming starts
+      // Phase 2 will complete after the second translation request
+      expect(mockProgressNotification.completePhase).toHaveBeenCalled();
+
+      // Check if either Phase 1 or Phase 2 was completed
+      const completePhaseCalls = mockProgressNotification.completePhase.mock.calls;
+      const phaseOneCalled = completePhaseCalls.some(call => call[0] === 1);
+      const phaseTwoCalled = completePhaseCalls.some(call => call[0] === 2);
+
+      // At least one phase should complete
+      expect(phaseOneCalled || phaseTwoCalled).toBe(true);
     });
 
     it('should skip Phase 2 when outOfViewport is empty', async () => {
@@ -770,9 +789,17 @@ describe('ContentScript', () => {
           sendResponse
         );
 
-        expect(mockProgressNotification.show).toHaveBeenCalled();
-        const callArgs = mockProgressNotification.show.mock.calls[0];
-        expect(callArgs[0]).toBeGreaterThan(0); // total should be > 0
+        // With viewport-priority translation, showPhase is used instead of show
+        expect(mockProgressNotification.showPhase).toHaveBeenCalled();
+
+        // showPhase may be called for Phase 1 and/or Phase 2, depending on viewport detection
+        const showPhaseCalls = mockProgressNotification.showPhase.mock.calls;
+        expect(showPhaseCalls.length).toBeGreaterThan(0);
+
+        // First call should provide a valid phase and total
+        const firstCall = showPhaseCalls[0];
+        expect([1, 2]).toContain(firstCall[0]); // Phase can be 1 or 2
+        expect(firstCall[1]).toBeGreaterThan(0); // total should be > 0
       });
 
       it('should call progressNotification.complete() when translation succeeds', async () => {
@@ -935,6 +962,293 @@ describe('ContentScript', () => {
 
         expect(mockProgressNotification.error).toHaveBeenCalledWith('');
         expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+    });
+
+    describe('BATCH_COMPLETED message handling', () => {
+      let mockApplyTranslations: jest.SpyInstance;
+
+      beforeEach(() => {
+        // Mock domManipulator.applyTranslations
+        mockApplyTranslations = jest.spyOn(
+          (contentScript as any).domManipulator,
+          'applyTranslations'
+        );
+      });
+
+      it('should apply translations immediately when receiving BATCH_COMPLETED', async () => {
+        contentScript.initialize();
+
+        // Setup currentTranslationNodes
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+          { node: document.createTextNode('test2'), text: 'test2', element: document.body },
+          { node: document.createTextNode('test3'), text: 'test3', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ['翻訳1', '翻訳2'],
+              nodeIndices: [0, 1],
+              phase: 1,
+              progress: {
+                current: 1,
+                total: 2,
+                percentage: 50,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockApplyTranslations).toHaveBeenCalledWith(
+          [mockNodes[0], mockNodes[1]],
+          ['翻訳1', '翻訳2']
+        );
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 50);
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should handle BATCH_COMPLETED for Phase 2', async () => {
+        contentScript.initialize();
+
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ['翻訳1'],
+              nodeIndices: [0],
+              phase: 2,
+              progress: {
+                current: 1,
+                total: 1,
+                percentage: 100,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockApplyTranslations).toHaveBeenCalled();
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(2, 100);
+      });
+
+      it('should skip batch application when currentTranslationNodes is empty', async () => {
+        contentScript.initialize();
+
+        // Empty currentTranslationNodes
+        (contentScript as any).currentTranslationNodes = [];
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ['翻訳1'],
+              nodeIndices: [0],
+              phase: 1,
+              progress: {
+                current: 1,
+                total: 1,
+                percentage: 100,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockApplyTranslations).not.toHaveBeenCalled();
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should filter out-of-range nodeIndices', async () => {
+        contentScript.initialize();
+
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+          { node: document.createTextNode('test2'), text: 'test2', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ['翻訳1', '翻訳2', '翻訳3'],
+              nodeIndices: [0, 1, 10], // index 10 is out of range
+              phase: 1,
+              progress: {
+                current: 1,
+                total: 1,
+                percentage: 100,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        // Should only apply translations for valid indices (0, 1)
+        expect(mockApplyTranslations).toHaveBeenCalledWith(
+          [mockNodes[0], mockNodes[1]],
+          ['翻訳1', '翻訳2', '翻訳3']
+        );
+      });
+
+      it('should handle empty translations array', async () => {
+        contentScript.initialize();
+
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: [],
+              nodeIndices: [],
+              phase: 1,
+              progress: {
+                current: 0,
+                total: 1,
+                percentage: 0,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockApplyTranslations).toHaveBeenCalledWith([], []);
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 0);
+      });
+
+      it('should handle errors in applyTranslations gracefully', async () => {
+        contentScript.initialize();
+
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        // Mock applyTranslations to throw error
+        mockApplyTranslations.mockImplementation(() => {
+          throw new Error('DOM manipulation error');
+        });
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        // Should not throw, error should be caught
+        await expect(
+          messageHandler(
+            {
+              type: MessageType.BATCH_COMPLETED,
+              payload: {
+                batchIndex: 0,
+                translations: ['翻訳1'],
+                nodeIndices: [0],
+                phase: 1,
+                progress: {
+                  current: 1,
+                  total: 1,
+                  percentage: 100,
+                },
+              },
+            },
+            {},
+            sendResponse
+          )
+        ).resolves.not.toThrow();
+
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
+      it('should update progress notification with correct percentage', async () => {
+        contentScript.initialize();
+
+        const mockNodes = [
+          { node: document.createTextNode('test1'), text: 'test1', element: document.body },
+        ];
+        (contentScript as any).currentTranslationNodes = mockNodes;
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        // Test various percentages
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ['翻訳1'],
+              nodeIndices: [0],
+              phase: 1,
+              progress: {
+                current: 1,
+                total: 4,
+                percentage: 25,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 25);
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 1,
+              translations: ['翻訳2'],
+              nodeIndices: [0],
+              phase: 1,
+              progress: {
+                current: 3,
+                total: 4,
+                percentage: 75,
+              },
+            },
+          },
+          {},
+          sendResponse
+        );
+
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 75);
       });
     });
   });

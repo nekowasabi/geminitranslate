@@ -197,8 +197,12 @@ export class TranslationEngine {
     if (uncachedIndices.length === 0) {
       // All cache hit - invoke callback immediately
       if (onBatchComplete && texts.length > 0) {
-        const nodeIndices = Array.from({ length: texts.length }, (_, i) => i);
-        onBatchComplete(0, results, nodeIndices);
+        try {
+          const nodeIndices = Array.from({ length: texts.length }, (_, i) => i);
+          onBatchComplete(0, results, nodeIndices);
+        } catch (error) {
+          logger.warn('Batch complete callback error (cache hit):', error);
+        }
       }
       return results;
     }
@@ -223,11 +227,15 @@ export class TranslationEngine {
 
       // Invoke callback for this batch
       if (onBatchComplete) {
-        const batchNodeIndices = uncachedIndices.slice(
-          processedCount,
-          processedCount + batch.length
-        );
-        onBatchComplete(i, batchResults, batchNodeIndices);
+        try {
+          const batchNodeIndices = uncachedIndices.slice(
+            processedCount,
+            processedCount + batch.length
+          );
+          onBatchComplete(i, batchResults, batchNodeIndices);
+        } catch (error) {
+          logger.warn(`Batch complete callback error (batch ${i}):`, error);
+        }
       }
 
       processedCount += batch.length;
@@ -246,11 +254,15 @@ export class TranslationEngine {
 
         // Invoke callback for this batch
         if (onBatchComplete) {
-          const batchNodeIndices = uncachedIndices.slice(
-            processedCount,
-            processedCount + batchResults.length
-          );
-          onBatchComplete(batchIndex, batchResults, batchNodeIndices);
+          try {
+            const batchNodeIndices = uncachedIndices.slice(
+              processedCount,
+              processedCount + batchResults.length
+            );
+            onBatchComplete(batchIndex, batchResults, batchNodeIndices);
+          } catch (error) {
+            logger.warn(`Batch complete callback error (batch ${batchIndex}):`, error);
+          }
         }
 
         processedCount += batchResults.length;

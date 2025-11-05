@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **バッチストリーミング機能の包括的なテストスイート追加**
+  - BatchCompletedMessage型テスト（11テスト）: メッセージ型の正確性を検証
+  - TranslationEngine onBatchCompleteコールバックテスト（7テスト）: コールバック実行とエラーハンドリングを検証
+  - MessageHandler BATCH_COMPLETED送信テスト（5テスト）: メッセージ送信とprogress計算を検証
+  - ContentScript handleBatchCompletedテスト（7テスト）: バッチ受信と即座適用を検証
+  - 合計30テストを追加、全て成功
+- **エラーハンドリング強化**
+  - onBatchCompleteコールバックのtry-catch追加（順次・並列・キャッシュヒット時）
+  - 翻訳処理の継続性を保証（コールバックエラーが全体をブロックしない）
+
+### Fixed
+- **既存テストをBATCH_SIZE=20に対応**
+  - translateBatch batch processing テストの期待値修正
+  - 10+10+5 → 20+5 バッチ分割に更新
+
+## [3.0.1] - 2025-10-31
+
+### Fixed
+- **Phase 1進捗通知の表示問題を修正**
+  - Phase 1（ビューポート内翻訳）完了を待ってからPhase 2（ページ全体翻訳）を開始
+  - 「ビューポート内を翻訳中」→「ページ全体を翻訳中」の順序で正しく進捗表示
+  - バッチストリーミングによる段階的レンダリングは引き続き有効
+
+### Changed
+- **BATCH_SIZE**: 10 → 20 に変更
+  - 最初のバッチで20個のテキストが翻訳される（従来は10個）
+  - ビューポート内の翻訳がより広範囲をカバー
+  - 初期表示時のユーザー体験が向上
+
 ### ⚡ Performance - Batch Streaming Translation
 
 #### Added

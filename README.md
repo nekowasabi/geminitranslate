@@ -2,7 +2,7 @@
 
 A Chrome/Firefox extension that uses OpenRouter API to translate web pages while preserving their structure. Choose from multiple AI models including Google Gemini, Claude, GPT-4, and more.
 
-**Version 3.0.0** - Complete TypeScript rewrite with modern architecture, React 18 UI, and Manifest V3 support.
+**Version 3.0.1** - Complete TypeScript rewrite with modern architecture, React 18 UI, and Manifest V3 support.
 
 ![ScreenShot](screenshot.png) ![ScreenShot](screenshot3.png) ![ScreenShot](screenshot2.png)
 
@@ -196,11 +196,11 @@ npm run dev:firefox  # Firefox development mode
 ```bash
 # Package for Firefox (build + create .xpi)
 npm run package:firefox
-# Output: web-ext-artifacts/doganaylab_api_translate-3.0.0.zip
+# Output: web-ext-artifacts/doganaylab_api_translate-3.0.1.zip
 
 # Package for Chrome (build + create .zip)
 npm run package:chrome
-# Output: web-ext-artifacts/chrome-v3.0.0.zip
+# Output: web-ext-artifacts/chrome-v3.0.1.zip
 
 # Package for both browsers
 npm run package:all

@@ -1869,3 +1869,375 @@ describe('Viewport Translation - E2E', () => {
 ---
 
 **このドキュメントは実装開始前に必ずレビューしてください。**
+
+---
+
+## 11. 翻訳品質と精度の改善
+
+# title: 翻訳品質と精度の改善（要約防止とUI要素除外）
+
+## 概要
+- 選択テキスト翻訳時にLLMが内容を要約してしまう問題を解決
+- GitHubのアクションボタンなどのUI要素が翻訳されてしまう問題を解決
+
+### 実装の結果、実現される機能
+- **全文翻訳の保証**: 長文テキストも要約されず、原文の長さと情報量を保持して翻訳
+- **UI要素の適切な除外**: ボタン、フォーム、ナビゲーションリンクなどのインタラクティブ要素を翻訳対象から除外
+- **翻訳精度の向上**: コンテンツ領域のみを正確に翻訳し、UIノイズを排除
+
+### goal
+- ユーザーが選択したテキストを翻訳する際、内容が要約されずに全文が翻訳される
+- GitHubなどのWebサイトで、アクションボタンやナビゲーション要素が翻訳されない
+- README、コメント、記事本文などのコンテンツのみが正確に翻訳される
+
+## 必須のルール
+- 必ず `CLAUDE.md` を参照し、ルールを守ること
+- TypeScriptの型安全性を維持すること
+- 既存の翻訳機能（ページ翻訳、選択翻訳、クリップボード翻訳）に影響を与えない
+
+## 開発のゴール
+- **プロンプト改善**: LLMに「要約禁止・全文翻訳」の明示的制約を追加
+- **DOM フィルタリング強化**: インタラクティブ要素とARIA属性付き要素を除外
+- **翻訳精度向上**: コンテンツとUIの適切な分離により翻訳品質を向上
+
+## 実装仕様
+
+### 1. プロンプトに「要約禁止・全文翻訳」制約を追加
+**問題**: `apiClient.ts`の`buildPrompt()`メソッドに「要約禁止」の明示的制約がなく、LLMが長文を要約する可能性がある
+
+**解決策**:
+```typescript
+return `Translate the following texts to ${languageName}.
+Texts are separated by "${this.TEXT_SEPARATOR}".
+
+IMPORTANT RULES:
+- Translate the ENTIRE text without summarizing or omitting any content
+- Preserve the original length and information density
+- Do NOT shorten, condense, or paraphrase the text
+- Maintain all details, examples, and explanations from the original
+- Each text is independent - translate them separately
+- Output must have the same number of translations as inputs (1:1 correspondence)
+- Return translations in the same format, separated by "${this.TEXT_SEPARATOR}"
+
+${combined}`;
+```
+
+**効果**:
+- ✅ 「要約しない」を明示的に禁止
+- ✅ 「全文を翻訳する」ことを強制
+- ✅ 「原文の長さを保つ」ことを指示
+- ✅ 複数テキストの統合を防止
+
+### 2. DOMフィルタリングにインタラクティブ要素除外を追加
+**問題**: 現在の`DOMManipulator.ts`は`SCRIPT`, `STYLE`, `NOSCRIPT`, `IFRAME`のみを除外し、ボタンやリンクなどのUI要素が翻訳されてしまう
+
+**解決策**:
+```typescript
+// domManipulator.tsに追加
+private readonly INTERACTIVE_ELEMENTS = new Set([
+  'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA',
+  'A', 'LABEL', 'OPTION'
+]);
+
+private readonly SKIP_ROLES = new Set([
+  'button', 'link', 'menuitem', 'tab',
+  'switch', 'checkbox', 'radio', 'combobox',
+  'menubar', 'toolbar', 'navigation'
+]);
+
+// acceptNode()に追加のフィルタリング
+- インタラクティブ要素のタグ名チェック
+- ARIA roleチェック
+- aria-label/aria-describedby属性チェック
+```
+
+**効果**:
+- ✅ GitHubのボタン、フォーム、ナビゲーションが除外される
+- ✅ ARIA属性付きUI要素が除外される
+- ✅ 汎用的で即効性が高い（80-90%の問題を解決）
+
+## 生成AIの学習用コンテキスト
+
+### Background Script
+- `src/background/apiClient.ts`
+  - L306-319: `buildPrompt()`メソッド - プロンプト生成ロジック（修正対象）
+  - L107-312: `TEXT_SEPARATOR`使用箇所 - 複数テキスト処理
+
+### Content Script
+- `src/content/domManipulator.ts`
+  - L46-86: `extractTextNodes()`メソッド - テキストノード抽出とフィルタリング（修正対象）
+  - L70-80: `acceptNode()`メソッド - フィルタリング条件（拡張対象）
+  - L15-20: `IGNORED_TAGS`定数 - 現在の除外タグリスト
+
+### Config
+- `src/shared/constants/config.ts`
+  - L178-190: `EXCLUSION_SELECTORS`定数 - 定義されているが未使用（参考）
+
+## Process
+
+### process1 プロンプトに「要約禁止・全文翻訳」制約を追加
+
+#### sub1 buildPrompt()メソッドにIMPORTANT RULESセクションを追加
+@target: `src/background/apiClient.ts`
+@ref: `src/background/apiClient.ts:306-319`
+
+- [ ] `buildPrompt()`メソッド内のプロンプト文字列を修正
+- [ ] IMPORTANT RULESセクションを追加
+  - "Translate the ENTIRE text without summarizing or omitting any content"
+  - "Preserve the original length and information density"
+  - "Do NOT shorten, condense, or paraphrase the text"
+  - "Maintain all details, examples, and explanations from the original"
+  - "Each text is independent - translate them separately"
+  - "Output must have the same number of translations as inputs (1:1 correspondence)"
+- [ ] JSDocコメントを更新（必要に応じて）
+
+#### sub2 プロンプトトークン増加の影響確認
+@target: `src/background/apiClient.ts`
+@ref: なし
+
+- [ ] プロンプトトークン数の増加量を確認（約100トークン増加予想）
+- [ ] コスト影響が微小であることを確認（全体の1%未満）
+- [ ] 既存のテストケースが影響を受けないことを確認
+
+### process2 DOMフィルタリングにインタラクティブ要素除外を追加
+
+#### sub1 インタラクティブ要素とARIA role定数を追加
+@target: `src/content/domManipulator.ts`
+@ref: `src/content/domManipulator.ts:15-20`
+
+- [ ] `INTERACTIVE_ELEMENTS`定数を追加
+  - `Set`型で以下を定義: `BUTTON`, `INPUT`, `SELECT`, `TEXTAREA`, `A`, `LABEL`, `OPTION`
+- [ ] `SKIP_ROLES`定数を追加
+  - `Set`型で以下を定義: `button`, `link`, `menuitem`, `tab`, `switch`, `checkbox`, `radio`, `combobox`, `menubar`, `toolbar`, `navigation`
+- [ ] プライベートメンバーとして宣言
+
+#### sub2 acceptNode()メソッドにフィルタリングロジックを追加
+@target: `src/content/domManipulator.ts`
+@ref: `src/content/domManipulator.ts:70-80`
+
+- [ ] インタラクティブ要素のタグ名チェックを追加
+  ```typescript
+  if (this.INTERACTIVE_ELEMENTS.has(parent.tagName)) {
+    return NodeFilter.FILTER_REJECT;
+  }
+  ```
+- [ ] ARIA roleチェックを追加
+  ```typescript
+  const role = parent.getAttribute('role');
+  if (role && this.SKIP_ROLES.has(role)) {
+    return NodeFilter.FILTER_REJECT;
+  }
+  ```
+- [ ] ARIA属性チェックを追加
+  ```typescript
+  if (parent.hasAttribute('aria-label') ||
+      parent.hasAttribute('aria-describedby')) {
+    return NodeFilter.FILTER_REJECT;
+  }
+  ```
+
+#### sub3 フィルタリングのパフォーマンス最適化
+@target: `src/content/domManipulator.ts`
+@ref: なし
+
+- [ ] `Set`型の使用により、O(1)でのルックアップを保証
+- [ ] 早期リターンにより不要な処理を回避
+- [ ] `getAttribute()`呼び出しを最小化
+
+### process10 ユニットテスト
+
+#### sub1 buildPrompt()の要約禁止ルールテスト
+@target: `tests/unit/background/apiClient.test.ts`
+@ref: なし
+
+- [ ] `buildPrompt()`が正しくIMPORTANT RULESを含むことをテスト
+- [ ] プロンプトに"ENTIRE text", "Do NOT shorten"などのキーワードが含まれることを確認
+- [ ] 複数テキスト時に"1:1 correspondence"が含まれることを確認
+
+#### sub2 acceptNode()のインタラクティブ要素除外テスト
+@target: `tests/unit/content/domManipulator.test.ts`
+@ref: なし
+
+- [ ] `BUTTON`要素のテキストが除外されることをテスト
+- [ ] `INPUT`要素のテキストが除外されることをテスト
+- [ ] `role="button"`を持つ要素が除外されることをテスト
+- [ ] `aria-label`を持つ要素が除外されることをテスト
+- [ ] 通常の`<p>`要素は除外されないことをテスト（リグレッション防止）
+
+#### sub3 統合テスト - 選択翻訳で要約が起きないことを確認
+@target: `tests/integration/translation.test.ts`
+@ref: なし
+
+- [ ] 500-1000文字の長文を選択翻訳してテスト
+- [ ] 翻訳結果の文字数が大幅に減少していないことを確認（±20%以内）
+- [ ] 複数段落のテキストで全段落が翻訳されることを確認
+
+#### sub4 統合テスト - GitHubページでUI要素が除外されることを確認
+@target: `tests/integration/github.test.ts`
+@ref: なし
+
+- [ ] GitHubのREADMEページをテスト対象とする
+- [ ] ボタン（"Fork", "Star"など）のテキストが翻訳されないことを確認
+- [ ] ナビゲーションリンクが翻訳されないことを確認
+- [ ] README本文は正しく翻訳されることを確認
+
+### process50 フォローアップ
+
+#### sub1 リンクテキストの扱いに関するフィードバック収集
+@target: なし
+@ref: なし
+
+- [ ] 実装後、ユーザーフィードバックを収集
+- [ ] コンテンツ領域内のリンクテキストが翻訳されない問題が報告された場合、条件分岐を追加
+  - 例: `article`, `.markdown-body`内の`<a>`タグのみ翻訳対象とする
+
+#### sub2 他サイトでの動作確認
+@target: なし
+@ref: なし
+
+- [ ] Twitter、YouTube、Wikipedia等で動作確認（オプション）
+- [ ] サイト固有の問題が発見された場合、Phase 2（サイト別セレクター）の実装を検討
+
+### process100 リファクタリング
+
+#### sub1 定数の整理
+@target: `src/content/domManipulator.ts`
+@ref: `src/shared/constants/config.ts`
+
+- [ ] `INTERACTIVE_ELEMENTS`と`SKIP_ROLES`を`config.ts`に移動するか検討
+- [ ] 現状は`domManipulator.ts`のプライベートメンバーとして保持（シンプル性優先）
+
+#### sub2 コードコメントの充実
+@target: `src/content/domManipulator.ts`, `src/background/apiClient.ts`
+@ref: なし
+
+- [ ] 各フィルタリング条件にコメントを追加
+- [ ] なぜその要素を除外するのか理由を明記
+
+### process200 ドキュメンテーション
+
+#### sub1 CLAUDE.mdの更新
+@target: `CLAUDE.md`
+@ref: `CLAUDE.md`
+
+- [ ] Translation Flowセクションに「要約防止プロンプト」を追記
+- [ ] Key Componentsセクションに「インタラクティブ要素フィルタリング」を追加
+- [ ] Messaging Architectureセクションは変更なし（メッセージ型は追加されないため）
+
+#### sub2 実装変更のCHANGELOG記録
+@target: `CHANGELOG.md`
+@ref: なし
+
+- [ ] バージョン番号を更新（例: v1.3.0）
+- [ ] 変更内容を記載
+  ```markdown
+  ## [1.3.0] - 2025-XX-XX
+
+  ### Fixed
+  - 選択テキスト翻訳時に内容が要約される問題を修正（プロンプトに要約禁止制約を追加）
+  - GitHubのアクションボタンやUI要素が翻訳される問題を修正（インタラクティブ要素フィルタリング強化）
+
+  ### Changed
+  - apiClient.buildPrompt(): IMPORTANT RULESセクションを追加（全文翻訳を強制）
+  - domManipulator.acceptNode(): インタラクティブ要素とARIA属性のフィルタリングを追加
+  ```
+
+#### sub3 README.mdの更新（オプション）
+@target: `README.md`
+@ref: なし
+
+- [ ] Features セクションに「正確な全文翻訳」と「UI要素の適切な除外」を追加（必要に応じて）
+
+---
+
+## 検証基準
+
+### 機能検証
+- [ ] 500-1000文字の長文選択翻訳で要約が起きない
+- [ ] GitHubのボタン、フォーム、ナビゲーションが翻訳されない
+- [ ] README、Issue、コメント本文は正しく翻訳される
+- [ ] 既存の選択翻訳機能に影響がない
+- [ ] 既存のページ翻訳機能に影響がない
+- [ ] 既存のクリップボード翻訳機能に影響がない
+
+### コード品質検証
+- [ ] すべてのユニットテストがパス
+- [ ] `npm run lint` がエラーなく完了
+- [ ] TypeScriptコンパイルエラーなし
+- [ ] 型安全性が維持されている
+
+### パフォーマンス検証
+- [ ] プロンプトトークン増加が微小（100トークン程度）
+- [ ] DOM走査のパフォーマンス劣化がない
+- [ ] メモリリークがない
+
+---
+
+## リスク管理
+
+### リスク1: リンクテキストの翻訳が完全に除外される
+**発生確率**: Medium
+**影響**: 記事内のハイパーリンクテキスト（「詳細はこちら」など）も翻訳されなくなる
+
+**軽減策**:
+- 実装後、実際のGitHubページでテスト
+- 問題が確認された場合、コンテンツ領域内（`article`, `.markdown-body`）の`<a>`タグのみ翻訳対象とする条件分岐を追加
+- ユーザーフィードバックに基づいて調整
+
+### リスク2: LLMが指示に従わない可能性
+**発生確率**: Low
+**影響**: 一部のLLMモデルが依然として要約を行う可能性
+
+**軽減策**:
+- 複数の強調表現を使用（"ENTIRE", "DO NOT", "Preserve"）
+- 大文字・否定形・肯定形を組み合わせて指示を強化
+- 必要に応じてモデル固有のプロンプト調整を実施
+
+### リスク3: 誤検知によるコンテンツの翻訳漏れ
+**発生確率**: Low
+**影響**: 正当なコンテンツが誤ってUI要素と判定され、翻訳されない
+
+**軽減策**:
+- Phase 1実装後、実際のGitHubページで動作テスト
+- 翻訳されるべきコンテンツが除外されていないか確認
+- 問題があれば、フィルタリング条件を微調整
+
+---
+
+## 実装時間見積もり
+
+| Process | タスク | 見積時間 | 備考 |
+|---------|--------|---------|------|
+| process1 | プロンプト改善 | 30分 | シンプルな文字列修正 |
+| process2 | DOM フィルタリング強化 | 1.5時間 | 定数追加とロジック実装 |
+| process10 | ユニットテスト | 2時間 | 4つのテストファイル作成 |
+| process50 | フォローアップ | 30分 | 動作確認とフィードバック |
+| process100 | リファクタリング | 30分 | コード整理とコメント |
+| process200 | ドキュメンテーション | 45分 | 3つのドキュメント更新 |
+
+**合計**: 約5.5時間
+
+---
+
+## 完了基準
+
+### 技術的完了基準
+- ✅ すべてのprocess (1-200) が完了
+- ✅ すべてのユニットテストがパス
+- ✅ `npm run lint` がエラーなく完了
+- ✅ TypeScriptコンパイルエラーなし
+
+### 機能完了基準
+- ✅ 長文選択翻訳で要約が起きない
+- ✅ GitHubのUI要素が翻訳されない
+- ✅ README本文は正しく翻訳される
+- ✅ 既存機能に影響がない
+
+### ドキュメント完了基準
+- ✅ CLAUDE.mdが更新されている
+- ✅ CHANGELOG.mdが更新されている
+
+---
+
+**このセクションは2025-XX-XX時点の調査結果に基づいています。実装開始前に最新のコードベースを確認してください。**
+

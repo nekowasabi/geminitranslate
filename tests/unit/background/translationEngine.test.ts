@@ -203,7 +203,7 @@ describe('TranslationEngine', () => {
 
   describe('translateBatch - Batch Processing Tests', () => {
     it('should split large batches into chunks of BATCH_SIZE', async () => {
-      // RED: 25 texts should split into 3 batches (10+10+5)
+      // RED: 25 texts should split into 2 batches (20+5) with BATCH_SIZE=20
       await engine.initialize();
 
       const texts = Array.from({ length: 25 }, (_, i) => `Text ${i}`);
@@ -211,24 +211,22 @@ describe('TranslationEngine', () => {
 
       // Mock API to return translations in batches
       mockApiClient.translate
-        .mockResolvedValueOnce(translations.slice(0, 10))
-        .mockResolvedValueOnce(translations.slice(10, 20))
+        .mockResolvedValueOnce(translations.slice(0, 20))
         .mockResolvedValueOnce(translations.slice(20, 25));
 
       const result = await engine.translateBatch(texts, 'Japanese');
 
       expect(result).toEqual(translations);
-      expect(mockApiClient.translate).toHaveBeenCalledTimes(3);
-      expect(mockApiClient.translate).toHaveBeenNthCalledWith(1, texts.slice(0, 10), 'Japanese');
-      expect(mockApiClient.translate).toHaveBeenNthCalledWith(2, texts.slice(10, 20), 'Japanese');
-      expect(mockApiClient.translate).toHaveBeenNthCalledWith(3, texts.slice(20, 25), 'Japanese');
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(2);
+      expect(mockApiClient.translate).toHaveBeenNthCalledWith(1, texts.slice(0, 20), 'Japanese');
+      expect(mockApiClient.translate).toHaveBeenNthCalledWith(2, texts.slice(20, 25), 'Japanese');
     });
 
     it('should process batches in parallel', async () => {
-      // RED: Verify parallel processing with Promise.all
+      // RED: Verify parallel processing with Promise.all (BATCH_SIZE=20)
       await engine.initialize();
 
-      const texts = Array.from({ length: 20 }, (_, i) => `Text ${i}`);
+      const texts = Array.from({ length: 40 }, (_, i) => `Text ${i}`);
       const translations = texts.map((_, i) => `Translation ${i}`);
 
       let callOrder: number[] = [];
@@ -412,6 +410,175 @@ describe('TranslationEngine', () => {
       const uninitializedEngine = new TranslationEngine();
 
       await expect(uninitializedEngine.translateBatch(['Hello'], 'Japanese')).rejects.toThrow();
+    });
+  });
+
+  describe('translateBatchSemiParallel - onBatchComplete callback', () => {
+    it('should call onBatchComplete for each batch in sequential processing', async () => {
+      // RED: Callback should be invoked for each batch
+      await engine.initialize();
+
+      const texts = Array.from({ length: 25 }, (_, i) => `Text ${i}`); // 3 batches: 20+10+5
+      const onBatchComplete = jest.fn();
+
+      // Mock API responses
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated'))
+        .mockResolvedValueOnce(Array(5).fill('translated'));
+
+      await engine.translateBatchSemiParallel(texts, 'Japanese', 1, onBatchComplete);
+
+      // Should be called for first batch (sequential) + remaining batches (parallel)
+      expect(onBatchComplete).toHaveBeenCalledTimes(2);
+
+      // Verify first batch call (sequential)
+      expect(onBatchComplete).toHaveBeenNthCalledWith(
+        1,
+        0, // batchIndex
+        expect.arrayContaining(['translated']),
+        expect.arrayContaining([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]) // nodeIndices
+      );
+    });
+
+    it('should call onBatchComplete with correct batch indices', async () => {
+      await engine.initialize();
+
+      const texts = Array.from({ length: 30 }, (_, i) => `Text ${i}`); // 2 batches: 20+10
+      const onBatchComplete = jest.fn();
+
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated1'))
+        .mockResolvedValueOnce(Array(10).fill('translated2'));
+
+      await engine.translateBatchSemiParallel(texts, 'Japanese', 1, onBatchComplete);
+
+      expect(onBatchComplete).toHaveBeenCalledTimes(2);
+
+      // Batch 0 (sequential)
+      expect(onBatchComplete).toHaveBeenNthCalledWith(
+        1,
+        0,
+        expect.any(Array),
+        expect.any(Array)
+      );
+
+      // Batch 1 (parallel)
+      expect(onBatchComplete).toHaveBeenNthCalledWith(
+        2,
+        1,
+        expect.any(Array),
+        expect.any(Array)
+      );
+    });
+
+    it('should call onBatchComplete immediately for cache hit', async () => {
+      await engine.initialize();
+
+      const texts = ['cached1', 'cached2'];
+      const onBatchComplete = jest.fn();
+
+      // Pre-populate cache
+      mockApiClient.translate.mockResolvedValueOnce(['翻訳1', '翻訳2']);
+      await engine.translateBatch(texts, 'Japanese');
+
+      // Reset mock
+      jest.clearAllMocks();
+
+      // Call with same texts (cache hit)
+      await engine.translateBatchSemiParallel(texts, 'Japanese', 1, onBatchComplete);
+
+      // Should be called immediately with cached results
+      expect(onBatchComplete).toHaveBeenCalledTimes(1);
+      expect(onBatchComplete).toHaveBeenCalledWith(
+        0,
+        ['翻訳1', '翻訳2'],
+        [0, 1]
+      );
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
+    });
+
+    it('should provide correct nodeIndices for each batch', async () => {
+      await engine.initialize();
+
+      const texts = Array.from({ length: 25 }, (_, i) => `Text ${i}`);
+      const onBatchComplete = jest.fn();
+
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated'))
+        .mockResolvedValueOnce(Array(5).fill('translated'));
+
+      await engine.translateBatchSemiParallel(texts, 'Japanese', 1, onBatchComplete);
+
+      // First batch: indices 0-19
+      expect(onBatchComplete).toHaveBeenNthCalledWith(
+        1,
+        0,
+        expect.any(Array),
+        Array.from({ length: 20 }, (_, i) => i)
+      );
+
+      // Second batch: indices 20-24
+      expect(onBatchComplete).toHaveBeenNthCalledWith(
+        2,
+        1,
+        expect.any(Array),
+        Array.from({ length: 5 }, (_, i) => 20 + i)
+      );
+    });
+
+    it('should work without onBatchComplete callback (optional parameter)', async () => {
+      await engine.initialize();
+
+      const texts = Array.from({ length: 25 }, (_, i) => `Text ${i}`);
+
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated'))
+        .mockResolvedValueOnce(Array(5).fill('translated'));
+
+      // Should not throw error when callback is undefined
+      await expect(
+        engine.translateBatchSemiParallel(texts, 'Japanese', 1, undefined)
+      ).resolves.not.toThrow();
+    });
+
+    it('should handle callback errors gracefully', async () => {
+      await engine.initialize();
+
+      const texts = Array.from({ length: 25 }, (_, i) => `Text ${i}`);
+      const onBatchComplete = jest.fn(() => {
+        throw new Error('Callback error');
+      });
+
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated'))
+        .mockResolvedValueOnce(Array(5).fill('translated'));
+
+      // Translation should still complete even if callback throws
+      const result = await engine.translateBatchSemiParallel(
+        texts,
+        'Japanese',
+        1,
+        onBatchComplete
+      );
+
+      expect(result).toHaveLength(25);
+      expect(onBatchComplete).toHaveBeenCalled();
+    });
+
+    it('should respect priorityCount parameter', async () => {
+      await engine.initialize();
+
+      const texts = Array.from({ length: 40 }, (_, i) => `Text ${i}`); // 2 batches
+      const onBatchComplete = jest.fn();
+
+      mockApiClient.translate
+        .mockResolvedValueOnce(Array(20).fill('translated'))
+        .mockResolvedValueOnce(Array(20).fill('translated'));
+
+      await engine.translateBatchSemiParallel(texts, 'Japanese', 1, onBatchComplete);
+
+      // Should be called 2 times (1 sequential + 1 parallel)
+      expect(onBatchComplete).toHaveBeenCalledTimes(2);
     });
   });
 });
