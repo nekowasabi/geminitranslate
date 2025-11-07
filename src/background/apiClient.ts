@@ -312,8 +312,14 @@ export class OpenRouterClient {
     const combined = texts.join(`\n${this.TEXT_SEPARATOR}\n`);
 
     return `Translate the following texts to ${languageName}.
-Texts are separated by "${this.TEXT_SEPARATOR}".
-Return translations in the same format, separated by "${this.TEXT_SEPARATOR}":
+
+IMPORTANT INSTRUCTIONS:
+- Translate the COMPLETE text, do NOT summarize or shorten
+- Preserve ALL information, sentences, and paragraphs
+- Maintain the original length and detail level
+- Each text is independent - translate them separately
+- Texts are separated by "${this.TEXT_SEPARATOR}"
+- Return translations in the same format, separated by "${this.TEXT_SEPARATOR}"
 
 ${combined}`;
   }

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 翻訳処理の継続性を保証（コールバックエラーが全体をブロックしない）
 
 ### Fixed
+- **選択翻訳での要約問題を修正**
+  - プロンプトに明示的な要約禁止指示を追加
+  - "Translate the COMPLETE text, do NOT summarize or shorten"
+  - "Preserve ALL information, sentences, and paragraphs"
+  - 長文テキストや複数段落のテキストが要約されずに全文翻訳されるように改善
+  - 長文翻訳と複数段落翻訳の検証テストを3件追加（全て成功）
 - **既存テストをBATCH_SIZE=20に対応**
   - translateBatch batch processing テストの期待値修正
   - 10+10+5 → 20+5 バッチ分割に更新

@@ -6,27 +6,29 @@
 /* FloatingUI Container */
 .gemini-translate-floating-result {
   position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 400px;
   z-index: 10000;
   background: #ffffff;
   color: #1f2937;
   padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  min-width: 300px;
-  max-width: 500px;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', sans-serif;
-  border: 1px solid #e5e7eb;
-  animation: fadeInScale 0.2s ease-out;
+  border-left: 1px solid #e5e7eb;
+  animation: slideInFromRight 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
 }
 
-@keyframes fadeInScale {
+@keyframes slideInFromRight {
   from {
-    opacity: 0;
-    transform: scale(0.95);
+    transform: translateX(100%);
   }
   to {
-    opacity: 1;
-    transform: scale(1);
+    transform: translateX(0);
   }
 }
 
@@ -117,6 +119,8 @@
   word-break: break-word;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  user-select: text;
+  cursor: text;
 }
 
 .gemini-translate-floating-result .translated-text {
@@ -125,6 +129,12 @@
   border-color: #bfdbfe;
   color: #1e40af;
   font-size: var(--selection-font-size, 14px);
+}
+
+.gemini-translate-floating-result .close-button,
+.gemini-translate-floating-result .copy-button,
+.gemini-translate-floating-result .header {
+  user-select: none;
 }
 
 /* Actions */

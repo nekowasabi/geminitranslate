@@ -333,6 +333,98 @@ describe('OpenRouterClient', () => {
       expect(prompt).toContain('Hello');
       expect(prompt).toContain('Goodbye');
     });
+
+    it('should include anti-summarization instructions in prompt', async () => {
+      await client.initialize();
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: 'こんにちは' } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      await client.translate(['Hello'], 'Japanese');
+
+      const requestBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+      const prompt = requestBody.messages[0].content;
+
+      // Should contain anti-summarization instructions
+      expect(prompt).toContain('IMPORTANT INSTRUCTIONS');
+      expect(prompt).toContain('do NOT summarize');
+      expect(prompt).toContain('COMPLETE text');
+      expect(prompt).toContain('Preserve ALL information');
+      expect(prompt).toContain('Maintain the original length');
+    });
+
+    it('should translate long text without summarization', async () => {
+      await client.initialize();
+
+      // Create a long text (200+ characters)
+      const longText =
+        'This is a very long paragraph that contains multiple sentences and detailed information. ' +
+        'It is important that the translation preserves all of this content without summarizing or shortening it. ' +
+        'Every sentence should be translated completely, maintaining the original meaning and detail level.';
+
+      const mockTranslation =
+        'これは複数の文と詳細な情報を含む非常に長い段落です。' +
+        '翻訳がこのコンテンツを要約したり短縮したりせずに保持することが重要です。' +
+        'すべての文は完全に翻訳され、元の意味と詳細レベルを維持する必要があります。';
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: mockTranslation } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate([longText], 'Japanese');
+
+      // Verify prompt includes anti-summarization instructions
+      const requestBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+      expect(requestBody.messages[0].content).toContain('do NOT summarize');
+      expect(requestBody.messages[0].content).toContain('COMPLETE text');
+
+      // Verify translation result exists and is not empty
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe(mockTranslation);
+      expect(result[0].length).toBeGreaterThan(0);
+    });
+
+    it('should preserve multi-paragraph structure in translation', async () => {
+      await client.initialize();
+
+      const multiParagraphText =
+        'Paragraph 1: This is the first paragraph with some content.\n\n' +
+        'Paragraph 2: This is the second paragraph with more details.\n\n' +
+        'Paragraph 3: This is the third paragraph concluding the text.';
+
+      const mockTranslation =
+        '段落1：これはいくつかの内容を含む最初の段落です。\n\n' +
+        '段落2：これはより詳細な2番目の段落です。\n\n' +
+        '段落3：これはテキストを締めくくる3番目の段落です。';
+
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: mockTranslation } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate([multiParagraphText], 'Japanese');
+
+      // Verify all paragraphs are preserved in the result
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe(mockTranslation);
+
+      // Count paragraphs (separated by double newlines)
+      const originalParagraphs = multiParagraphText.split('\n\n').length;
+      const translatedParagraphs = result[0].split('\n\n').length;
+      expect(translatedParagraphs).toBe(originalParagraphs);
+    });
   });
 
   describe('parseResponse', () => {

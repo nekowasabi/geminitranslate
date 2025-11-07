@@ -198,11 +198,11 @@ export class SelectionHandler {
           const range = selection.getRangeAt(0);
           const rect = range.getBoundingClientRect();
 
-          // Show IconBadge near selection
+          // Show IconBadge at fixed position: right edge, vertical center
           this.iconBadge.show(
             {
-              x: rect.right,
-              y: rect.bottom,
+              x: window.innerWidth - 40,  // Right edge minus icon width (32px) and margin (8px)
+              y: window.innerHeight / 2,  // Vertical center
             },
             async () => {
               // IconBadge clicked - trigger translation
@@ -220,6 +220,11 @@ export class SelectionHandler {
                 // even if user has deselected the text before clicking IconBadge
                 const translatedText = await this.translateSelection(targetLanguage, selectedText);
 
+                // Debug logs for translation issues
+                logger.log('[DEBUG] Selected text:', selectedText.substring(0, 100));
+                logger.log('[DEBUG] Translated text:', translatedText ? translatedText.substring(0, 100) : 'null');
+                logger.log('[DEBUG] Target language:', targetLanguage);
+
                 // Show FloatingUI with translation result
                 if (translatedText && selectedText) {
                   await this.iconBadge.showTranslationResult(
@@ -227,8 +232,8 @@ export class SelectionHandler {
                     translatedText,
                     targetLanguage,
                     {
-                      x: rect.right,
-                      y: rect.bottom,
+                      x: window.innerWidth,  // Right edge (position will be fixed by CSS)
+                      y: 0,                  // Top (position will be fixed by CSS)
                     }
                   );
                 } else {

@@ -158,43 +158,24 @@ export class IconBadge {
   }
 
   /**
-   * Position badge element at specified coordinates with viewport adjustment
-   * @param position - Position coordinates
+   * Position badge element at fixed position: right edge, vertically centered on browser window
+   * @param position - Position coordinates (unused, kept for API compatibility)
    */
   private positionElement(position: Position): void {
     if (!this.badgeElement) {
       return;
     }
 
-    const offset = UI_CONFIG.FLOATING_UI_OFFSET;
-
-    // Adjust position to stay within viewport
-    let { x, y } = position;
-
-    // Ensure non-negative
-    x = Math.max(0, x);
-    y = Math.max(0, y);
-
-    // Add offset
-    x += offset;
-    y += offset;
-
-    // Get element dimensions
+    // Fixed positioning: right edge, vertically centered on browser window
+    const rightMargin = 8;
     const rect = this.badgeElement.getBoundingClientRect();
+    const iconWidth = rect.width || 32;
+    const iconHeight = rect.height || 32;
 
-    // Adjust if going off right edge
-    if (x + rect.width > window.innerWidth) {
-      x = window.innerWidth - rect.width - offset;
-    }
-
-    // Adjust if going off bottom edge
-    if (y + rect.height > window.innerHeight) {
-      y = window.innerHeight - rect.height - offset;
-    }
-
-    // Ensure still non-negative after adjustments
-    x = Math.max(0, x);
-    y = Math.max(0, y);
+    // Position at right edge of browser window
+    const x = window.innerWidth - iconWidth - rightMargin;
+    // Center vertically in browser window (not based on selection position)
+    const y = (window.innerHeight - iconHeight) / 2;
 
     // Apply position
     this.badgeElement.style.left = `${x}px`;
@@ -314,46 +295,21 @@ export class IconBadge {
   }
 
   /**
-   * Position FloatingUI element at specified coordinates with viewport adjustment
-   * @param position - Position coordinates
+   * Position FloatingUI element - fixed to right edge, full height
+   * @param position - Position coordinates (ignored for fixed positioning)
    */
   private positionFloatingResult(position: Position): void {
     if (!this.floatingResultElement) {
       return;
     }
 
-    const offset = UI_CONFIG.FLOATING_UI_OFFSET;
-
-    // Adjust position to stay within viewport
-    let { x, y } = position;
-
-    // Ensure non-negative
-    x = Math.max(0, x);
-    y = Math.max(0, y);
-
-    // Add offset
-    x += offset;
-    y += offset;
-
-    // Get element dimensions
-    const rect = this.floatingResultElement.getBoundingClientRect();
-
-    // Adjust if going off right edge
-    if (x + rect.width > window.innerWidth) {
-      x = window.innerWidth - rect.width - offset;
-    }
-
-    // Adjust if going off bottom edge
-    if (y + rect.height > window.innerHeight) {
-      y = window.innerHeight - rect.height - offset;
-    }
-
-    // Ensure still non-negative after adjustments
-    x = Math.max(0, x);
-    y = Math.max(0, y);
-
-    // Apply position
-    this.floatingResultElement.style.left = `${x}px`;
-    this.floatingResultElement.style.top = `${y}px`;
+    // Fixed positioning: right edge, full height (CSS handles most styling)
+    this.floatingResultElement.style.position = 'fixed';
+    this.floatingResultElement.style.right = '0';
+    this.floatingResultElement.style.top = '0';
+    this.floatingResultElement.style.bottom = '0';
+    this.floatingResultElement.style.width = '400px';
+    this.floatingResultElement.style.overflowY = 'auto';
+    this.floatingResultElement.style.left = 'auto';  // Reset left positioning
   }
 }
