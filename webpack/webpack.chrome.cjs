@@ -3,6 +3,8 @@ const common = require('./webpack.common.cjs');
 const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const path = require('path');
+const fs = require('fs');
+const packageJson = require('../package.json');
 
 module.exports = merge(common, {
   entry: {
@@ -33,7 +35,15 @@ module.exports = merge(common, {
     }),
     new CopyPlugin({
       patterns: [
-        { from: 'public/manifest.v3.json', to: 'manifest.json' },
+        {
+          from: 'public/manifest.v3.json',
+          to: 'manifest.json',
+          transform(content) {
+            const manifest = JSON.parse(content.toString());
+            manifest.version = packageJson.version;
+            return JSON.stringify(manifest, null, 2);
+          },
+        },
         { from: 'public/offscreen.html', to: 'offscreen.html', noErrorOnMissing: true },
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
       ],
