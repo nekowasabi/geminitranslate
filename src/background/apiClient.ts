@@ -314,6 +314,8 @@ export class OpenRouterClient {
     return `Translate the following texts to ${languageName}.
 
 IMPORTANT INSTRUCTIONS:
+- Return ONLY the translation, NOT the original text
+- Do NOT include both original and translation (no side-by-side format)
 - Translate the COMPLETE text, do NOT summarize or shorten
 - Preserve ALL information, sentences, and paragraphs
 - Maintain the original length and detail level
@@ -325,24 +327,154 @@ ${combined}`;
   }
 
   /**
+   * Prompt patterns to detect and remove from LLM responses
+   * These patterns indicate the LLM echoed back the prompt instructions
+   * Includes both English and Japanese translations of prompt fragments
+   */
+  private readonly PROMPT_PATTERNS = [
+    // English patterns
+    /^Translate the following texts? to \w+\.?\s*/i,
+    /^IMPORTANT INSTRUCTIONS:[\s\S]*?---NEXT-TEXT---\s*/i,
+    /Texts? (?:are|is) separated by ["']---NEXT-TEXT---["']\.?\s*/i,
+    /Return translations? in the same format,? separated by ["']---NEXT-TEXT---["'][\s:]*\n?/i,
+
+    // Japanese translated patterns - LLM sometimes translates the prompt
+    // Pattern: |」で区切られていること - 翻訳も同じ形式で、「|前へ|親 |
+    /[|「」]?で区切られていること[^。]*?[|「]/g,
+    /翻訳も同じ形式で[^。]*?[|「]/g,
+    /テキストは[\s\S]*?で区切られています\.?\s*/g,
+    // More aggressive pattern for the full instruction
+    /\|」で区切られていること\s*-\s*翻訳も同じ形式で、「\|[^|]*\|/g,
+
+    // Pipe-separated navigation artifacts (from Hacker News, Reddit, etc.)
+    /\s*\|[前後]へ\|/g,
+    /\s*\|親\s*\|/g,
+    /\s*\|root\|/gi,
+    /親\s*\|/g, // Orphaned pipe suffix
+    /\s*\|[^|]{1,10}\|\s*$/g, // Generic pipe-separated suffix like |親 | at end
+  ];
+
+  /**
+   * Remove prompt artifacts from LLM response
+   *
+   * Some LLMs echo back the prompt or include instruction text in their response.
+   * This method removes such artifacts to get clean translation output.
+   *
+   * @param content - Raw LLM response content
+   * @returns Cleaned content with prompt artifacts removed
+   */
+  private removePromptArtifacts(content: string): string {
+    let cleaned = content;
+
+    for (const pattern of this.PROMPT_PATTERNS) {
+      cleaned = cleaned.replace(pattern, '');
+    }
+
+    return cleaned.trim();
+  }
+
+  /**
+   * Attempt to intelligently split response when separator is missing
+   *
+   * When the LLM doesn't include separators, tries to split by:
+   * 1. Double newlines (paragraph breaks)
+   * 2. Single newlines (line breaks)
+   *
+   * @param content - Response content without separators
+   * @param expectedCount - Expected number of translations
+   * @returns Array of translations
+   */
+  private splitWithoutSeparator(content: string, expectedCount: number): string[] {
+    // If only 1 expected, return as-is
+    if (expectedCount === 1) {
+      return [content.trim()];
+    }
+
+    // Try splitting by double newlines first (paragraph breaks)
+    const byParagraph = content
+      .split(/\n\n+/)
+      .map((s) => s.trim())
+      .filter((s) => s);
+
+    if (byParagraph.length === expectedCount) {
+      logger.log('Split by paragraph breaks matched expected count');
+      return byParagraph;
+    }
+
+    // Try splitting by single newlines
+    const byLine = content
+      .split(/\n/)
+      .map((s) => s.trim())
+      .filter((s) => s);
+
+    if (byLine.length === expectedCount) {
+      logger.log('Split by line breaks matched expected count');
+      return byLine;
+    }
+
+    // If paragraph split is closer to expected, use it
+    if (
+      byParagraph.length > 1 &&
+      Math.abs(byParagraph.length - expectedCount) < Math.abs(byLine.length - expectedCount)
+    ) {
+      logger.warn(
+        `Using paragraph split (${byParagraph.length}) as fallback, expected ${expectedCount}`
+      );
+      return byParagraph;
+    }
+
+    // If line split is closer, use it
+    if (byLine.length > 1) {
+      logger.warn(`Using line split (${byLine.length}) as fallback, expected ${expectedCount}`);
+      return byLine;
+    }
+
+    // Last resort: return the whole content as single translation
+    logger.warn(
+      `Could not split response into ${expectedCount} parts, returning as single translation`
+    );
+    return [content.trim()];
+  }
+
+  /**
    * Parse API response content
+   *
+   * Handles various LLM response formats:
+   * 1. Standard format with ---NEXT-TEXT--- separators
+   * 2. Responses with prompt artifacts (removes them)
+   * 3. Responses without separators (intelligent fallback splitting)
    *
    * @param content - Response content
    * @param expectedCount - Expected number of translations
    * @returns Array of translations
    */
   private parseResponse(content: string, expectedCount: number): string[] {
-    const translations = content
-      .trim()
-      .split(this.TEXT_SEPARATOR)
-      .map((text) => text.trim())
-      .filter((text) => text);
+    // Step 1: Remove any prompt artifacts from response
+    const cleanedContent = this.removePromptArtifacts(content);
 
-    if (translations.length !== expectedCount) {
-      logger.warn(`Expected ${expectedCount} translations, got ${translations.length}`);
+    // Step 2: Try standard separator-based split
+    if (cleanedContent.includes(this.TEXT_SEPARATOR)) {
+      const translations = cleanedContent
+        .split(this.TEXT_SEPARATOR)
+        .map((text) => text.trim())
+        .filter((text) => text);
+
+      if (translations.length === expectedCount) {
+        return translations;
+      }
+
+      // If count doesn't match but we have some translations, log and return
+      if (translations.length > 0) {
+        logger.warn(
+          `Separator split: expected ${expectedCount} translations, got ${translations.length}`
+        );
+        return translations;
+      }
     }
 
-    return translations;
+    // Step 3: No separator found or empty result, use intelligent fallback
+    logger.log('No separator found in response, using fallback splitting');
+    return this.splitWithoutSeparator(cleanedContent, expectedCount);
   }
 
   /**
