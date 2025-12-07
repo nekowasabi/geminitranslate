@@ -35,13 +35,15 @@ export const BATCH_CONFIG = {
 
   /**
    * Number of text elements per batch
+   * Optimized for 100k token models to reduce API calls
    */
-  BATCH_SIZE: 20,
+  BATCH_SIZE: 100,
 
   /**
    * Maximum text length per batch (characters)
+   * Optimized for 100k token models to reduce API calls
    */
-  MAX_BATCH_LENGTH: 5000,
+  MAX_BATCH_LENGTH: 50000,
 
   /**
    * Minimum text length to translate (characters)
@@ -52,7 +54,7 @@ export const BATCH_CONFIG = {
    * Number of priority batches to process sequentially in viewport-priority translation
    *
    * @remarks
-   * - 1: Only first batch (20 texts) sequential, remaining parallel
+   * - 1: Only first batch (100 texts) sequential, remaining parallel
    * - Achieves fastest initial display (100ms target)
    * - Balances UX and performance optimally
    *
