@@ -263,6 +263,66 @@ describe('DOMManipulator', () => {
     });
   });
 
+  describe('text normalization', () => {
+    it('should trim whitespace from extracted text', () => {
+      testContainer.innerHTML = '<p>  Hello World  </p>';
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      expect(textNodes.length).toBe(1);
+      // Text should be trimmed
+      expect(textNodes[0].text).toBe('Hello World');
+    });
+
+    it('should normalize text with leading/trailing newlines', () => {
+      testContainer.innerHTML = '<p>\n\nHello\n\n</p>';
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      expect(textNodes.length).toBe(1);
+      expect(textNodes[0].text).toBe('Hello');
+    });
+  });
+
+  describe('duplicate text handling', () => {
+    it('should detect duplicate texts', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Same Text</p>
+          <span>Same Text</span>
+          <div>Same Text</div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      // Should extract all nodes, but mark duplicates
+      expect(textNodes.length).toBe(3);
+      // All nodes should have same text
+      expect(textNodes[0].text).toBe('Same Text');
+      expect(textNodes[1].text).toBe('Same Text');
+      expect(textNodes[2].text).toBe('Same Text');
+    });
+
+    it('should handle duplicate texts with different whitespace', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Hello World</p>
+          <span>  Hello World  </span>
+          <div>Hello World</div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      // After normalization, all should be 'Hello World'
+      expect(textNodes.length).toBe(3);
+      textNodes.forEach((node) => {
+        expect(node.text).toBe('Hello World');
+      });
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty DOM', () => {
       testContainer.innerHTML = '';
