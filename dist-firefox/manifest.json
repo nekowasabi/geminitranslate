@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "DoganayLab API Translate App",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "Translate web pages using OpenRouter API with support for multiple AI models",
   "icons": {
     "19": "icons/translate-19.png",
