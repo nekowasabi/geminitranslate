@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:ext": "web-ext build --overwrite-dest",
     "build:ext:firefox": "web-ext build --source-dir=dist-firefox --overwrite-dest",
-    "build:ext:chrome": "cd dist-chrome && zip -r ../web-ext-artifacts/chrome-v3.0.2.zip .",
+    "build:ext:chrome": "node -e \"const {version} = require('./package.json'); const {execSync} = require('child_process'); execSync('cd dist-chrome && zip -r ../web-ext-artifacts/chrome-v' + version + '.zip .', {stdio: 'inherit'});\"",
     "build:chrome-old": "bash build-chrome.sh",
     "build:chrome": "NODE_ENV=production webpack --config webpack/webpack.chrome.cjs",
     "build:chrome:dev": "NODE_ENV=development webpack --config webpack/webpack.chrome.cjs",
@@ -28,7 +28,7 @@
     "preview": "vite preview",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "package:source": "zip -r web-ext-artifacts/source-code.zip . -x '*.git*' 'node_modules/*' 'dist-*/*' 'web-ext-artifacts/*' 'coverage/*' '.aider*' '.serena/*' '.kiro/*' 'tmp/*' '*.bak' '*.log'"
+    "package:source": "zip -r web-ext-artifacts/source-code.zip . -x '*.git*' 'node_modules/*' 'dist-*/*' 'web-ext-artifacts/*' 'coverage/*' '.aider*' '.serena/*' '.kiro/*' 'tmp/*' '*.bak' '*.log' 'tests/*'"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",
