@@ -2,6 +2,7 @@ const { merge } = require('webpack-merge');
 const common = require('./webpack.common.cjs');
 const CopyPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const UpdateManifestVersionPlugin = require('./UpdateManifestVersionPlugin.cjs');
 const path = require('path');
 
 module.exports = merge(common, {
@@ -38,5 +39,6 @@ module.exports = merge(common, {
         { from: 'icons', to: 'icons', noErrorOnMissing: true },
       ],
     }),
+    new UpdateManifestVersionPlugin(),
   ],
 });
