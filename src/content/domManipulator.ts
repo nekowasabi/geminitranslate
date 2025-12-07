@@ -35,6 +35,12 @@ export class DOMManipulator {
   private originalTextMap: WeakMap<Node, string> = new WeakMap();
   private readonly IGNORED_TAGS: string[] = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'];
 
+  /**
+   * Set of normalized texts already extracted (for deduplication)
+   * Reset on each extractTextNodes() call
+   */
+  private extractedTextsSet: Set<string> = new Set();
+
   constructor() {
     // Use default IGNORED_TAGS or extend from EXCLUSION_SELECTORS if needed
   }
@@ -71,14 +77,23 @@ export class DOMManipulator {
     let node: Node | null;
     let index = 0;
 
+    // Reset extracted texts set for each extraction
+    this.extractedTextsSet.clear();
+
     while ((node = walker.nextNode())) {
-      const text = node.textContent || '';
+      const rawText = node.textContent || '';
+      // Normalize text by trimming whitespace
+      const text = rawText.trim();
+
       this.saveOriginalText(node);
       textNodes.push({
         node,
         text,
         index
       });
+
+      // Track normalized text for potential duplicate detection
+      this.extractedTextsSet.add(text);
       index++;
     }
 
