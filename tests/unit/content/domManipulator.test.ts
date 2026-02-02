@@ -323,6 +323,155 @@ describe('DOMManipulator', () => {
     });
   });
 
+  describe('EXCLUSION_SELECTORS filtering', () => {
+    it('should exclude SVG tags', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Visible Text</p>
+          <svg><text>SVG Text</text></svg>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Visible Text');
+      expect(texts).not.toContain('SVG Text');
+    });
+
+    it('should exclude CANVAS tags', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Visible Text</p>
+          <canvas>Canvas Fallback Text</canvas>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Visible Text');
+      expect(texts).not.toContain('Canvas Fallback Text');
+    });
+
+    it('should exclude CODE tags', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Visible Text</p>
+          <code>const x = 1;</code>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Visible Text');
+      expect(texts).not.toContain('const x = 1;');
+    });
+
+    it('should exclude PRE tags', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Visible Text</p>
+          <pre>Preformatted code block</pre>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Visible Text');
+      expect(texts).not.toContain('Preformatted code block');
+    });
+
+    it('should exclude contenteditable elements', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Normal Text</p>
+          <div contenteditable="true">
+            <p>Editable Text</p>
+          </div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Normal Text');
+      expect(texts).not.toContain('Editable Text');
+    });
+
+    it('should exclude data-no-translate elements', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Translate Me</p>
+          <div data-no-translate>
+            <p>Do Not Translate</p>
+          </div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Translate Me');
+      expect(texts).not.toContain('Do Not Translate');
+    });
+
+    it('should exclude .no-translate class elements', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Translate Me</p>
+          <div class="no-translate">
+            <p>Skip This</p>
+          </div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Translate Me');
+      expect(texts).not.toContain('Skip This');
+    });
+
+    it('should exclude deeply nested text inside excluded ancestors', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Visible</p>
+          <div data-no-translate>
+            <div>
+              <span>
+                <p>Deeply Nested Excluded</p>
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Visible');
+      expect(texts).not.toContain('Deeply Nested Excluded');
+    });
+
+    it('should exclude text inside CODE nested within PRE', () => {
+      testContainer.innerHTML = `
+        <div>
+          <p>Normal Text</p>
+          <pre><code>function hello() { return "world"; }</code></pre>
+        </div>
+      `;
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      const texts = textNodes.map(n => n.text);
+      expect(texts).toContain('Normal Text');
+      expect(texts).not.toContain('function hello() { return "world"; }');
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty DOM', () => {
       testContainer.innerHTML = '';

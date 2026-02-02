@@ -33,7 +33,7 @@ export interface ViewportQueue {
 
 export class DOMManipulator {
   private originalTextMap: WeakMap<Node, string> = new WeakMap();
-  private readonly IGNORED_TAGS: string[] = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'];
+  private readonly IGNORED_TAGS: string[] = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS', 'CODE', 'PRE'];
 
   /**
    * Set of normalized texts already extracted (for deduplication)
@@ -60,6 +60,11 @@ export class DOMManipulator {
 
           // Check if parent tag is in IGNORED_TAGS
           if (this.IGNORED_TAGS.includes(parent.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+
+          // Check if any ancestor matches exclusion selectors
+          if (parent.closest('svg, [contenteditable="true"], [data-no-translate], .no-translate')) {
             return NodeFilter.FILTER_REJECT;
           }
 

@@ -18,6 +18,11 @@ import { ProgressNotification } from './progressNotification';
 import { MessageBus } from '@shared/messages/MessageBus';
 import { MessageType, Message } from '@shared/messages/types';
 import { logger } from '@shared/utils';
+import { filterBatchTexts } from '@shared/utils/textFilter';
+import { EXCLUSION_SELECTORS } from '@shared/constants';
+
+/** Combined CSS selector string for all exclusion rules */
+const EXCLUSION_SELECTOR_STRING = EXCLUSION_SELECTORS.join(', ');
 
 export class ContentScript {
   private domManipulator: DOMManipulator;
@@ -217,47 +222,57 @@ export class ContentScript {
         console.log(`[Content:ContentScript] ${timestamp} - Starting Phase 1: Viewport translation`);
         this.progressNotification.showPhase(1, viewport.length);
 
-        // Store nodes for batch-by-batch application
-        this.currentTranslationNodes = viewport;
-
         const viewportTexts = viewport.map(node => node.text);
 
-        console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`, {
-          type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
-          textsCount: viewportTexts.length,
-          targetLanguage,
-          semiParallel: true,
-          priorityCount: 1,
-          phase: 1,
-        });
+        // Filter out non-translatable texts (numbers, URLs, symbols, etc.)
+        const { textsToTranslate, originalIndices } = filterBatchTexts(viewportTexts);
 
-        // Wait for Phase 1 completion before starting Phase 2
-        const response1 = await this.messageBus.send({
-          type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
-          payload: {
-            texts: viewportTexts,
+        if (textsToTranslate.length === 0) {
+          // All texts filtered out — skip Phase 1 API call
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 skipped: All texts filtered`);
+          this.progressNotification.completePhase(1);
+        } else {
+          // Store only filtered nodes for batch-by-batch application via BATCH_COMPLETED
+          this.currentTranslationNodes = originalIndices.map(i => viewport[i]);
+
+          console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`, {
+            type: MessageType.REQUEST_TRANSLATION,
+            action: 'requestTranslation',
+            textsCount: textsToTranslate.length,
+            filteredFrom: viewportTexts.length,
             targetLanguage,
             semiParallel: true,
             priorityCount: 1,
             phase: 1,
-          },
-        });
+          });
 
-        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 response received:`, {
-          success: response1?.success,
-          hasTranslations: !!response1?.data?.translations,
-        });
+          // Wait for Phase 1 completion before starting Phase 2
+          const response1 = await this.messageBus.send({
+            type: MessageType.REQUEST_TRANSLATION,
+            action: 'requestTranslation',
+            payload: {
+              texts: textsToTranslate,
+              targetLanguage,
+              semiParallel: true,
+              priorityCount: 1,
+              phase: 1,
+            },
+          });
 
-        if (response1?.success && response1?.data?.translations) {
-          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 completed`);
-          this.progressNotification.completePhase(1);
-        } else {
-          console.warn(`[Content:ContentScript] ${timestamp} - Phase 1 failed:`, response1);
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 response received:`, {
+            success: response1?.success,
+            hasTranslations: !!response1?.data?.translations,
+          });
+
+          if (response1?.success && response1?.data?.translations) {
+            console.log(`[Content:ContentScript] ${timestamp} - Phase 1 completed`);
+            this.progressNotification.completePhase(1);
+          } else {
+            console.warn(`[Content:ContentScript] ${timestamp} - Phase 1 failed:`, response1);
+          }
+
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`);
         }
-
-        console.log(`[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`);
       } else {
         console.log(`[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`);
       }
@@ -269,36 +284,46 @@ export class ContentScript {
 
         const outOfViewportTexts = outOfViewport.map(node => node.text);
 
-        console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 2 REQUEST_TRANSLATION:`, {
-          type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
-          textsCount: outOfViewportTexts.length,
-          targetLanguage,
-          semiParallel: false,
-        });
+        // Filter out non-translatable texts
+        const { textsToTranslate: oovTexts, originalIndices: oovIndices } = filterBatchTexts(outOfViewportTexts);
 
-        const response2 = await this.messageBus.send({
-          type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
-          payload: {
-            texts: outOfViewportTexts,
+        if (oovTexts.length > 0) {
+          console.log(`[Content:ContentScript] ${timestamp} - Sending Phase 2 REQUEST_TRANSLATION:`, {
+            type: MessageType.REQUEST_TRANSLATION,
+            action: 'requestTranslation',
+            textsCount: oovTexts.length,
+            filteredFrom: outOfViewportTexts.length,
             targetLanguage,
             semiParallel: false,
-          },
-        });
+          });
 
-        console.log(`[Content:ContentScript] ${timestamp} - Phase 2 response received:`, {
-          success: response2?.success,
-          hasTranslations: !!response2?.data?.translations,
-        });
+          const response2 = await this.messageBus.send({
+            type: MessageType.REQUEST_TRANSLATION,
+            action: 'requestTranslation',
+            payload: {
+              texts: oovTexts,
+              targetLanguage,
+              semiParallel: false,
+            },
+          });
 
-        if (response2?.success && response2?.data?.translations) {
-          console.log(`[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`);
-          this.domManipulator.applyTranslations(outOfViewport, response2.data.translations);
-          this.progressNotification.completePhase(2);
-          console.log(`[Content:ContentScript] ${timestamp} - Phase 2 completed`);
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 2 response received:`, {
+            success: response2?.success,
+            hasTranslations: !!response2?.data?.translations,
+          });
+
+          if (response2?.success && response2?.data?.translations) {
+            console.log(`[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`);
+            const nodesToTranslate = oovIndices.map(i => outOfViewport[i]);
+            this.domManipulator.applyTranslations(nodesToTranslate, response2.data.translations);
+            this.progressNotification.completePhase(2);
+            console.log(`[Content:ContentScript] ${timestamp} - Phase 2 completed`);
+          } else {
+            console.warn(`[Content:ContentScript] ${timestamp} - Phase 2 failed:`, response2);
+          }
         } else {
-          console.warn(`[Content:ContentScript] ${timestamp} - Phase 2 failed:`, response2);
+          console.log(`[Content:ContentScript] ${timestamp} - Phase 2 skipped: All texts filtered`);
+          this.progressNotification.completePhase(2);
         }
       } else {
         console.log(`[Content:ContentScript] ${timestamp} - Phase 2 skipped: No out-of-viewport nodes`);
@@ -402,14 +427,43 @@ export class ContentScript {
    */
   enableDynamicTranslation(targetLanguage: string): void {
     this.mutationObserver.observe(async (mutations) => {
-      // Check if new text nodes were added
-      const hasNewTextNodes = mutations.some(mutation =>
-        Array.from(mutation.addedNodes).some(node => node.nodeType === Node.TEXT_NODE)
-      );
+      // Collect only new text nodes from mutations (with exclusion filtering)
+      const newTextNodes: Node[] = [];
+      for (const mutation of mutations) {
+        for (const addedNode of Array.from(mutation.addedNodes)) {
+          if (addedNode.nodeType === Node.TEXT_NODE && addedNode.textContent?.trim()) {
+            // Check parent is not excluded
+            const parent = (addedNode as ChildNode).parentElement;
+            if (parent && !parent.closest(EXCLUSION_SELECTOR_STRING)) {
+              newTextNodes.push(addedNode);
+            }
+          } else if (addedNode.nodeType === Node.ELEMENT_NODE) {
+            const element = addedNode as Element;
+            // Skip if the added element itself matches exclusion selectors
+            if (element.matches(EXCLUSION_SELECTOR_STRING) || element.closest(EXCLUSION_SELECTOR_STRING)) {
+              continue;
+            }
+            // For element nodes, collect text nodes within (with filtering)
+            const walker = document.createTreeWalker(addedNode, NodeFilter.SHOW_TEXT, {
+              acceptNode: (node) => {
+                const parent = node.parentElement;
+                if (!parent) return NodeFilter.FILTER_REJECT;
+                if (parent.closest(EXCLUSION_SELECTOR_STRING)) return NodeFilter.FILTER_REJECT;
+                if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+              },
+            });
+            let textNode: Node | null;
+            while ((textNode = walker.nextNode())) {
+              newTextNodes.push(textNode);
+            }
+          }
+        }
+      }
 
-      if (hasNewTextNodes && this.isTranslated) {
-        logger.log('Dynamic content detected, re-translating');
-        await this.translatePage(targetLanguage);
+      if (newTextNodes.length > 0 && this.isTranslated) {
+        logger.log(`Dynamic content: ${newTextNodes.length} new text nodes detected`);
+        await this.translateNewNodes(newTextNodes, targetLanguage);
       }
     });
 
@@ -488,6 +542,37 @@ export class ContentScript {
         stack: error instanceof Error ? error.stack : undefined,
       });
       logger.error('Failed to handle batch completed:', error);
+    }
+  }
+
+  /**
+   * Translate only newly added DOM nodes (incremental translation)
+   */
+  private async translateNewNodes(nodes: Node[], targetLanguage: string): Promise<void> {
+    try {
+      const textNodes: TextNode[] = nodes.map((node, index) => ({
+        node,
+        text: node.textContent?.trim() || '',
+        index,
+      }));
+
+      const texts = textNodes.map(n => n.text);
+      const { textsToTranslate, originalIndices } = filterBatchTexts(texts);
+
+      if (textsToTranslate.length === 0) return;
+
+      const response = await this.messageBus.send({
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: { texts: textsToTranslate, targetLanguage, semiParallel: false },
+      });
+
+      if (response?.success && response?.data?.translations) {
+        const nodesToTranslate = originalIndices.map(i => textNodes[i]);
+        this.domManipulator.applyTranslations(nodesToTranslate, response.data.translations);
+      }
+    } catch (error) {
+      logger.error('Failed to translate new nodes:', error);
     }
   }
 
