@@ -5,15 +5,15 @@
  * and delegates to appropriate services (TranslationEngine, OpenRouterClient).
  */
 
-import { MessageHandler } from '../../../src/background/messageHandler';
-import { TranslationEngine } from '../../../src/background/translationEngine';
-import { OpenRouterClient } from '../../../src/background/apiClient';
-import { MessageType } from '../../../src/shared/messages/types';
+import { MessageHandler } from "../../../src/background/messageHandler";
+import { TranslationEngine } from "../../../src/background/translationEngine";
+import { OpenRouterClient } from "../../../src/background/apiClient";
+import { MessageType } from "../../../src/shared/messages/types";
 
 // Mock dependencies
-jest.mock('../../../src/background/translationEngine');
-jest.mock('../../../src/background/apiClient');
-jest.mock('../../../src/shared/utils/logger', () => ({
+jest.mock("../../../src/background/translationEngine");
+jest.mock("../../../src/background/apiClient");
+jest.mock("../../../src/shared/utils/logger", () => ({
   logger: {
     log: jest.fn(),
     warn: jest.fn(),
@@ -21,7 +21,7 @@ jest.mock('../../../src/shared/utils/logger', () => ({
   },
 }));
 
-describe('MessageHandler', () => {
+describe("MessageHandler", () => {
   let handler: MessageHandler;
   let mockEngine: jest.Mocked<TranslationEngine>;
   let mockClient: jest.Mocked<OpenRouterClient>;
@@ -43,36 +43,53 @@ describe('MessageHandler', () => {
 
     // Mock sender
     mockSender = {
-      tab: { id: 1, index: 0, pinned: false, highlighted: false, active: true, incognito: false, selected: false, discarded: false, autoDiscardable: true, windowId: 1 },
-      id: 'test-extension-id',
-      url: 'https://example.com',
+      tab: {
+        id: 1,
+        index: 0,
+        pinned: false,
+        highlighted: false,
+        active: true,
+        incognito: false,
+        selected: false,
+        discarded: false,
+        autoDiscardable: true,
+        windowId: 1,
+      },
+      id: "test-extension-id",
+      url: "https://example.com",
     };
   });
 
-  describe('handle() - Message Routing', () => {
-    describe('requestTranslation action', () => {
-      it('should call TranslationEngine.translateBatch() and return success response', async () => {
+  describe("handle() - Message Routing", () => {
+    describe("requestTranslation action", () => {
+      it("should call TranslationEngine.translateBatch() and return success response", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
+          action: "requestTranslation",
           payload: {
-            texts: ['Hello', 'World'],
-            targetLanguage: 'Japanese',
+            texts: ["Hello", "World"],
+            targetLanguage: "Japanese",
           },
         };
 
-        const mockTranslations = ['こんにちは', '世界'];
-        mockEngine.translateBatch = jest.fn().mockResolvedValue(mockTranslations);
+        const mockTranslations = ["こんにちは", "世界"];
+        mockEngine.translateBatch = jest
+          .fn()
+          .mockResolvedValue(mockTranslations);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true); // Async response
         expect(mockEngine.translateBatch).toHaveBeenCalledWith(
-          ['Hello', 'World'],
-          'Japanese'
+          ["Hello", "World"],
+          "Japanese",
         );
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
@@ -80,54 +97,62 @@ describe('MessageHandler', () => {
         });
       });
 
-      it('should handle translation errors and return error response', async () => {
+      it("should handle translation errors and return error response", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'requestTranslation',
+          action: "requestTranslation",
           payload: {
-            texts: ['Hello'],
-            targetLanguage: 'Japanese',
+            texts: ["Hello"],
+            targetLanguage: "Japanese",
           },
         };
 
-        const mockError = new Error('API rate limit exceeded');
+        const mockError = new Error("API rate limit exceeded");
         mockEngine.translateBatch = jest.fn().mockRejectedValue(mockError);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'API rate limit exceeded',
+          error: "API rate limit exceeded",
         });
       });
     });
 
-    describe('clearCache action', () => {
-      it('should call TranslationEngine.clearCache() with specified layer', async () => {
+    describe("clearCache action", () => {
+      it("should call TranslationEngine.clearCache() with specified layer", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'clearCache',
+          action: "clearCache",
           payload: {
-            layer: 'memory' as const,
+            layer: "memory" as const,
           },
         };
 
         mockEngine.clearCache = jest.fn().mockResolvedValue(undefined);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
-        expect(mockEngine.clearCache).toHaveBeenCalledWith('memory');
+        expect(mockEngine.clearCache).toHaveBeenCalledWith("memory");
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
-          data: { message: 'Cache cleared successfully' },
+          data: { message: "Cache cleared successfully" },
         });
       });
 
@@ -135,7 +160,7 @@ describe('MessageHandler', () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'clearCache',
+          action: "clearCache",
           payload: {},
         };
 
@@ -145,16 +170,16 @@ describe('MessageHandler', () => {
         await handler.handle(message, mockSender, mockSendResponse);
 
         // Assert
-        expect(mockEngine.clearCache).toHaveBeenCalledWith('all');
+        expect(mockEngine.clearCache).toHaveBeenCalledWith("all");
       });
     });
 
-    describe('getCacheStats action', () => {
-      it('should call TranslationEngine.getCacheStats() and return stats', async () => {
+    describe("getCacheStats action", () => {
+      it("should call TranslationEngine.getCacheStats() and return stats", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'getCacheStats',
+          action: "getCacheStats",
           payload: {},
         };
 
@@ -167,7 +192,11 @@ describe('MessageHandler', () => {
         mockEngine.getCacheStats = jest.fn().mockResolvedValue(mockStats);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
@@ -179,23 +208,27 @@ describe('MessageHandler', () => {
       });
     });
 
-    describe('testConnection action', () => {
-      it('should call OpenRouterClient.testConnection() when no payload provided', async () => {
+    describe("testConnection action", () => {
+      it("should call OpenRouterClient.testConnection() when no payload provided", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'testConnection',
+          action: "testConnection",
           payload: {},
         };
 
         const mockResult = {
           success: true,
-          message: 'Connection successful!',
+          message: "Connection successful!",
         };
         mockClient.testConnection = jest.fn().mockResolvedValue(mockResult);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
@@ -206,33 +239,39 @@ describe('MessageHandler', () => {
         });
       });
 
-      it('should call OpenRouterClient.testConnectionWithConfig() when payload contains apiKey', async () => {
+      it("should call OpenRouterClient.testConnectionWithConfig() when payload contains apiKey", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'testConnection',
+          action: "testConnection",
           payload: {
-            apiKey: 'test-api-key',
-            model: 'google/gemini-2.0-flash-exp:free',
-            provider: 'Google',
+            apiKey: "test-api-key",
+            model: "google/gemini-2.0-flash-exp:free",
+            provider: "Google",
           },
         };
 
         const mockResult = {
           success: true,
-          message: 'Connection successful!',
+          message: "Connection successful!",
         };
-        mockClient.testConnectionWithConfig = jest.fn().mockResolvedValue(mockResult);
+        mockClient.testConnectionWithConfig = jest
+          .fn()
+          .mockResolvedValue(mockResult);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockClient.testConnectionWithConfig).toHaveBeenCalledWith({
-          apiKey: 'test-api-key',
-          model: 'google/gemini-2.0-flash-exp:free',
-          provider: 'Google',
+          apiKey: "test-api-key",
+          model: "google/gemini-2.0-flash-exp:free",
+          provider: "Google",
         });
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
@@ -240,31 +279,38 @@ describe('MessageHandler', () => {
         });
       });
 
-      it('should return error when API key is empty in payload', async () => {
+      it("should return error when API key is empty in payload", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'testConnection',
+          action: "testConnection",
           payload: {
-            apiKey: '',
-            model: 'google/gemini-2.0-flash-exp:free',
+            apiKey: "",
+            model: "google/gemini-2.0-flash-exp:free",
           },
         };
 
         const mockResult = {
           success: false,
-          error: 'API key is required. Please configure your OpenRouter API key.',
+          error:
+            "API key is required. Please configure your OpenRouter API key.",
         };
-        mockClient.testConnectionWithConfig = jest.fn().mockResolvedValue(mockResult);
+        mockClient.testConnectionWithConfig = jest
+          .fn()
+          .mockResolvedValue(mockResult);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockClient.testConnectionWithConfig).toHaveBeenCalledWith({
-          apiKey: '',
-          model: 'google/gemini-2.0-flash-exp:free',
+          apiKey: "",
+          model: "google/gemini-2.0-flash-exp:free",
           provider: undefined,
         });
         expect(mockSendResponse).toHaveBeenCalledWith({
@@ -273,15 +319,15 @@ describe('MessageHandler', () => {
         });
       });
 
-      it('should handle connection errors', async () => {
+      it("should handle connection errors", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'testConnection',
+          action: "testConnection",
           payload: {},
         };
 
-        const mockError = new Error('Network timeout');
+        const mockError = new Error("Network timeout");
         mockClient.testConnection = jest.fn().mockRejectedValue(mockError);
 
         // Act
@@ -290,135 +336,166 @@ describe('MessageHandler', () => {
         // Assert
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'Network timeout',
+          error: "Network timeout",
         });
       });
     });
 
-    describe('reloadConfig action', () => {
-      it('should call OpenRouterClient.initialize() and return success', async () => {
+    describe("reloadConfig action", () => {
+      it("should call OpenRouterClient.initialize() and return success", async () => {
         // Arrange
         const message = {
           type: MessageType.RELOAD_CONFIG,
-          action: 'reloadConfig',
+          action: "reloadConfig",
           payload: {},
         };
         mockClient.initialize = jest.fn().mockResolvedValue(undefined);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockClient.initialize).toHaveBeenCalledTimes(1);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
-          data: { message: 'Configuration reloaded successfully' },
+          data: { message: "Configuration reloaded successfully" },
         });
       });
 
-      it('should return error when initialize() fails', async () => {
+      it("should return error when initialize() fails", async () => {
         // Arrange
         const message = {
           type: MessageType.RELOAD_CONFIG,
-          action: 'reloadConfig',
+          action: "reloadConfig",
           payload: {},
         };
-        const error = new Error('Storage read failed');
+        const error = new Error("Storage read failed");
         mockClient.initialize = jest.fn().mockRejectedValue(error);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockClient.initialize).toHaveBeenCalledTimes(1);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'Storage read failed',
+          error: "Storage read failed",
         });
       });
 
-      it('should handle unknown error in initialize()', async () => {
+      it("should handle unknown error in initialize()", async () => {
         // Arrange
         const message = {
           type: MessageType.RELOAD_CONFIG,
-          action: 'reloadConfig',
+          action: "reloadConfig",
           payload: {},
         };
-        mockClient.initialize = jest.fn().mockRejectedValue('Unknown error');
+        mockClient.initialize = jest.fn().mockRejectedValue("Unknown error");
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'Failed to reload config',
+          error: "Failed to reload config",
         });
       });
     });
 
-    describe('Unknown action', () => {
-      it('should return error for unknown action', async () => {
+    describe("Unknown action", () => {
+      it("should return error for unknown action", async () => {
         // Arrange
         const message = {
           type: MessageType.REQUEST_TRANSLATION,
-          action: 'unknownAction',
+          action: "unknownAction",
           payload: {},
         };
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: 'Unknown action: unknownAction',
+          error: "Unknown action: unknownAction",
         });
       });
     });
 
-    describe('Invalid message format', () => {
-      it('should return error for message without action and unknown type', async () => {
+    describe("Invalid message format", () => {
+      it("should return error for message without action and unknown type", async () => {
         // Arrange
         const message = {
-          type: 'unknownMessageType',
+          type: "unknownMessageType",
           payload: {},
         };
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: false,
-          error: expect.stringContaining('Invalid message format: missing action'),
+          error: expect.stringContaining(
+            "Invalid message format: missing action",
+          ),
         });
       });
 
-      it('should infer action from type for backward compatibility', async () => {
+      it("should infer action from type for backward compatibility", async () => {
         // Arrange
         const message = {
-          type: 'requestTranslation',
+          type: "requestTranslation",
           payload: {
-            texts: ['Hello'],
-            targetLanguage: 'Japanese',
+            texts: ["Hello"],
+            targetLanguage: "Japanese",
           },
         };
 
-        const mockTranslations = ['こんにちは'];
-        mockEngine.translateBatch = jest.fn().mockResolvedValue(mockTranslations);
+        const mockTranslations = ["こんにちは"];
+        mockEngine.translateBatch = jest
+          .fn()
+          .mockResolvedValue(mockTranslations);
 
         // Act
-        const result = await handler.handle(message, mockSender, mockSendResponse);
+        const result = await handler.handle(
+          message,
+          mockSender,
+          mockSendResponse,
+        );
 
         // Assert
         expect(result).toBe(true);
-        expect(mockEngine.translateBatch).toHaveBeenCalledWith(['Hello'], 'Japanese');
+        expect(mockEngine.translateBatch).toHaveBeenCalledWith(
+          ["Hello"],
+          "Japanese",
+        );
         expect(mockSendResponse).toHaveBeenCalledWith({
           success: true,
           data: { translations: mockTranslations },
@@ -427,55 +504,65 @@ describe('MessageHandler', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    it('should catch and handle unexpected errors in action handlers', async () => {
+  describe("Error Handling", () => {
+    it("should catch and handle unexpected errors in action handlers", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
-          texts: ['Test'],
-          targetLanguage: 'Japanese',
+          texts: ["Test"],
+          targetLanguage: "Japanese",
         },
       };
 
       // Mock translateBatch to throw a non-Error object
       mockEngine.translateBatch = jest.fn().mockImplementation(() => {
-        throw 'String error';
+        throw "String error";
       });
 
       // Act
-      const result = await handler.handle(message, mockSender, mockSendResponse);
+      const result = await handler.handle(
+        message,
+        mockSender,
+        mockSendResponse,
+      );
 
       // Assert
       expect(result).toBe(true);
       expect(mockSendResponse).toHaveBeenCalledWith({
         success: false,
-        error: 'Translation failed',
+        error: "Translation failed",
       });
     });
 
-    it('should catch and handle unexpected errors at top level', async () => {
+    it("should catch and handle unexpected errors at top level", async () => {
       // Arrange - Create a message that will cause an error at the handler level
       const message = {
-        type: 'unknownType',
+        type: "unknownType",
         action: null as any, // This will cause an error at the validation level
         payload: {},
       };
 
       // Act
-      const result = await handler.handle(message, mockSender, mockSendResponse);
+      const result = await handler.handle(
+        message,
+        mockSender,
+        mockSendResponse,
+      );
 
       // Assert
       expect(result).toBe(true);
       expect(mockSendResponse).toHaveBeenCalledWith({
         success: false,
-        error: expect.stringContaining('Invalid message format: missing action'),
+        error: expect.stringContaining(
+          "Invalid message format: missing action",
+        ),
       });
     });
   });
 
-  describe('requestTranslation - BATCH_COMPLETED streaming', () => {
+  describe("requestTranslation - BATCH_COMPLETED streaming", () => {
     let mockChromeTabs: any;
 
     beforeEach(() => {
@@ -492,14 +579,14 @@ describe('MessageHandler', () => {
       delete (global as any).chrome;
     });
 
-    it('should send BATCH_COMPLETED message for each batch in semi-parallel mode', async () => {
+    it("should send BATCH_COMPLETED message for each batch in semi-parallel mode", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
           texts: Array.from({ length: 25 }, (_, i) => `Text ${i}`), // 2 batches
-          targetLanguage: 'Japanese',
+          targetLanguage: "Japanese",
           semiParallel: true,
           priorityCount: 1,
           phase: 1,
@@ -514,15 +601,27 @@ describe('MessageHandler', () => {
             texts: string[],
             lang: string,
             priority: number,
-            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+            callback?: (
+              batchIndex: number,
+              translations: string[],
+              nodeIndices: number[],
+            ) => void,
           ) => {
             // Simulate 2 batches
             if (callback) {
-              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
-              callback(1, Array(5).fill('translated'), Array.from({ length: 5 }, (_, i) => 20 + i));
+              callback(
+                0,
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => i),
+              );
+              callback(
+                1,
+                Array(5).fill("translated"),
+                Array.from({ length: 5 }, (_, i) => 20 + i),
+              );
             }
-            return Array(25).fill('translated');
-          }
+            return Array(25).fill("translated");
+          },
         );
 
       // Act
@@ -540,9 +639,9 @@ describe('MessageHandler', () => {
           nodeIndices: expect.any(Array),
           phase: 1,
           progress: {
-            current: 1,
-            total: 2,
-            percentage: 50,
+            current: 20,
+            total: 25,
+            percentage: 80,
           },
         },
       });
@@ -556,27 +655,29 @@ describe('MessageHandler', () => {
           nodeIndices: expect.any(Array),
           phase: 1,
           progress: {
-            current: 2,
-            total: 2,
+            current: 25,
+            total: 25,
             percentage: 100,
           },
         },
       });
     });
 
-    it('should not send BATCH_COMPLETED in non-semiParallel mode', async () => {
+    it("should not send BATCH_COMPLETED in non-semiParallel mode", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
-          texts: Array(25).fill('test'),
-          targetLanguage: 'Japanese',
+          texts: Array(25).fill("test"),
+          targetLanguage: "Japanese",
           semiParallel: false, // Standard parallel mode
         },
       };
 
-      mockEngine.translateBatch = jest.fn().mockResolvedValue(Array(25).fill('translated'));
+      mockEngine.translateBatch = jest
+        .fn()
+        .mockResolvedValue(Array(25).fill("translated"));
 
       // Act
       await handler.handle(message, mockSender, mockSendResponse);
@@ -586,22 +687,22 @@ describe('MessageHandler', () => {
       expect(mockEngine.translateBatch).toHaveBeenCalled();
     });
 
-    it('should handle missing sender.tab.id gracefully', async () => {
+    it("should handle missing sender.tab.id gracefully", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
-          texts: Array(25).fill('test'),
-          targetLanguage: 'Japanese',
+          texts: Array(25).fill("test"),
+          targetLanguage: "Japanese",
           semiParallel: true,
           priorityCount: 1,
         },
       };
 
       const senderWithoutTab = {
-        id: 'test-extension-id',
-        url: 'https://example.com',
+        id: "test-extension-id",
+        url: "https://example.com",
       };
 
       mockEngine.translateBatchSemiParallel = jest
@@ -611,33 +712,41 @@ describe('MessageHandler', () => {
             texts: string[],
             lang: string,
             priority: number,
-            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+            callback?: (
+              batchIndex: number,
+              translations: string[],
+              nodeIndices: number[],
+            ) => void,
           ) => {
             // Callback should not crash even without tabId
             if (callback) {
-              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+              callback(
+                0,
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => i),
+              );
             }
-            return Array(25).fill('translated');
-          }
+            return Array(25).fill("translated");
+          },
         );
 
       // Act & Assert - Should not throw
       await expect(
-        handler.handle(message, senderWithoutTab as any, mockSendResponse)
+        handler.handle(message, senderWithoutTab as any, mockSendResponse),
       ).resolves.not.toThrow();
 
       // sendMessage should not be called without tabId
       expect(mockChromeTabs.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should handle chrome.tabs.sendMessage errors gracefully', async () => {
+    it("should handle chrome.tabs.sendMessage errors gracefully", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
-          texts: Array(25).fill('test'),
-          targetLanguage: 'Japanese',
+          texts: Array(25).fill("test"),
+          targetLanguage: "Japanese",
           semiParallel: true,
           priorityCount: 1,
           phase: 1,
@@ -646,7 +755,7 @@ describe('MessageHandler', () => {
 
       // Mock sendMessage to throw error (e.g., tab closed)
       mockChromeTabs.sendMessage.mockImplementation(() => {
-        throw new Error('Tab not found');
+        throw new Error("Tab not found");
       });
 
       mockEngine.translateBatchSemiParallel = jest
@@ -656,18 +765,26 @@ describe('MessageHandler', () => {
             texts: string[],
             lang: string,
             priority: number,
-            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+            callback?: (
+              batchIndex: number,
+              translations: string[],
+              nodeIndices: number[],
+            ) => void,
           ) => {
             if (callback) {
-              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+              callback(
+                0,
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => i),
+              );
             }
-            return Array(25).fill('translated');
-          }
+            return Array(25).fill("translated");
+          },
         );
 
       // Act & Assert - Should not throw, translation should still succeed
       await expect(
-        handler.handle(message, mockSender, mockSendResponse)
+        handler.handle(message, mockSender, mockSendResponse),
       ).resolves.not.toThrow();
 
       expect(mockSendResponse).toHaveBeenCalledWith({
@@ -676,14 +793,14 @@ describe('MessageHandler', () => {
       });
     });
 
-    it('should calculate progress percentage correctly', async () => {
+    it("should calculate progress percentage correctly", async () => {
       // Arrange
       const message = {
         type: MessageType.REQUEST_TRANSLATION,
-        action: 'requestTranslation',
+        action: "requestTranslation",
         payload: {
           texts: Array.from({ length: 60 }, (_, i) => `Text ${i}`), // 3 batches
-          targetLanguage: 'Japanese',
+          targetLanguage: "Japanese",
           semiParallel: true,
           priorityCount: 1,
           phase: 1,
@@ -697,23 +814,31 @@ describe('MessageHandler', () => {
             texts: string[],
             lang: string,
             priority: number,
-            callback?: (batchIndex: number, translations: string[], nodeIndices: number[]) => void
+            callback?: (
+              batchIndex: number,
+              translations: string[],
+              nodeIndices: number[],
+            ) => void,
           ) => {
             if (callback) {
-              callback(0, Array(20).fill('translated'), Array.from({ length: 20 }, (_, i) => i));
+              callback(
+                0,
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => i),
+              );
               callback(
                 1,
-                Array(20).fill('translated'),
-                Array.from({ length: 20 }, (_, i) => 20 + i)
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => 20 + i),
               );
               callback(
                 2,
-                Array(20).fill('translated'),
-                Array.from({ length: 20 }, (_, i) => 40 + i)
+                Array(20).fill("translated"),
+                Array.from({ length: 20 }, (_, i) => 40 + i),
               );
             }
-            return Array(60).fill('translated');
-          }
+            return Array(60).fill("translated");
+          },
         );
 
       // Act
@@ -729,12 +854,12 @@ describe('MessageHandler', () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             progress: {
-              current: 1,
-              total: 3,
+              current: 20,
+              total: 60,
               percentage: 33,
             },
           }),
-        })
+        }),
       );
 
       // Batch 1: 67%
@@ -744,12 +869,12 @@ describe('MessageHandler', () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             progress: {
-              current: 2,
-              total: 3,
+              current: 40,
+              total: 60,
               percentage: 67,
             },
           }),
-        })
+        }),
       );
 
       // Batch 2: 100%
@@ -759,12 +884,12 @@ describe('MessageHandler', () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             progress: {
-              current: 3,
-              total: 3,
+              current: 60,
+              total: 60,
               percentage: 100,
             },
           }),
-        })
+        }),
       );
     });
   });

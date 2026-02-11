@@ -3,7 +3,7 @@
  */
 
 // Mock logger
-jest.mock('@shared/utils', () => ({
+jest.mock("@shared/utils", () => ({
   logger: {
     log: jest.fn(),
     warn: jest.fn(),
@@ -11,9 +11,9 @@ jest.mock('@shared/utils', () => ({
   },
 }));
 
-import { MutationObserverManager } from '@content/mutationObserver';
+import { MutationObserverManager } from "@content/mutationObserver";
 
-describe('MutationObserverManager', () => {
+describe("MutationObserverManager", () => {
   let observerManager: MutationObserverManager;
   let testContainer: HTMLElement;
 
@@ -21,8 +21,8 @@ describe('MutationObserverManager', () => {
     observerManager = new MutationObserverManager();
 
     // Create test container
-    testContainer = document.createElement('div');
-    testContainer.id = 'mutation-test-container';
+    testContainer = document.createElement("div");
+    testContainer.id = "mutation-test-container";
     document.body.appendChild(testContainer);
   });
 
@@ -33,8 +33,8 @@ describe('MutationObserverManager', () => {
     }
   });
 
-  describe('observe', () => {
-    it('should start observing DOM mutations', () => {
+  describe("observe", () => {
+    it("should start observing DOM mutations", () => {
       const callback = jest.fn();
 
       observerManager.observe(callback);
@@ -43,22 +43,22 @@ describe('MutationObserverManager', () => {
       expect(true).toBe(true);
     });
 
-    it('should detect child node additions', (done) => {
+    it("should detect child node additions", (done) => {
       const callback = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThan(0);
-        expect(mutations[0].type).toBe('childList');
+        expect(mutations[0].type).toBe("childList");
         done();
       });
 
       observerManager.observe(callback);
 
       // Add a new child node
-      const newDiv = document.createElement('div');
-      newDiv.textContent = 'New content';
+      const newDiv = document.createElement("div");
+      newDiv.textContent = "New content";
       testContainer.appendChild(newDiv);
     });
 
-    it('should detect text node additions', (done) => {
+    it("should detect text node additions", (done) => {
       const callback = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThan(0);
         done();
@@ -67,29 +67,29 @@ describe('MutationObserverManager', () => {
       observerManager.observe(callback);
 
       // Add text node
-      const textNode = document.createTextNode('Dynamic text');
+      const textNode = document.createTextNode("Dynamic text");
       testContainer.appendChild(textNode);
     });
 
-    it('should detect subtree mutations', (done) => {
+    it("should detect subtree mutations", (done) => {
       const callback = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThan(0);
         done();
       });
 
       // Create nested structure
-      const parent = document.createElement('div');
+      const parent = document.createElement("div");
       testContainer.appendChild(parent);
 
       observerManager.observe(callback);
 
       // Add child to nested element
-      const child = document.createElement('span');
-      child.textContent = 'Nested child';
+      const child = document.createElement("span");
+      child.textContent = "Nested child";
       parent.appendChild(child);
     });
 
-    it('should not observe if already observing', () => {
+    it("should not observe if already observing", () => {
       const callback1 = jest.fn();
       const callback2 = jest.fn();
 
@@ -97,7 +97,7 @@ describe('MutationObserverManager', () => {
       observerManager.observe(callback2);
 
       // Add element
-      const newDiv = document.createElement('div');
+      const newDiv = document.createElement("div");
       testContainer.appendChild(newDiv);
 
       // Wait for mutations
@@ -108,7 +108,7 @@ describe('MutationObserverManager', () => {
       }, 50);
     });
 
-    it('should handle multiple mutations in batch', (done) => {
+    it("should handle multiple mutations in batch", (done) => {
       const callback = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThanOrEqual(1);
         done();
@@ -117,17 +117,17 @@ describe('MutationObserverManager', () => {
       observerManager.observe(callback);
 
       // Add multiple elements
-      const div1 = document.createElement('div');
-      const div2 = document.createElement('div');
-      const div3 = document.createElement('div');
+      const div1 = document.createElement("div");
+      const div2 = document.createElement("div");
+      const div3 = document.createElement("div");
       testContainer.appendChild(div1);
       testContainer.appendChild(div2);
       testContainer.appendChild(div3);
     });
 
-    it('should observe with correct config', () => {
+    it("should observe with correct config", () => {
       const callback = jest.fn();
-      const observeSpy = jest.spyOn(MutationObserver.prototype, 'observe');
+      const observeSpy = jest.spyOn(MutationObserver.prototype, "observe");
 
       observerManager.observe(callback);
 
@@ -136,22 +136,47 @@ describe('MutationObserverManager', () => {
         expect.objectContaining({
           childList: true,
           subtree: true,
-        })
+        }),
+      );
+
+      observeSpy.mockRestore();
+    });
+
+    it("should include characterData and attributes observation for dynamic updates", () => {
+      const callback = jest.fn();
+      const observeSpy = jest.spyOn(MutationObserver.prototype, "observe");
+
+      observerManager.observe(callback);
+
+      expect(observeSpy).toHaveBeenCalledWith(
+        document.body,
+        expect.objectContaining({
+          characterData: true,
+          attributes: true,
+          attributeFilter: [
+            "class",
+            "style",
+            "hidden",
+            "aria-hidden",
+            "aria-expanded",
+            "open",
+          ],
+        }),
       );
 
       observeSpy.mockRestore();
     });
   });
 
-  describe('disconnect', () => {
-    it('should stop observing mutations', () => {
+  describe("disconnect", () => {
+    it("should stop observing mutations", () => {
       const callback = jest.fn();
 
       observerManager.observe(callback);
       observerManager.disconnect();
 
       // Add element after disconnect
-      const newDiv = document.createElement('div');
+      const newDiv = document.createElement("div");
       testContainer.appendChild(newDiv);
 
       // Wait and verify callback not called
@@ -160,14 +185,14 @@ describe('MutationObserverManager', () => {
       }, 50);
     });
 
-    it('should handle disconnect when not observing', () => {
+    it("should handle disconnect when not observing", () => {
       // Should not throw error
       expect(() => {
         observerManager.disconnect();
       }).not.toThrow();
     });
 
-    it('should allow re-observation after disconnect', (done) => {
+    it("should allow re-observation after disconnect", (done) => {
       const callback1 = jest.fn();
       const callback2 = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThan(0);
@@ -182,21 +207,21 @@ describe('MutationObserverManager', () => {
       observerManager.observe(callback2);
 
       // Add element
-      const newDiv = document.createElement('div');
+      const newDiv = document.createElement("div");
       testContainer.appendChild(newDiv);
     });
   });
 
-  describe('edge cases', () => {
-    it('should handle callback errors gracefully', (done) => {
+  describe("edge cases", () => {
+    it("should handle callback errors gracefully", (done) => {
       const callback = jest.fn(() => {
-        throw new Error('Callback error');
+        throw new Error("Callback error");
       });
 
       observerManager.observe(callback);
 
       // Add element (should not crash)
-      const newDiv = document.createElement('div');
+      const newDiv = document.createElement("div");
       testContainer.appendChild(newDiv);
 
       setTimeout(() => {
@@ -205,12 +230,14 @@ describe('MutationObserverManager', () => {
       }, 50);
     });
 
-    it('should detect removal of nodes', (done) => {
-      const existingDiv = document.createElement('div');
+    it("should detect removal of nodes", (done) => {
+      const existingDiv = document.createElement("div");
       testContainer.appendChild(existingDiv);
 
       const callback = jest.fn((mutations) => {
-        const hasRemovedNodes = mutations.some(m => m.removedNodes.length > 0);
+        const hasRemovedNodes = mutations.some(
+          (m) => m.removedNodes.length > 0,
+        );
         if (hasRemovedNodes) {
           expect(hasRemovedNodes).toBe(true);
           done();
@@ -223,7 +250,7 @@ describe('MutationObserverManager', () => {
       testContainer.removeChild(existingDiv);
     });
 
-    it('should handle rapid DOM changes', (done) => {
+    it("should handle rapid DOM changes", (done) => {
       const callback = jest.fn((mutations) => {
         expect(mutations.length).toBeGreaterThan(0);
         if (callback.mock.calls.length >= 1) {
@@ -235,15 +262,15 @@ describe('MutationObserverManager', () => {
 
       // Rapid changes
       for (let i = 0; i < 10; i++) {
-        const div = document.createElement('div');
+        const div = document.createElement("div");
         div.textContent = `Item ${i}`;
         testContainer.appendChild(div);
       }
     });
 
-    it('should observe only document.body', () => {
+    it("should observe only document.body", () => {
       const callback = jest.fn();
-      const observeSpy = jest.spyOn(MutationObserver.prototype, 'observe');
+      const observeSpy = jest.spyOn(MutationObserver.prototype, "observe");
 
       observerManager.observe(callback);
 
@@ -254,19 +281,19 @@ describe('MutationObserverManager', () => {
       observeSpy.mockRestore();
     });
 
-    it('should provide MutationRecord array to callback', (done) => {
+    it("should provide MutationRecord array to callback", (done) => {
       const callback = jest.fn((mutations: MutationRecord[]) => {
         expect(Array.isArray(mutations)).toBe(true);
-        expect(mutations[0]).toHaveProperty('type');
-        expect(mutations[0]).toHaveProperty('target');
-        expect(mutations[0]).toHaveProperty('addedNodes');
-        expect(mutations[0]).toHaveProperty('removedNodes');
+        expect(mutations[0]).toHaveProperty("type");
+        expect(mutations[0]).toHaveProperty("target");
+        expect(mutations[0]).toHaveProperty("addedNodes");
+        expect(mutations[0]).toHaveProperty("removedNodes");
         done();
       });
 
       observerManager.observe(callback);
 
-      const newDiv = document.createElement('div');
+      const newDiv = document.createElement("div");
       testContainer.appendChild(newDiv);
     });
   });
