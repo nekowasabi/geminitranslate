@@ -33,11 +33,14 @@
  * ```
  */
 
-import { TranslationEngine, CacheLayer } from './translationEngine';
-import { OpenRouterClient } from './apiClient';
-import { logger } from '../shared/utils/logger';
-import { MessageType, BatchCompletedMessage, TranslationPhase } from '../shared/messages/types';
-import { BATCH_CONFIG } from '../shared/constants/config';
+import { TranslationEngine, CacheLayer } from "./translationEngine";
+import { OpenRouterClient } from "./apiClient";
+import { logger } from "../shared/utils/logger";
+import {
+  MessageType,
+  BatchCompletedMessage,
+  TranslationPhase,
+} from "../shared/messages/types";
 
 /**
  * Message format expected by MessageHandler
@@ -75,7 +78,7 @@ export type HandlerResponse = SuccessResponse | ErrorResponse;
 type ActionHandler = (
   payload: any,
   sendResponse: (response: HandlerResponse) => void,
-  sender?: chrome.runtime.MessageSender
+  sender?: chrome.runtime.MessageSender,
 ) => Promise<void>;
 
 /**
@@ -97,11 +100,11 @@ export class MessageHandler {
 
     // Initialize action handlers map for efficient routing
     this.actionHandlers = new Map([
-      ['requestTranslation', this.handleRequestTranslation.bind(this)],
-      ['clearCache', this.handleClearCache.bind(this)],
-      ['getCacheStats', this.handleGetCacheStats.bind(this)],
-      ['testConnection', this.handleTestConnection.bind(this)],
-      ['reloadConfig', this.handleReloadConfig.bind(this)],
+      ["requestTranslation", this.handleRequestTranslation.bind(this)],
+      ["clearCache", this.handleClearCache.bind(this)],
+      ["getCacheStats", this.handleGetCacheStats.bind(this)],
+      ["testConnection", this.handleTestConnection.bind(this)],
+      ["reloadConfig", this.handleReloadConfig.bind(this)],
     ]);
   }
 
@@ -115,7 +118,7 @@ export class MessageHandler {
   async handle(
     message: HandlerMessage,
     sender: chrome.runtime.MessageSender,
-    sendResponse: (response?: HandlerResponse) => void
+    sendResponse: (response?: HandlerResponse) => void,
   ): Promise<boolean> {
     const timestamp = new Date().toISOString();
     console.log(`[Background:MessageHandler] ${timestamp} - handle() called:`, {
@@ -124,27 +127,33 @@ export class MessageHandler {
       payload: message.payload,
       sender: {
         tabId: sender.tab?.id,
-        url: sender.url
-      }
+        url: sender.url,
+      },
     });
 
     try {
       // Validate message format with fallback support
       const action = message.action || this.inferActionFromType(message.type);
 
-      console.log(`[Background:MessageHandler] ${timestamp} - Action resolved:`, {
-        originalAction: message.action,
-        inferredAction: this.inferActionFromType(message.type),
-        finalAction: action
-      });
+      console.log(
+        `[Background:MessageHandler] ${timestamp} - Action resolved:`,
+        {
+          originalAction: message.action,
+          inferredAction: this.inferActionFromType(message.type),
+          finalAction: action,
+        },
+      );
 
       if (!action) {
-        console.error(`[Background:MessageHandler] ${timestamp} - Invalid message format:`, {
-          type: message.type,
-          hasAction: !!message.action,
-          message
-        });
-        logger.error('MessageHandler: Invalid message format', {
+        console.error(
+          `[Background:MessageHandler] ${timestamp} - Invalid message format:`,
+          {
+            type: message.type,
+            hasAction: !!message.action,
+            message,
+          },
+        );
+        logger.error("MessageHandler: Invalid message format", {
           type: message.type,
           hasAction: !!message.action,
           message,
@@ -161,28 +170,40 @@ export class MessageHandler {
       const handler = this.actionHandlers.get(action);
 
       if (handler) {
-        console.log(`[Background:MessageHandler] ${timestamp} - Routing to handler:`, {
-          action,
-          payload
-        });
+        console.log(
+          `[Background:MessageHandler] ${timestamp} - Routing to handler:`,
+          {
+            action,
+            payload,
+          },
+        );
         await handler(payload, sendResponse, sender);
       } else {
-        console.error(`[Background:MessageHandler] ${timestamp} - Unknown action:`, action);
+        console.error(
+          `[Background:MessageHandler] ${timestamp} - Unknown action:`,
+          action,
+        );
         sendResponse({
           success: false,
           error: `Unknown action: ${action}`,
         });
       }
     } catch (error) {
-      console.error(`[Background:MessageHandler] ${timestamp} - Unexpected error:`, {
-        error,
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      logger.error('MessageHandler: Unexpected error', error);
+      console.error(
+        `[Background:MessageHandler] ${timestamp} - Unexpected error:`,
+        {
+          error,
+          message: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      );
+      logger.error("MessageHandler: Unexpected error", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'An unexpected error occurred',
+        error:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred",
       });
     }
 
@@ -197,10 +218,10 @@ export class MessageHandler {
    */
   private inferActionFromType(type: string): string | undefined {
     const typeToActionMap: Record<string, string> = {
-      'requestTranslation': 'requestTranslation',
-      'testConnection': 'testConnection',
-      'clearCache': 'clearCache',
-      'getCacheStats': 'getCacheStats',
+      requestTranslation: "requestTranslation",
+      testConnection: "testConnection",
+      clearCache: "clearCache",
+      getCacheStats: "getCacheStats",
     };
     return typeToActionMap[type];
   }
@@ -219,43 +240,54 @@ export class MessageHandler {
   private async handleRequestTranslation(
     payload: any,
     sendResponse: (response: HandlerResponse) => void,
-    sender?: chrome.runtime.MessageSender
+    sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     const timestamp = new Date().toISOString();
-    console.log(`[Background:MessageHandler] ${timestamp} - handleRequestTranslation() called:`, {
-      payload,
-      sender: {
-        tabId: sender?.tab?.id,
-        url: sender?.url,
+    console.log(
+      `[Background:MessageHandler] ${timestamp} - handleRequestTranslation() called:`,
+      {
+        payload,
+        sender: {
+          tabId: sender?.tab?.id,
+          url: sender?.url,
+        },
       },
-    });
+    );
 
     try {
-      const { texts, targetLanguage, semiParallel, priorityCount, phase } = payload;
+      const { texts, targetLanguage, semiParallel, priorityCount, phase } =
+        payload;
 
-      console.log(`[Background:MessageHandler] ${timestamp} - Validating payload:`, {
-        hasTexts: !!texts,
-        isArray: Array.isArray(texts),
-        textsCount: Array.isArray(texts) ? texts.length : 0,
-        targetLanguage,
-        semiParallel,
-        priorityCount,
-      });
+      console.log(
+        `[Background:MessageHandler] ${timestamp} - Validating payload:`,
+        {
+          hasTexts: !!texts,
+          isArray: Array.isArray(texts),
+          textsCount: Array.isArray(texts) ? texts.length : 0,
+          targetLanguage,
+          semiParallel,
+          priorityCount,
+        },
+      );
 
       if (!texts || !Array.isArray(texts)) {
-        console.error(`[Background:MessageHandler] ${timestamp} - Invalid payload: texts must be an array`);
+        console.error(
+          `[Background:MessageHandler] ${timestamp} - Invalid payload: texts must be an array`,
+        );
         sendResponse({
           success: false,
-          error: 'Invalid payload: texts must be an array',
+          error: "Invalid payload: texts must be an array",
         });
         return;
       }
 
       if (!targetLanguage) {
-        console.error(`[Background:MessageHandler] ${timestamp} - Invalid payload: targetLanguage is required`);
+        console.error(
+          `[Background:MessageHandler] ${timestamp} - Invalid payload: targetLanguage is required`,
+        );
         sendResponse({
           success: false,
-          error: 'Invalid payload: targetLanguage is required',
+          error: "Invalid payload: targetLanguage is required",
         });
         return;
       }
@@ -264,26 +296,43 @@ export class MessageHandler {
       let onBatchComplete;
       if (semiParallel && sender?.tab?.id) {
         const tabId = sender.tab.id;
-        const totalBatches = Math.ceil(texts.length / BATCH_CONFIG.BATCH_SIZE);
-        let completedBatches = 0;
+        const totalItems = texts.length;
+        let completedItems = 0;
         const translationPhase: TranslationPhase = phase || 1;
 
         onBatchComplete = (
           batchIndex: number,
           translations: string[],
-          nodeIndices: number[]
+          nodeIndices: number[],
         ): void => {
-          completedBatches++;
-          const percentage = Math.round((completedBatches / totalBatches) * 100);
+          const translatedCount =
+            Array.isArray(nodeIndices) && nodeIndices.length > 0
+              ? nodeIndices.length
+              : translations.length;
+          completedItems = Math.min(
+            totalItems,
+            completedItems + translatedCount,
+          );
+          const percentage =
+            totalItems > 0
+              ? Math.round((completedItems / totalItems) * 100)
+              : 100;
 
-          console.log(`[Background:MessageHandler] ${timestamp} - Batch ${batchIndex} completed, sending BATCH_COMPLETED:`, {
-            tabId,
-            batchIndex,
-            translationsCount: translations.length,
-            nodeIndices,
-            phase: translationPhase,
-            progress: { current: completedBatches, total: totalBatches, percentage },
-          });
+          console.log(
+            `[Background:MessageHandler] ${timestamp} - Batch ${batchIndex} completed, sending BATCH_COMPLETED:`,
+            {
+              tabId,
+              batchIndex,
+              translationsCount: translations.length,
+              nodeIndices,
+              phase: translationPhase,
+              progress: {
+                current: completedItems,
+                total: totalItems,
+                percentage,
+              },
+            },
+          );
 
           try {
             // Send BATCH_COMPLETED message to Content Script
@@ -295,8 +344,8 @@ export class MessageHandler {
                 nodeIndices,
                 phase: translationPhase,
                 progress: {
-                  current: completedBatches,
-                  total: totalBatches,
+                  current: completedItems,
+                  total: totalItems,
                   percentage,
                 },
               },
@@ -304,50 +353,59 @@ export class MessageHandler {
           } catch (error) {
             console.error(
               `[Background:MessageHandler] Failed to send BATCH_COMPLETED to tab ${tabId}:`,
-              error
+              error,
             );
           }
         };
       }
 
       // Call TranslationEngine with optional semi-parallel processing
-      console.log(`[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`, {
-        textsCount: texts.length,
-        targetLanguage,
-        semiParallel: semiParallel || false,
-        priorityCount: priorityCount || undefined,
-        hasBatchCallback: !!onBatchComplete,
-        firstText: texts[0]?.substring(0, 50)
-      });
+      console.log(
+        `[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`,
+        {
+          textsCount: texts.length,
+          targetLanguage,
+          semiParallel: semiParallel || false,
+          priorityCount: priorityCount ?? undefined,
+          hasBatchCallback: !!onBatchComplete,
+          firstText: texts[0]?.substring(0, 50),
+        },
+      );
 
       const translations = semiParallel
         ? await this.engine.translateBatchSemiParallel(
             texts,
             targetLanguage,
-            priorityCount || 1,
-            onBatchComplete
+            priorityCount ?? 1,
+            onBatchComplete,
           )
         : await this.engine.translateBatch(texts, targetLanguage);
 
-      console.log(`[Background:MessageHandler] ${timestamp} - Translation successful:`, {
-        translationsCount: translations.length,
-        firstTranslation: translations[0]?.substring(0, 50)
-      });
+      console.log(
+        `[Background:MessageHandler] ${timestamp} - Translation successful:`,
+        {
+          translationsCount: translations.length,
+          firstTranslation: translations[0]?.substring(0, 50),
+        },
+      );
 
       sendResponse({
         success: true,
         data: { translations },
       });
     } catch (error) {
-      console.error(`[Background:MessageHandler] ${timestamp} - Translation error:`, {
-        error,
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      logger.error('MessageHandler: Translation error', error);
+      console.error(
+        `[Background:MessageHandler] ${timestamp} - Translation error:`,
+        {
+          error,
+          message: error instanceof Error ? error.message : "Unknown error",
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      );
+      logger.error("MessageHandler: Translation error", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'Translation failed',
+        error: error instanceof Error ? error.message : "Translation failed",
       });
     }
   }
@@ -358,23 +416,23 @@ export class MessageHandler {
   private async handleClearCache(
     payload: any,
     sendResponse: (response: HandlerResponse) => void,
-    sender?: chrome.runtime.MessageSender
+    sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     try {
-      const layer: CacheLayer = payload.layer || 'all';
+      const layer: CacheLayer = payload.layer || "all";
 
       // Call TranslationEngine
       await this.engine.clearCache(layer);
 
       sendResponse({
         success: true,
-        data: { message: 'Cache cleared successfully' },
+        data: { message: "Cache cleared successfully" },
       });
     } catch (error) {
-      logger.error('MessageHandler: Clear cache error', error);
+      logger.error("MessageHandler: Clear cache error", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to clear cache',
+        error: error instanceof Error ? error.message : "Failed to clear cache",
       });
     }
   }
@@ -385,7 +443,7 @@ export class MessageHandler {
   private async handleGetCacheStats(
     payload: any,
     sendResponse: (response: HandlerResponse) => void,
-    sender?: chrome.runtime.MessageSender
+    sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     try {
       // Call TranslationEngine
@@ -396,10 +454,11 @@ export class MessageHandler {
         data: stats,
       });
     } catch (error) {
-      logger.error('MessageHandler: Get cache stats error', error);
+      logger.error("MessageHandler: Get cache stats error", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to get cache stats',
+        error:
+          error instanceof Error ? error.message : "Failed to get cache stats",
       });
     }
   }
@@ -414,7 +473,7 @@ export class MessageHandler {
   private async handleTestConnection(
     payload: any,
     sendResponse: (response: HandlerResponse) => void,
-    sender?: chrome.runtime.MessageSender
+    sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     try {
       let result;
@@ -423,8 +482,8 @@ export class MessageHandler {
       if (payload?.apiKey !== undefined) {
         // Mode 1: Test temporary config (Options UI - before saving)
         result = await this.client.testConnectionWithConfig({
-          apiKey: payload.apiKey || '',
-          model: payload.model || '',
+          apiKey: payload.apiKey || "",
+          model: payload.model || "",
           provider: payload.provider,
         });
       } else {
@@ -437,10 +496,11 @@ export class MessageHandler {
         data: result,
       });
     } catch (error) {
-      logger.error('MessageHandler: Test connection error', error);
+      logger.error("MessageHandler: Test connection error", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'Connection test failed',
+        error:
+          error instanceof Error ? error.message : "Connection test failed",
       });
     }
   }
@@ -454,22 +514,23 @@ export class MessageHandler {
   private async handleReloadConfig(
     payload: any,
     sendResponse: (response: HandlerResponse) => void,
-    sender?: chrome.runtime.MessageSender
+    sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     try {
-      console.log('[MessageHandler] Reloading OpenRouterClient config...');
+      console.log("[MessageHandler] Reloading OpenRouterClient config...");
       await this.client.initialize();
-      console.log('[MessageHandler] Config reloaded successfully');
+      console.log("[MessageHandler] Config reloaded successfully");
 
       sendResponse({
         success: true,
-        data: { message: 'Configuration reloaded successfully' },
+        data: { message: "Configuration reloaded successfully" },
       });
     } catch (error) {
-      console.error('[MessageHandler] Failed to reload config:', error);
+      console.error("[MessageHandler] Failed to reload config:", error);
       sendResponse({
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to reload config',
+        error:
+          error instanceof Error ? error.message : "Failed to reload config",
       });
     }
   }
