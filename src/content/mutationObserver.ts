@@ -8,9 +8,11 @@
  * - Manage observer lifecycle
  */
 
-import { logger } from '@shared/utils';
+import { logger } from "@shared/utils";
 
-export type MutationCallback = (mutations: MutationRecord[]) => void;
+export type MutationCallback = (
+  mutations: MutationRecord[],
+) => void | Promise<void>;
 
 export class MutationObserverManager {
   private observer: MutationObserver | null = null;
@@ -23,7 +25,7 @@ export class MutationObserverManager {
    */
   observe(callback: MutationCallback): void {
     if (this.isObserving) {
-      logger.log('MutationObserver already observing');
+      logger.log("MutationObserver already observing");
       return;
     }
 
@@ -33,10 +35,12 @@ export class MutationObserverManager {
     this.observer = new MutationObserver((mutations) => {
       try {
         if (this.callback) {
-          this.callback(mutations);
+          Promise.resolve(this.callback(mutations)).catch((error) => {
+            logger.error("Error in async MutationObserver callback:", error);
+          });
         }
       } catch (error) {
-        logger.error('Error in MutationObserver callback:', error);
+        logger.error("Error in MutationObserver callback:", error);
       }
     });
 
@@ -44,10 +48,21 @@ export class MutationObserverManager {
     this.observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
+      characterDataOldValue: false,
+      attributes: true,
+      attributeFilter: [
+        "class",
+        "style",
+        "hidden",
+        "aria-hidden",
+        "aria-expanded",
+        "open",
+      ],
     });
 
     this.isObserving = true;
-    logger.log('MutationObserver started');
+    logger.log("MutationObserver started");
   }
 
   /**
@@ -63,6 +78,6 @@ export class MutationObserverManager {
     this.callback = null;
     this.isObserving = false;
 
-    logger.log('MutationObserver disconnected');
+    logger.log("MutationObserver disconnected");
   }
 }
