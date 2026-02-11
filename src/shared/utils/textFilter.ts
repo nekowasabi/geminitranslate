@@ -69,31 +69,34 @@ export function shouldTranslateText(text: string): FilterResult {
   const trimmed = text.trim();
 
   // Check for CJK content first - CJK text should always be translated
-  const hasCJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(trimmed);
+  const hasCJK =
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(
+      trimmed,
+    );
 
   // 1. Empty or too short (but allow single CJK characters)
   if (trimmed.length === 0) {
-    return { shouldTranslate: false, reason: 'too_short' };
+    return { shouldTranslate: false, reason: "too_short" };
   }
 
   if (trimmed.length < MIN_TEXT_LENGTH && !hasCJK) {
-    return { shouldTranslate: false, reason: 'too_short' };
+    return { shouldTranslate: false, reason: "too_short" };
   }
 
   // 2. Numbers only (with common separators: spaces, dots, dashes, plus, parentheses, commas, colons, slashes)
   if (/^[\d\s.\-+(),/:]+$/.test(trimmed)) {
-    return { shouldTranslate: false, reason: 'numbers_only' };
+    return { shouldTranslate: false, reason: "numbers_only" };
   }
 
   // 3. URL or email address
   if (/^(https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.\w+)/i.test(trimmed)) {
-    return { shouldTranslate: false, reason: 'url_or_email' };
+    return { shouldTranslate: false, reason: "url_or_email" };
   }
 
   // 4. Symbols and punctuation only (excluding CJK punctuation)
   // Uses Unicode categories: P (punctuation), S (symbols), Z (separators)
   if (/^[\s\p{P}\p{S}]+$/u.test(trimmed)) {
-    return { shouldTranslate: false, reason: 'symbols_only' };
+    return { shouldTranslate: false, reason: "symbols_only" };
   }
 
   // 5. Single character (non-CJK) - already handled in step 1
@@ -101,21 +104,24 @@ export function shouldTranslateText(text: string): FilterResult {
   // 6. Code-like content (STRICT: only matches patterns with underscores, $ or mixed case like camelCase)
   // Does NOT match simple words like "Hello", "World"
   // Matches: variableName, function_name, CONSTANT_NAME, $variable, methodCall()
-  const isCodeLike = (
-    // Has underscore (likely variable/constant name)
-    trimmed.includes('_') ||
-    // Has $ (JavaScript variable)
-    trimmed.includes('$') ||
-    // camelCase or PascalCase (has lowercase followed by uppercase)
-    /[a-z][A-Z]/.test(trimmed) ||
-    // ALL_CAPS constant (at least 2 capital letters with no lowercase between)
-    /^[A-Z][A-Z0-9_]+$/.test(trimmed) ||
-    // Function call with parentheses
-    /^[a-zA-Z_$][a-zA-Z0-9_$]*\(\)$/.test(trimmed)
-  );
+  const isSingleToken = !/\s/.test(trimmed);
+  const isCodeLike =
+    isSingleToken &&
+    // Has underscore and looks like identifier/constant token (not sentence)
+    (/^[a-zA-Z0-9]+(?:_[a-zA-Z0-9]+)+$/.test(trimmed) ||
+      // Has $ followed by letter/underscore (JavaScript variable like $variable, $jQuery, ${expr})
+      // Does NOT match currency amounts like $200, $80
+      /\$[a-zA-Z_\{]/.test(trimmed) ||
+      // camelCase or PascalCase token (not sentence)
+      /[a-z][A-Z]/.test(trimmed) ||
+      // ALL_CAPS constant (5+ characters, likely programming constant)
+      // Does NOT match common abbreviations like TOS, FAQ, API, NASA, HTML
+      /^[A-Z][A-Z0-9_]{4,}$/.test(trimmed) ||
+      // Function call with parentheses
+      /^[a-zA-Z_$][a-zA-Z0-9_$]*\(\)$/.test(trimmed));
 
   if (isCodeLike) {
-    return { shouldTranslate: false, reason: 'code_like' };
+    return { shouldTranslate: false, reason: "code_like" };
   }
 
   return { shouldTranslate: true };
@@ -156,7 +162,7 @@ export function filterBatchTexts(texts: string[]): BatchFilterResult {
   });
 
   console.log(
-    `[TextFilter] Filtered ${texts.length} texts: ${textsToTranslate.length} to translate, ${skippedIndices.size} skipped`
+    `[TextFilter] Filtered ${texts.length} texts: ${textsToTranslate.length} to translate, ${skippedIndices.size} skipped`,
   );
 
   return { textsToTranslate, skippedIndices, originalIndices };
@@ -175,7 +181,7 @@ export function reconstructResults(
   translations: string[],
   originalIndices: number[],
   skippedIndices: Map<number, string>,
-  totalLength: number
+  totalLength: number,
 ): string[] {
   const results: string[] = new Array(totalLength);
 
@@ -184,7 +190,9 @@ export function reconstructResults(
     if (origIdx < totalLength && transIdx < translations.length) {
       results[origIdx] = translations[transIdx];
     } else {
-      console.warn(`[TextFilter] reconstructResults: index out of bounds - origIdx=${origIdx}, transIdx=${transIdx}, totalLength=${totalLength}, translationsLength=${translations.length}`);
+      console.warn(
+        `[TextFilter] reconstructResults: index out of bounds - origIdx=${origIdx}, transIdx=${transIdx}, totalLength=${totalLength}, translationsLength=${translations.length}`,
+      );
     }
   });
 
@@ -193,17 +201,21 @@ export function reconstructResults(
     if (idx < totalLength) {
       results[idx] = text;
     } else {
-      console.warn(`[TextFilter] reconstructResults: skipped index out of bounds - idx=${idx}, totalLength=${totalLength}`);
+      console.warn(
+        `[TextFilter] reconstructResults: skipped index out of bounds - idx=${idx}, totalLength=${totalLength}`,
+      );
     }
   });
 
   // Check for undefined values and fill with empty string as fallback
-  const undefinedCount = results.filter(r => r === undefined).length;
+  const undefinedCount = results.filter((r) => r === undefined).length;
   if (undefinedCount > 0) {
-    console.error(`[TextFilter] reconstructResults: ${undefinedCount} undefined values detected, filling with empty strings`);
+    console.error(
+      `[TextFilter] reconstructResults: ${undefinedCount} undefined values detected, filling with empty strings`,
+    );
     for (let i = 0; i < results.length; i++) {
       if (results[i] === undefined) {
-        results[i] = '';
+        results[i] = "";
       }
     }
   }

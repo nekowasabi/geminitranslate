@@ -8,7 +8,7 @@
  * - Preserve original text using WeakMap
  */
 
-import { EXCLUSION_SELECTORS } from '@shared/constants';
+import { EXCLUSION_SELECTORS } from "@shared/constants";
 
 export interface TextNode {
   node: Node;
@@ -33,7 +33,16 @@ export interface ViewportQueue {
 
 export class DOMManipulator {
   private originalTextMap: WeakMap<Node, string> = new WeakMap();
-  private readonly IGNORED_TAGS: string[] = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'SVG', 'CANVAS', 'CODE', 'PRE'];
+  private readonly IGNORED_TAGS: string[] = [
+    "SCRIPT",
+    "STYLE",
+    "NOSCRIPT",
+    "IFRAME",
+    "SVG",
+    "CANVAS",
+    "CODE",
+    "PRE",
+  ];
 
   /**
    * Set of normalized texts already extracted (for deduplication)
@@ -64,7 +73,11 @@ export class DOMManipulator {
           }
 
           // Check if any ancestor matches exclusion selectors
-          if (parent.closest('svg, [contenteditable="true"], [data-no-translate], .no-translate')) {
+          if (
+            parent.closest(
+              'svg, [contenteditable="true"], [data-no-translate], .no-translate',
+            )
+          ) {
             return NodeFilter.FILTER_REJECT;
           }
 
@@ -74,8 +87,8 @@ export class DOMManipulator {
           }
 
           return NodeFilter.FILTER_ACCEPT;
-        }
-      }
+        },
+      },
     );
 
     const textNodes: TextNode[] = [];
@@ -86,7 +99,7 @@ export class DOMManipulator {
     this.extractedTextsSet.clear();
 
     while ((node = walker.nextNode())) {
-      const rawText = node.textContent || '';
+      const rawText = node.textContent || "";
       // Normalize text by trimming whitespace
       const text = rawText.trim();
 
@@ -94,7 +107,7 @@ export class DOMManipulator {
       textNodes.push({
         node,
         text,
-        index
+        index,
       });
 
       // Track normalized text for potential duplicate detection
@@ -124,7 +137,7 @@ export class DOMManipulator {
   reset(): void {
     const walker = document.createTreeWalker(
       document.body,
-      NodeFilter.SHOW_TEXT
+      NodeFilter.SHOW_TEXT,
     );
 
     let node: Node | null;
@@ -142,7 +155,7 @@ export class DOMManipulator {
    */
   saveOriginalText(node: Node): void {
     if (!this.originalTextMap.has(node)) {
-      this.originalTextMap.set(node, node.textContent || '');
+      this.originalTextMap.set(node, node.textContent || "");
     }
   }
 
@@ -167,29 +180,45 @@ export class DOMManipulator {
     const viewport: TextNode[] = [];
     const outOfViewport: TextNode[] = [];
 
-    nodes.forEach(node => {
-      const element = node.node.parentElement;
+    nodes.forEach((node) => {
+      // Use Range to get the text node's actual position (not parent's)
+      const range = document.createRange();
+      range.selectNodeContents(node.node);
+      const rect = range.getBoundingClientRect();
 
-      if (!element) {
-        // No parent element, treat as out of viewport
-        outOfViewport.push(node);
+      // Handle edge case: empty text nodes have zero-size rect
+      // Fall back to parent element check if rect is invalid
+      if (rect.width === 0 && rect.height === 0) {
+        const element = node.node.parentElement;
+        if (element) {
+          const parentRect = element.getBoundingClientRect();
+          const isInViewport =
+            parentRect.top < window.innerHeight &&
+            parentRect.bottom > 0 &&
+            parentRect.left < window.innerWidth &&
+            parentRect.right > 0;
+          if (isInViewport) {
+            viewport.push(node);
+          } else {
+            outOfViewport.push(node);
+          }
+        } else {
+          outOfViewport.push(node);
+        }
         return;
       }
 
-      const rect = element.getBoundingClientRect();
-
-      // Check if element is in viewport
-      // An element is visible if:
+      // Check if text node's actual position is in viewport
+      // A text node is visible if:
       // - Its top is above the bottom of the viewport (rect.top < window.innerHeight)
       // - Its bottom is below the top of the viewport (rect.bottom > 0)
       // - Its left is before the right edge of the viewport (rect.left < window.innerWidth)
       // - Its right is after the left edge of the viewport (rect.right > 0)
-      const isInViewport = (
+      const isInViewport =
         rect.top < window.innerHeight &&
         rect.bottom > 0 &&
         rect.left < window.innerWidth &&
-        rect.right > 0
-      );
+        rect.right > 0;
 
       if (isInViewport) {
         viewport.push(node);
