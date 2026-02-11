@@ -27,16 +27,19 @@
  * ```
  */
 
-import { OpenRouterClient } from './apiClient';
-import { logger } from '../shared/utils/logger';
-import { retry } from '../shared/utils/retry';
-import { BATCH_CONFIG, RETRY_CONFIG } from '../shared/constants/config';
-import LRUCache from '../shared/utils/lruCache';
+import { OpenRouterClient, ParseCountMismatchError } from "./apiClient";
+import { logger } from "../shared/utils/logger";
+import {
+  BATCH_CONFIG,
+  FEATURE_FLAGS,
+  RETRY_CONFIG,
+} from "../shared/constants/config";
+import LRUCache from "../shared/utils/lruCache";
 
 /**
  * Cache layer type
  */
-export type CacheLayer = 'memory' | 'session' | 'local' | 'all';
+export type CacheLayer = "memory" | "session" | "local" | "all";
 
 /**
  * Cache statistics
@@ -81,8 +84,22 @@ interface CacheEntry {
 type BatchProgressCallback = (
   batchIndex: number,
   translations: string[],
-  nodeIndices: number[]
+  nodeIndices: number[],
 ) => void;
+
+interface RequestBudgetContext {
+  apiCalls: number;
+  maxApiCalls: number;
+  retryAttempts: number;
+  fallbackSingleCount: number;
+  fallbackSplitCount: number;
+  startedAt: number;
+}
+
+interface TranslationAttemptResult {
+  translations: string[];
+  fallbackUsed: boolean;
+}
 
 /**
  * TranslationEngine with 3-tier cache system
@@ -103,6 +120,7 @@ export class TranslationEngine {
    * Batch size for API requests
    */
   private readonly BATCH_SIZE = BATCH_CONFIG.BATCH_SIZE;
+  private readonly INDIVIDUAL_FALLBACK_THRESHOLD = 6;
 
   /**
    * Cache hit/miss tracking
@@ -129,7 +147,7 @@ export class TranslationEngine {
 
     await this.apiClient.initialize();
     this.initialized = true;
-    logger.log('TranslationEngine initialized');
+    logger.log("TranslationEngine initialized");
   }
 
   /**
@@ -162,17 +180,22 @@ export class TranslationEngine {
     texts: string[],
     targetLanguage: string,
     priorityCount: number = BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
-    onBatchComplete?: BatchProgressCallback
+    onBatchComplete?: BatchProgressCallback,
   ): Promise<string[]> {
     const timestamp = new Date().toISOString();
-    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatchSemiParallel() called:`, {
-      textsCount: texts.length,
-      targetLanguage,
-      priorityCount,
-    });
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - translateBatchSemiParallel() called:`,
+      {
+        textsCount: texts.length,
+        targetLanguage,
+        priorityCount,
+      },
+    );
 
     if (!this.initialized) {
-      throw new Error('TranslationEngine not initialized. Call initialize() first.');
+      throw new Error(
+        "TranslationEngine not initialized. Call initialize() first.",
+      );
     }
 
     if (texts.length === 0) {
@@ -181,6 +204,9 @@ export class TranslationEngine {
 
     const results: string[] = new Array(texts.length);
     const uncachedIndices: number[] = [];
+
+    const requestBudget = this.createRequestBudgetContext(texts.length);
+    let batchCount = 0;
 
     // Check cache
     for (let i = 0; i < texts.length; i++) {
@@ -201,20 +227,30 @@ export class TranslationEngine {
           const nodeIndices = Array.from({ length: texts.length }, (_, i) => i);
           onBatchComplete(0, results, nodeIndices);
         } catch (error) {
-          logger.warn('Batch complete callback error (cache hit):', error);
+          logger.warn("Batch complete callback error (cache hit):", error);
         }
       }
+      this.logRequestDiagnostics(
+        "translateBatchSemiParallel",
+        texts.length,
+        0,
+        0,
+        requestBudget,
+      );
       return results;
     }
 
     // Create batches
     const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-    const batches = this.chunkArray(uncachedTexts, this.BATCH_SIZE);
+    const batches = this.chunkTextsByConstraints(uncachedTexts);
+    batchCount = batches.length;
 
     const priorityBatches = batches.slice(0, priorityCount);
     const remainingBatches = batches.slice(priorityCount);
 
-    console.log(`[Background:TranslationEngine] ${timestamp} - Semi-parallel: ${priorityBatches.length} sequential, ${remainingBatches.length} parallel`);
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - Semi-parallel: ${priorityBatches.length} sequential, ${remainingBatches.length} parallel`,
+    );
 
     let translatedTexts: string[] = [];
     let processedCount = 0;
@@ -222,17 +258,31 @@ export class TranslationEngine {
     // Process priority batches sequentially
     for (let i = 0; i < priorityBatches.length; i++) {
       const batch = priorityBatches[i];
-      const batchResults = await this.translateWithRetry(batch, targetLanguage);
-      translatedTexts.push(...batchResults);
+      const batchNodeIndices = uncachedIndices.slice(
+        processedCount,
+        processedCount + batch.length,
+      );
+      const batchResult = await this.translateWithRetry(
+        batch,
+        targetLanguage,
+        requestBudget,
+        {
+          onItemTranslated: onBatchComplete
+            ? (translation: string, itemIndex: number) => {
+                const nodeIndex = batchNodeIndices[itemIndex];
+                if (typeof nodeIndex === "number") {
+                  onBatchComplete(i, [translation], [nodeIndex]);
+                }
+              }
+            : undefined,
+        },
+      );
+      translatedTexts.push(...batchResult.translations);
 
       // Invoke callback for this batch
-      if (onBatchComplete) {
+      if (onBatchComplete && !batchResult.fallbackUsed) {
         try {
-          const batchNodeIndices = uncachedIndices.slice(
-            processedCount,
-            processedCount + batch.length
-          );
-          onBatchComplete(i, batchResults, batchNodeIndices);
+          onBatchComplete(i, batchResult.translations, batchNodeIndices);
         } catch (error) {
           logger.warn(`Batch complete callback error (batch ${i}):`, error);
         }
@@ -243,29 +293,52 @@ export class TranslationEngine {
 
     // Process remaining batches in parallel
     if (remainingBatches.length > 0) {
-      const parallelPromises = remainingBatches.map(batch =>
-        this.translateWithRetry(batch, targetLanguage)
+      let cursor = processedCount;
+      const batchMeta = remainingBatches.map((batch, idx) => {
+        const start = cursor;
+        cursor += batch.length;
+        return {
+          batch,
+          batchIndex: priorityBatches.length + idx,
+          nodeIndices: uncachedIndices.slice(start, start + batch.length),
+        };
+      });
+
+      const parallelPromises = batchMeta.map((meta) =>
+        this.translateWithRetry(meta.batch, targetLanguage, requestBudget, {
+          onItemTranslated: onBatchComplete
+            ? (translation: string, itemIndex: number) => {
+                const nodeIndex = meta.nodeIndices[itemIndex];
+                if (typeof nodeIndex === "number") {
+                  onBatchComplete(meta.batchIndex, [translation], [nodeIndex]);
+                }
+              }
+            : undefined,
+        }),
       );
       const parallelResults = await Promise.all(parallelPromises);
 
-      parallelResults.forEach((batchResults, idx) => {
-        const batchIndex = priorityBatches.length + idx;
-        translatedTexts.push(...batchResults);
+      parallelResults.forEach((batchResult, idx) => {
+        translatedTexts.push(...batchResult.translations);
 
         // Invoke callback for this batch
-        if (onBatchComplete) {
+        if (onBatchComplete && !batchResult.fallbackUsed) {
           try {
-            const batchNodeIndices = uncachedIndices.slice(
-              processedCount,
-              processedCount + batchResults.length
+            const meta = batchMeta[idx];
+            onBatchComplete(
+              meta.batchIndex,
+              batchResult.translations,
+              meta.nodeIndices,
             );
-            onBatchComplete(batchIndex, batchResults, batchNodeIndices);
           } catch (error) {
-            logger.warn(`Batch complete callback error (batch ${batchIndex}):`, error);
+            logger.warn(
+              `Batch complete callback error (batch ${batchMeta[idx].batchIndex}):`,
+              error,
+            );
           }
         }
 
-        processedCount += batchResults.length;
+        processedCount += batchResult.translations.length;
       });
     }
 
@@ -274,9 +347,25 @@ export class TranslationEngine {
       const originalIndex = uncachedIndices[i];
       const translation = translatedTexts[i];
       results[originalIndex] = translation;
-      await this.setCachedTranslation(texts[originalIndex], targetLanguage, translation);
+      await this.setCachedTranslation(
+        texts[originalIndex],
+        targetLanguage,
+        translation,
+      );
     }
 
+    this.assertCompleteResults(
+      results,
+      texts.length,
+      "translateBatchSemiParallel",
+    );
+    this.logRequestDiagnostics(
+      "translateBatchSemiParallel",
+      texts.length,
+      uncachedIndices.length,
+      batchCount,
+      requestBudget,
+    );
     return results;
   }
 
@@ -295,41 +384,55 @@ export class TranslationEngine {
     options?: {
       semiParallel?: boolean;
       priorityCount?: number;
-    }
+    },
   ): Promise<string[]> {
     // Use semi-parallel processing if requested
     if (options?.semiParallel) {
       return this.translateBatchSemiParallel(
         texts,
         targetLanguage,
-        options.priorityCount
+        options.priorityCount,
       );
     }
 
     // Original parallel processing logic
     const timestamp = new Date().toISOString();
-    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatch() called:`, {
-      textsCount: texts.length,
-      targetLanguage,
-      firstText: texts[0]?.substring(0, 50)
-    });
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - translateBatch() called:`,
+      {
+        textsCount: texts.length,
+        targetLanguage,
+        firstText: texts[0]?.substring(0, 50),
+      },
+    );
 
     if (!this.initialized) {
-      console.error(`[Background:TranslationEngine] ${timestamp} - Engine not initialized`);
-      throw new Error('TranslationEngine not initialized. Call initialize() first.');
+      console.error(
+        `[Background:TranslationEngine] ${timestamp} - Engine not initialized`,
+      );
+      throw new Error(
+        "TranslationEngine not initialized. Call initialize() first.",
+      );
     }
 
     // Handle empty input
     if (texts.length === 0) {
-      console.log(`[Background:TranslationEngine] ${timestamp} - Empty input, returning empty array`);
+      console.log(
+        `[Background:TranslationEngine] ${timestamp} - Empty input, returning empty array`,
+      );
       return [];
     }
 
     const results: string[] = new Array(texts.length);
     const uncachedIndices: number[] = [];
 
+    const requestBudget = this.createRequestBudgetContext(texts.length);
+    let batchCount = 0;
+
     // Check all cache layers
-    console.log(`[Background:TranslationEngine] ${timestamp} - Checking cache for ${texts.length} texts...`);
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - Checking cache for ${texts.length} texts...`,
+    );
     for (let i = 0; i < texts.length; i++) {
       const cached = await this.getCachedTranslation(texts[i], targetLanguage);
       if (cached) {
@@ -341,37 +444,53 @@ export class TranslationEngine {
       }
     }
 
-    console.log(`[Background:TranslationEngine] ${timestamp} - Cache check complete:`, {
-      cacheHits: this.cacheHits,
-      cacheMisses: this.cacheMisses,
-      uncachedCount: uncachedIndices.length
-    });
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - Cache check complete:`,
+      {
+        cacheHits: this.cacheHits,
+        cacheMisses: this.cacheMisses,
+        uncachedCount: uncachedIndices.length,
+      },
+    );
 
     // Translate uncached texts in batches
     if (uncachedIndices.length > 0) {
       const uncachedTexts = uncachedIndices.map((i) => texts[i]);
-      const batches = this.chunkArray(uncachedTexts, this.BATCH_SIZE);
+      const batches = this.chunkTextsByConstraints(uncachedTexts);
+      batchCount = batches.length;
 
-      console.log(`[Background:TranslationEngine] ${timestamp} - Translating ${uncachedIndices.length} uncached texts in ${batches.length} batches`);
+      console.log(
+        `[Background:TranslationEngine] ${timestamp} - Translating ${uncachedIndices.length} uncached texts in ${batches.length} batches`,
+      );
 
       // Process batches in parallel
       const batchResults = await Promise.all(
         batches.map((batch, index) => {
-          console.log(`[Background:TranslationEngine] ${timestamp} - Processing batch ${index + 1}/${batches.length}:`, {
-            batchSize: batch.length
-          });
-          return this.translateWithRetry(batch, targetLanguage);
-        })
+          console.log(
+            `[Background:TranslationEngine] ${timestamp} - Processing batch ${index + 1}/${batches.length}:`,
+            {
+              batchSize: batch.length,
+            },
+          );
+          return this.translateWithRetry(batch, targetLanguage, requestBudget);
+        }),
       );
 
-      console.log(`[Background:TranslationEngine] ${timestamp} - All batches processed`);
+      console.log(
+        `[Background:TranslationEngine] ${timestamp} - All batches processed`,
+      );
 
       // Flatten batch results
-      const translations = batchResults.flat();
+      const translations = batchResults.flatMap(
+        (result) => result.translations,
+      );
 
-      console.log(`[Background:TranslationEngine] ${timestamp} - Flattened translations:`, {
-        count: translations.length
-      });
+      console.log(
+        `[Background:TranslationEngine] ${timestamp} - Flattened translations:`,
+        {
+          count: translations.length,
+        },
+      );
 
       // Store results and update cache
       for (let i = 0; i < uncachedIndices.length; i++) {
@@ -380,17 +499,34 @@ export class TranslationEngine {
         results[originalIndex] = translation;
 
         // Save to all cache layers
-        await this.setCachedTranslation(texts[originalIndex], targetLanguage, translation);
+        await this.setCachedTranslation(
+          texts[originalIndex],
+          targetLanguage,
+          translation,
+        );
       }
 
-      console.log(`[Background:TranslationEngine] ${timestamp} - Cache updated with new translations`);
+      console.log(
+        `[Background:TranslationEngine] ${timestamp} - Cache updated with new translations`,
+      );
     }
 
-    console.log(`[Background:TranslationEngine] ${timestamp} - translateBatch() completed:`, {
-      resultsCount: results.length,
-      firstResult: results[0]?.substring(0, 50)
-    });
+    console.log(
+      `[Background:TranslationEngine] ${timestamp} - translateBatch() completed:`,
+      {
+        resultsCount: results.length,
+        firstResult: results[0]?.substring(0, 50),
+      },
+    );
 
+    this.assertCompleteResults(results, texts.length, "translateBatch");
+    this.logRequestDiagnostics(
+      "translateBatch",
+      texts.length,
+      uncachedIndices.length,
+      batchCount,
+      requestBudget,
+    );
     return results;
   }
 
@@ -406,7 +542,7 @@ export class TranslationEngine {
    */
   private async getCachedTranslation(
     text: string,
-    targetLanguage: string
+    targetLanguage: string,
   ): Promise<string | null> {
     const cacheKey = this.getCacheKey(text, targetLanguage);
 
@@ -467,7 +603,7 @@ export class TranslationEngine {
   private promoteToHigherTiers(cacheKey: string, translation: string): void {
     this.memoryCache.set(cacheKey, translation);
     const entry: CacheEntry = {
-      text: cacheKey.split(':')[1],
+      text: cacheKey.split(":")[1],
       translation,
     };
     this.saveToStorage(sessionStorage, cacheKey, entry);
@@ -483,7 +619,7 @@ export class TranslationEngine {
   private async setCachedTranslation(
     text: string,
     targetLanguage: string,
-    translation: string
+    translation: string,
   ): Promise<void> {
     const cacheKey = this.getCacheKey(text, targetLanguage);
     const entry: CacheEntry = { text, translation };
@@ -499,7 +635,11 @@ export class TranslationEngine {
   /**
    * Save entry to storage with error handling
    */
-  private saveToStorage(storage: Storage, cacheKey: string, entry: CacheEntry): void {
+  private saveToStorage(
+    storage: Storage,
+    cacheKey: string,
+    entry: CacheEntry,
+  ): void {
     try {
       storage.setItem(cacheKey, JSON.stringify(entry));
     } catch (error) {
@@ -527,16 +667,335 @@ export class TranslationEngine {
    */
   private async translateWithRetry(
     texts: string[],
-    targetLanguage: string
+    targetLanguage: string,
+    requestBudget: RequestBudgetContext,
+    options?: {
+      onItemTranslated?: (translation: string, itemIndex: number) => void;
+    },
+  ): Promise<TranslationAttemptResult> {
+    try {
+      const translations = await this.executeTranslationWithRetry(
+        () => this.apiClient.translate(texts, targetLanguage),
+        texts.length,
+        "Translation",
+        requestBudget,
+      );
+      return {
+        translations,
+        fallbackUsed: false,
+      };
+    } catch (error) {
+      if (error instanceof ParseCountMismatchError && texts.length > 1) {
+        const shouldUseSplitFallback =
+          texts.length > this.INDIVIDUAL_FALLBACK_THRESHOLD;
+        if (shouldUseSplitFallback) {
+          requestBudget.fallbackSplitCount += 1;
+        } else {
+          requestBudget.fallbackSingleCount += 1;
+        }
+        logger.warn(
+          `Count mismatch persists (expected=${error.expectedCount}, actual=${error.actualCount}), ` +
+            `falling back to ${shouldUseSplitFallback ? "binary-split" : "single-text"} translation for ${texts.length} texts`,
+        );
+        const translations = shouldUseSplitFallback
+          ? await this.translateByBinarySplit(
+              texts,
+              targetLanguage,
+              requestBudget,
+              options,
+              0,
+            )
+          : await this.translateIndividually(
+              texts,
+              targetLanguage,
+              requestBudget,
+              options,
+            );
+        return {
+          translations,
+          fallbackUsed: true,
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  private async translateIndividually(
+    texts: string[],
+    targetLanguage: string,
+    requestBudget: RequestBudgetContext,
+    options?: {
+      onItemTranslated?: (translation: string, itemIndex: number) => void;
+    },
   ): Promise<string[]> {
-    return retry(async () => this.apiClient.translate(texts, targetLanguage), {
-      maxRetries: RETRY_CONFIG.MAX_RETRIES,
-      delay: RETRY_CONFIG.INITIAL_DELAY,
-      backoff: RETRY_CONFIG.BACKOFF,
-      onError: (error, attempt) => {
-        logger.warn(`Translation retry attempt ${attempt + 1}:`, error.message);
-      },
-    });
+    const results: string[] = [];
+
+    for (let i = 0; i < texts.length; i++) {
+      const text = texts[i];
+      const translated = await this.executeTranslationWithRetry(
+        () => this.apiClient.translate([text], targetLanguage),
+        1,
+        "Single-text translation",
+        requestBudget,
+      );
+      const translatedText = translated[0];
+
+      results.push(translatedText);
+      if (options?.onItemTranslated) {
+        options.onItemTranslated(translatedText, i);
+      }
+    }
+
+    return results;
+  }
+
+  private async translateByBinarySplit(
+    texts: string[],
+    targetLanguage: string,
+    requestBudget: RequestBudgetContext,
+    options:
+      | {
+          onItemTranslated?: (translation: string, itemIndex: number) => void;
+        }
+      | undefined,
+    offset: number,
+  ): Promise<string[]> {
+    if (texts.length === 0) {
+      return [];
+    }
+
+    if (texts.length === 1) {
+      const translated = await this.executeTranslationWithRetry(
+        () => this.apiClient.translate(texts, targetLanguage),
+        1,
+        "Single-text translation",
+        requestBudget,
+      );
+      const translatedText = translated[0];
+      if (options?.onItemTranslated) {
+        options.onItemTranslated(translatedText, offset);
+      }
+      return [translatedText];
+    }
+
+    const splitIndex = Math.ceil(texts.length / 2);
+    const leftTexts = texts.slice(0, splitIndex);
+    const rightTexts = texts.slice(splitIndex);
+
+    const translateChunk = async (
+      chunkTexts: string[],
+      chunkOffset: number,
+    ): Promise<string[]> => {
+      try {
+        const translated = await this.executeTranslationWithRetry(
+          () => this.apiClient.translate(chunkTexts, targetLanguage),
+          chunkTexts.length,
+          `Fallback chunk translation (${chunkTexts.length} texts)`,
+          requestBudget,
+        );
+
+        if (options?.onItemTranslated) {
+          translated.forEach((translation, index) => {
+            options.onItemTranslated?.(translation, chunkOffset + index);
+          });
+        }
+
+        return translated;
+      } catch (error) {
+        if (error instanceof ParseCountMismatchError && chunkTexts.length > 1) {
+          return this.translateByBinarySplit(
+            chunkTexts,
+            targetLanguage,
+            requestBudget,
+            options,
+            chunkOffset,
+          );
+        }
+        throw error;
+      }
+    };
+
+    const [leftTranslations, rightTranslations] = await Promise.all([
+      translateChunk(leftTexts, offset),
+      translateChunk(rightTexts, offset + splitIndex),
+    ]);
+
+    return [...leftTranslations, ...rightTranslations];
+  }
+
+  private async executeTranslationWithRetry(
+    operation: () => Promise<string[]>,
+    expectedCount: number,
+    context: string,
+    requestBudget: RequestBudgetContext,
+  ): Promise<string[]> {
+    for (let attempt = 0; attempt <= RETRY_CONFIG.MAX_RETRIES; attempt++) {
+      try {
+        this.consumeApiCallBudget(requestBudget);
+        const translated = await operation();
+
+        if (translated.length !== expectedCount) {
+          throw new ParseCountMismatchError(expectedCount, translated.length);
+        }
+
+        return translated;
+      } catch (error) {
+        if (error instanceof ParseCountMismatchError) {
+          throw error;
+        }
+
+        if (attempt >= RETRY_CONFIG.MAX_RETRIES) {
+          throw error;
+        }
+
+        requestBudget.retryAttempts += 1;
+        logger.warn(
+          `${context} retry attempt ${attempt + 1}:`,
+          (error as Error).message,
+        );
+
+        const waitTime =
+          RETRY_CONFIG.BACKOFF === "exponential"
+            ? RETRY_CONFIG.INITIAL_DELAY * Math.pow(2, attempt)
+            : RETRY_CONFIG.INITIAL_DELAY * (attempt + 1);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+      }
+    }
+
+    throw new Error(`${context} failed unexpectedly`);
+  }
+
+  private assertCompleteResults(
+    results: string[],
+    expectedLength: number,
+    context: string,
+  ): void {
+    if (results.length !== expectedLength) {
+      throw new Error(
+        `[${context}] Result length mismatch: expected ${expectedLength}, got ${results.length}`,
+      );
+    }
+
+    const missingIndices: number[] = [];
+    for (let i = 0; i < expectedLength; i++) {
+      if (typeof results[i] !== "string") {
+        missingIndices.push(i);
+      }
+    }
+
+    if (missingIndices.length > 0) {
+      throw new Error(
+        `[${context}] Incomplete translation results at indices: ${missingIndices.join(", ")}`,
+      );
+    }
+  }
+
+  private createRequestBudgetContext(totalTexts: number): RequestBudgetContext {
+    const baseCalls =
+      Math.ceil(totalTexts / this.BATCH_SIZE) * (RETRY_CONFIG.MAX_RETRIES + 1);
+    const fallbackAllowance = Math.min(200, Math.max(20, totalTexts));
+    const maxApiCalls = Math.min(
+      500,
+      Math.max(60, baseCalls + fallbackAllowance),
+    );
+
+    return {
+      apiCalls: 0,
+      maxApiCalls,
+      retryAttempts: 0,
+      fallbackSingleCount: 0,
+      fallbackSplitCount: 0,
+      startedAt: Date.now(),
+    };
+  }
+
+  private logRequestDiagnostics(
+    contextName: "translateBatch" | "translateBatchSemiParallel",
+    totalTexts: number,
+    uncachedCount: number,
+    batchCount: number,
+    budget: RequestBudgetContext,
+  ): void {
+    const durationMs = Date.now() - budget.startedAt;
+    const baselineCalls = Math.max(
+      1,
+      Math.ceil(Math.max(uncachedCount, 1) / this.BATCH_SIZE),
+    );
+    const isHighCostRisk =
+      budget.apiCalls > baselineCalls * 6 ||
+      budget.fallbackSingleCount > 0 ||
+      budget.apiCalls > Math.floor(budget.maxApiCalls * 0.8);
+    const isHighLatency = uncachedCount > 0 && durationMs > 8000;
+
+    if (
+      !isHighCostRisk &&
+      !isHighLatency &&
+      !FEATURE_FLAGS.ENABLE_DEBUG_LOGGING
+    ) {
+      return;
+    }
+
+    const diagnostics = {
+      context: contextName,
+      totalTexts,
+      uncachedCount,
+      batchCount,
+      durationMs,
+      apiCalls: budget.apiCalls,
+      maxApiCalls: budget.maxApiCalls,
+      retryAttempts: budget.retryAttempts,
+      fallbackSingleCount: budget.fallbackSingleCount,
+      fallbackSplitCount: budget.fallbackSplitCount,
+    };
+
+    if (isHighCostRisk || isHighLatency) {
+      logger.warn(
+        "[TranslationDiagnostics] Potential risk detected",
+        diagnostics,
+      );
+      return;
+    }
+
+    logger.log("[TranslationDiagnostics] Summary", diagnostics);
+  }
+
+  private consumeApiCallBudget(context: RequestBudgetContext): void {
+    if (context.apiCalls >= context.maxApiCalls) {
+      throw new Error(
+        `Safety stop: translation aborted after ${context.apiCalls} API calls to prevent excessive charges`,
+      );
+    }
+    context.apiCalls += 1;
+  }
+
+  private chunkTextsByConstraints(texts: string[]): string[][] {
+    const chunks: string[][] = [];
+    let currentChunk: string[] = [];
+    let currentLength = 0;
+
+    for (const text of texts) {
+      const textLength = text.length;
+      const exceedsBatchSize = currentChunk.length >= this.BATCH_SIZE;
+      const exceedsMaxLength =
+        currentChunk.length > 0 &&
+        currentLength + textLength > BATCH_CONFIG.MAX_BATCH_LENGTH;
+
+      if (exceedsBatchSize || exceedsMaxLength) {
+        chunks.push(currentChunk);
+        currentChunk = [];
+        currentLength = 0;
+      }
+
+      currentChunk.push(text);
+      currentLength += textLength;
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks;
   }
 
   /**
@@ -544,26 +1003,26 @@ export class TranslationEngine {
    *
    * @param layer - Cache layer to clear ('memory', 'session', 'local', 'all')
    */
-  async clearCache(layer: CacheLayer = 'all'): Promise<void> {
+  async clearCache(layer: CacheLayer = "all"): Promise<void> {
     switch (layer) {
-      case 'memory':
+      case "memory":
         this.memoryCache.clear();
-        logger.log('Memory cache cleared');
+        logger.log("Memory cache cleared");
         break;
 
-      case 'session':
-        this.clearStorageCache(sessionStorage, 'Session storage');
+      case "session":
+        this.clearStorageCache(sessionStorage, "Session storage");
         break;
 
-      case 'local':
-        this.clearStorageCache(localStorage, 'Local storage');
+      case "local":
+        this.clearStorageCache(localStorage, "Local storage");
         break;
 
-      case 'all':
-        await this.clearCache('memory');
-        await this.clearCache('session');
-        await this.clearCache('local');
-        logger.log('All caches cleared');
+      case "all":
+        await this.clearCache("memory");
+        await this.clearCache("session");
+        await this.clearCache("local");
+        logger.log("All caches cleared");
         break;
     }
   }
@@ -576,7 +1035,7 @@ export class TranslationEngine {
       const keys: string[] = [];
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i);
-        if (key?.startsWith('translation:')) {
+        if (key?.startsWith("translation:")) {
           keys.push(key);
         }
       }
@@ -609,13 +1068,13 @@ export class TranslationEngine {
       let count = 0;
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i);
-        if (key?.startsWith('translation:')) {
+        if (key?.startsWith("translation:")) {
           count++;
         }
       }
       return count;
     } catch (error) {
-      logger.warn('Storage access error:', error);
+      logger.warn("Storage access error:", error);
       return 0;
     }
   }
@@ -626,20 +1085,5 @@ export class TranslationEngine {
   private calculateHitRate(): number {
     const totalRequests = this.cacheHits + this.cacheMisses;
     return totalRequests > 0 ? (this.cacheHits / totalRequests) * 100 : 0;
-  }
-
-  /**
-   * Chunk array into smaller arrays
-   *
-   * @param array - Array to chunk
-   * @param size - Chunk size
-   * @returns Array of chunks
-   */
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
   }
 }
