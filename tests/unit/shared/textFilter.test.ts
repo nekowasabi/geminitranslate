@@ -92,6 +92,34 @@ describe("textFilter", () => {
       expect(shouldTranslateText("function_name").shouldTranslate).toBe(false);
       expect(shouldTranslateText("CONSTANT_NAME").shouldTranslate).toBe(false);
       expect(shouldTranslateText("methodCall()").shouldTranslate).toBe(false);
+      expect(shouldTranslateText("$variable").shouldTranslate).toBe(false);
+      expect(shouldTranslateText("my_var").shouldTranslate).toBe(false);
+      expect(shouldTranslateText("camelCase").shouldTranslate).toBe(false);
+    });
+
+    it("should return true for multi-word text containing code-like patterns", () => {
+      // camelCase words embedded in sentences (e.g. ChatGPT, iPhone)
+      expect(
+        shouldTranslateText("services like ChatGPT, Claude").shouldTranslate,
+      ).toBe(true);
+      expect(shouldTranslateText("The iPhone is popular").shouldTranslate).toBe(
+        true,
+      );
+      // Dollar signs in natural language
+      expect(shouldTranslateText("Price is $50").shouldTranslate).toBe(true);
+      expect(
+        shouldTranslateText("They raised $100 million").shouldTranslate,
+      ).toBe(true);
+      // Underscores in natural language
+      expect(
+        shouldTranslateText("Use hello_world function in your code")
+          .shouldTranslate,
+      ).toBe(true);
+      // Mixed patterns in real article text
+      expect(
+        shouldTranslateText("CEO Enzor-DeMeo announced the merger")
+          .shouldTranslate,
+      ).toBe(true);
     });
 
     it("should return true for natural sentences containing code-like tokens", () => {
