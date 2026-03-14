@@ -1119,7 +1119,7 @@ describe("ContentScript", () => {
       it("should apply translations immediately when receiving BATCH_COMPLETED", async () => {
         contentScript.initialize();
 
-        // Setup currentTranslationNodes
+        // Setup phaseNodes (phase 1)
         const mockNodes = [
           {
             node: document.createTextNode("test1"),
@@ -1137,7 +1137,7 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        (contentScript as any).phaseNodes = new Map([[1, mockNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1182,7 +1182,8 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        // Phase 2 message → store nodes under key 2
+        (contentScript as any).phaseNodes = new Map([[2, mockNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1216,8 +1217,8 @@ describe("ContentScript", () => {
       it("should skip batch application when currentTranslationNodes is empty", async () => {
         contentScript.initialize();
 
-        // Empty currentTranslationNodes
-        (contentScript as any).currentTranslationNodes = [];
+        // Empty phaseNodes for phase 1
+        (contentScript as any).phaseNodes = new Map([[1, []]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1260,7 +1261,7 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        (contentScript as any).phaseNodes = new Map([[1, mockNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1301,7 +1302,7 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        (contentScript as any).phaseNodes = new Map([[1, mockNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1339,7 +1340,7 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        (contentScript as any).phaseNodes = new Map([[1, mockNodes]]);
 
         // Mock applyTranslations to throw error
         mockApplyTranslations.mockImplementation(() => {
@@ -1384,7 +1385,7 @@ describe("ContentScript", () => {
             element: document.body,
           },
         ];
-        (contentScript as any).currentTranslationNodes = mockNodes;
+        (contentScript as any).phaseNodes = new Map([[1, mockNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1475,11 +1476,11 @@ describe("ContentScript", () => {
         // After filtering: textsToTranslate = ["Hello", "World", "Test"]
         // originalIndices = [0, 2, 4]
         // currentTranslationNodes should be [node0, node2, node4]
-        (contentScript as any).currentTranslationNodes = [
+        (contentScript as any).phaseNodes = new Map([[1, [
           allViewportNodes[0],
           allViewportNodes[2],
           allViewportNodes[4],
-        ];
+        ]]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1545,7 +1546,7 @@ describe("ContentScript", () => {
           allNodes[9], // Text9 - uncached
         ];
 
-        (contentScript as any).currentTranslationNodes = filteredNodes;
+        (contentScript as any).phaseNodes = new Map([[1, filteredNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1589,6 +1590,154 @@ describe("ContentScript", () => {
         );
       });
 
+      // ============================================================
+      // Process 2: phaseNodes Map - Race condition prevention tests (RED phase)
+      // ============================================================
+      it("should not apply Phase 1 BATCH_COMPLETED to Phase 2 nodes after Phase 2 starts", async () => {
+        // RED: This test exposes the race condition bug
+        // When Phase 2 starts, currentTranslationNodes is overwritten with Phase 2 nodes.
+        // A delayed Phase 1 BATCH_COMPLETED would incorrectly apply to Phase 2 nodes.
+        // Fix: Use phaseNodes Map so each phase has its own node array.
+        contentScript.initialize();
+
+        const phase1Node = {
+          node: document.createTextNode("Phase1Text"),
+          text: "Phase1Text",
+          element: document.body,
+        };
+        const phase2Node = {
+          node: document.createTextNode("Phase2Text"),
+          text: "Phase2Text",
+          element: document.body,
+        };
+
+        // Simulate: Phase 2 has already started, overwriting currentTranslationNodes
+        // With Map fix: phase 1 nodes should be stored separately
+        (contentScript as any).phaseNodes = new Map([
+          [1, [phase1Node]],
+          [2, [phase2Node]],
+        ]);
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        const mockApply = jest.spyOn(
+          (contentScript as any).domManipulator,
+          "applyTranslations",
+        );
+
+        // Delayed Phase 1 BATCH_COMPLETED arrives after Phase 2 has started
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ["フェーズ1テキスト"],
+              nodeIndices: [0],
+              phase: 1, // Phase 1 message
+              progress: { current: 1, total: 1, percentage: 100 },
+            },
+          },
+          {},
+          sendResponse,
+        );
+
+        // Should apply to phase1Node, NOT phase2Node
+        expect(mockApply).toHaveBeenCalledWith([phase1Node], ["フェーズ1テキスト"]);
+        // phase2Node should NOT be in the apply call
+        const applyCalls = mockApply.mock.calls;
+        const phase2NodeApplied = applyCalls.some((call) =>
+          call[0].includes(phase2Node),
+        );
+        expect(phase2NodeApplied).toBe(false);
+      });
+
+      it("should apply Phase 2 BATCH_COMPLETED to Phase 2 nodes only", async () => {
+        // RED: phaseNodes Map routes phase 2 messages to phase 2 nodes
+        contentScript.initialize();
+
+        const phase1Node = {
+          node: document.createTextNode("Phase1Text"),
+          text: "Phase1Text",
+          element: document.body,
+        };
+        const phase2Node = {
+          node: document.createTextNode("Phase2Text"),
+          text: "Phase2Text",
+          element: document.body,
+        };
+
+        (contentScript as any).phaseNodes = new Map([
+          [1, [phase1Node]],
+          [2, [phase2Node]],
+        ]);
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        const mockApply = jest.spyOn(
+          (contentScript as any).domManipulator,
+          "applyTranslations",
+        );
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ["フェーズ2テキスト"],
+              nodeIndices: [0],
+              phase: 2, // Phase 2 message
+              progress: { current: 1, total: 1, percentage: 100 },
+            },
+          },
+          {},
+          sendResponse,
+        );
+
+        // Should apply to phase2Node, NOT phase1Node
+        expect(mockApply).toHaveBeenCalledWith([phase2Node], ["フェーズ2テキスト"]);
+        const applyCalls = mockApply.mock.calls;
+        const phase1NodeApplied = applyCalls.some((call) =>
+          call[0].includes(phase1Node),
+        );
+        expect(phase1NodeApplied).toBe(false);
+      });
+
+      it("should handle BATCH_COMPLETED gracefully when phaseNodes has no entry for given phase", async () => {
+        // RED: phaseNodes Map returns undefined for unknown phase → should skip gracefully
+        contentScript.initialize();
+
+        (contentScript as any).phaseNodes = new Map(); // empty Map
+
+        const messageHandler = mockListen.mock.calls[0][0];
+        const sendResponse = jest.fn();
+
+        const mockApply = jest.spyOn(
+          (contentScript as any).domManipulator,
+          "applyTranslations",
+        );
+
+        await messageHandler(
+          {
+            type: MessageType.BATCH_COMPLETED,
+            payload: {
+              batchIndex: 0,
+              translations: ["翻訳"],
+              nodeIndices: [0],
+              phase: 1,
+              progress: { current: 1, total: 1, percentage: 100 },
+            },
+          },
+          {},
+          sendResponse,
+        );
+
+        // Should not apply anything (no nodes for phase 1)
+        expect(mockApply).not.toHaveBeenCalled();
+        expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      });
+
       it("should handle nodeIndices that skip filtered items", async () => {
         // RED: Test when nodeIndices have gaps due to filtering
         contentScript.initialize();
@@ -1607,7 +1756,7 @@ describe("ContentScript", () => {
           originalNodes[4],
         ];
 
-        (contentScript as any).currentTranslationNodes = filteredNodes;
+        (contentScript as any).phaseNodes = new Map([[1, filteredNodes]]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -2037,8 +2186,8 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // currentTranslationNodes should only contain filtered nodes (indices 0 and 2)
-      const currentNodes = (contentScript as any).currentTranslationNodes;
+      // phaseNodes[1] should only contain filtered nodes (indices 0 and 2)
+      const currentNodes = (contentScript as any).phaseNodes.get(1);
       expect(currentNodes).toHaveLength(2);
       expect(currentNodes[0].text).toBe("Hello World");
       expect(currentNodes[1].text).toBe("Goodbye");

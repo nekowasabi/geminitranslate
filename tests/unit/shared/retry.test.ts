@@ -221,6 +221,46 @@ describe('Retry Utility', () => {
     });
   });
 
+  describe('shouldRetry option', () => {
+    it('should not retry when shouldRetry returns false', async () => {
+      const fn = jest.fn().mockRejectedValue(new Error('fatal error'));
+      await expect(
+        retry(fn, {
+          maxRetries: 3,
+          delay: 0,
+          shouldRetry: () => false,
+        })
+      ).rejects.toThrow('fatal error');
+      expect(fn).toHaveBeenCalledTimes(1); // リトライなし
+    });
+
+    it('should retry only when shouldRetry returns true', async () => {
+      class RetryableError extends Error {}
+      class FatalError extends Error {}
+      const fn = jest.fn()
+        .mockRejectedValueOnce(new RetryableError('retry me'))
+        .mockRejectedValueOnce(new FatalError('fatal'));
+      const promise = retry(fn, {
+        maxRetries: 3,
+        delay: 0,
+        shouldRetry: (error) => error instanceof RetryableError,
+      });
+      const runTimers = jest.runAllTimersAsync();
+      await expect(promise).rejects.toThrow('fatal');
+      await runTimers;
+      expect(fn).toHaveBeenCalledTimes(2); // 1回リトライ後にfatalで停止
+    });
+
+    it('should retry all errors when shouldRetry is not provided (backward compatible)', async () => {
+      const fn = jest.fn().mockRejectedValue(new Error('any error'));
+      const promise = retry(fn, { maxRetries: 2, delay: 0 });
+      const runTimers = jest.runAllTimersAsync();
+      await expect(promise).rejects.toThrow('any error');
+      await runTimers;
+      expect(fn).toHaveBeenCalledTimes(3); // maxRetries+1 = 3回
+    });
+  });
+
   describe('callback functionality', () => {
     it('should call onError callback on each failure', async () => {
       const error1 = new Error('fail 1');

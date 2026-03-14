@@ -24,6 +24,7 @@ import StorageManager from "../shared/storage/StorageManager";
 import { logger } from "../shared/utils/logger";
 import { API_CONFIG, RETRY_CONFIG } from "../shared/constants/config";
 import { getLanguageName } from "../shared/constants/languages";
+import { retry } from "../shared/utils/retry";
 
 /**
  * OpenRouter configuration interface
@@ -218,8 +219,10 @@ export class OpenRouterClient {
       );
     }
 
-    for (let attempt = 0; attempt <= RETRY_CONFIG.MAX_RETRIES; attempt++) {
-      try {
+    // Why: カスタムforループではなくretry()ユーティリティ —
+    //      バックオフロジックの重複実装を排除し、最大API呼び出し回数を maxRetries+1 に一元管理
+    return await retry(
+      async () => {
         const prompt = this.buildPrompt(texts, targetLanguage);
         console.log(
           `[Background:OpenRouterClient] ${timestamp} - Built prompt (first 100 chars):`,
@@ -315,36 +318,26 @@ export class OpenRouterClient {
         );
 
         return translations;
-      } catch (error) {
-        if (error instanceof ParseCountMismatchError) {
-          throw error;
-        }
-
-        if (attempt >= RETRY_CONFIG.MAX_RETRIES) {
-          throw error;
-        }
-
-        console.warn(
-          `[Background:OpenRouterClient] ${timestamp} - Retry attempt ${attempt + 1}:`,
-          {
-            error: (error as Error).message,
-            attempt,
-          },
-        );
-        logger.warn(
-          `Translation attempt ${attempt + 1} failed:`,
-          (error as Error).message,
-        );
-
-        const waitTime =
-          RETRY_CONFIG.BACKOFF === "exponential"
-            ? RETRY_CONFIG.INITIAL_DELAY * Math.pow(2, attempt)
-            : RETRY_CONFIG.INITIAL_DELAY * (attempt + 1);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-      }
-    }
-
-    throw new Error("Translation failed unexpectedly");
+      },
+      {
+        maxRetries: RETRY_CONFIG.MAX_RETRIES,
+        delay: RETRY_CONFIG.INITIAL_DELAY,
+        backoff: RETRY_CONFIG.BACKOFF as "exponential" | "linear",
+        // Why: ParseCountMismatchError はリトライ対象外 —
+        //      LLMの応答形式の問題はリトライでは改善しない。上位の engine 層 fallback に委ねる
+        shouldRetry: (error) => !(error instanceof ParseCountMismatchError),
+        onError: (error, attempt) => {
+          console.warn(
+            `[Background:OpenRouterClient] ${timestamp} - Retry attempt ${attempt + 1}:`,
+            {
+              error: error.message,
+              attempt,
+            },
+          );
+          logger.warn(`Translation attempt ${attempt + 1} failed:`, error.message);
+        },
+      },
+    );
   }
 
   /**

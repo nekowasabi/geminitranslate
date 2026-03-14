@@ -790,6 +790,47 @@ describe("OpenRouterClient", () => {
     });
   });
 
+  describe("retry consolidation (BUG-003)", () => {
+    beforeEach(async () => {
+      await client.initialize();
+    });
+
+    it("should call fetch at most MAX_RETRIES+1 times on network error (not 16 times)", async () => {
+      // BUG-003: apiClient と translationEngine が二重リトライしていた場合、最大16回になる
+      // retry.ts 統合後は apiClient 層で最大4回(MAX_RETRIES+1=4)に制限される
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("network error"));
+
+      const translatePromise = client.translate(["hello"], "Japanese");
+      const [result] = await Promise.allSettled([
+        translatePromise,
+        jest.runAllTimersAsync(),
+      ]);
+
+      expect(result.status).toBe("rejected");
+      // 二重リトライで16回ではなく、最大4回(MAX_RETRIES=3, なので3+1=4)
+      expect(global.fetch).toHaveBeenCalledTimes(4);
+    });
+
+    it("should NOT retry ParseCountMismatchError", async () => {
+      // ParseCountMismatchError はリトライ不要 — LLMの応答形式問題はリトライで改善しない
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: "こんにちは" } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      // 2テキスト要求に対し1テキストしか返らない → ParseCountMismatchError
+      await expect(
+        client.translate(["Hello", "Goodbye"], "Japanese"),
+      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+
+      // リトライなし: fetchは1回のみ
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("testConnectionWithConfig", () => {
     it("should test connection with temporary config without saving", async () => {
       const mockResponse = {

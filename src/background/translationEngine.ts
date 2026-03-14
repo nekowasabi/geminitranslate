@@ -35,6 +35,7 @@ import {
   RETRY_CONFIG,
 } from "../shared/constants/config";
 import LRUCache from "../shared/utils/lruCache";
+import { retry } from "../shared/utils/retry";
 
 /**
  * Cache layer type
@@ -550,18 +551,11 @@ export class TranslationEngine {
     const memoryHit = this.getFromMemoryCache(cacheKey);
     if (memoryHit) return memoryHit;
 
-    // Check session storage
-    const sessionHit = this.getFromStorage(sessionStorage, cacheKey);
-    if (sessionHit) {
-      this.promoteToMemoryCache(cacheKey, sessionHit);
-      return sessionHit;
-    }
-
-    // Check local storage
-    const localHit = this.getFromStorage(localStorage, cacheKey);
-    if (localHit) {
-      this.promoteToHigherTiers(cacheKey, localHit);
-      return localHit;
+    // Check browser.storage.local (replaces both session and local storage tiers)
+    const persistentHit = await this.getFromStorage(cacheKey);
+    if (persistentHit) {
+      this.promoteToMemoryCache(cacheKey, persistentHit);
+      return persistentHit;
     }
 
     return null;
@@ -575,13 +569,16 @@ export class TranslationEngine {
   }
 
   /**
-   * Get translation from storage (session or local)
+   * Get translation from browser.storage.local
+   * Why: sessionStorage/localStorage直接アクセスではなくbrowser.storage.local —
+   *      Chrome MV3 Service WorkerではDOM Storage APIが利用不可のため
    */
-  private getFromStorage(storage: Storage, cacheKey: string): string | null {
+  private async getFromStorage(cacheKey: string): Promise<string | null> {
     try {
-      const data = storage.getItem(cacheKey);
+      const result = await browser.storage.local.get(cacheKey);
+      const data = result[cacheKey];
       if (data) {
-        const entry: CacheEntry = JSON.parse(data);
+        const entry: CacheEntry = JSON.parse(data as string);
         return entry.translation;
       }
     } catch (error) {
@@ -598,15 +595,11 @@ export class TranslationEngine {
   }
 
   /**
-   * Promote cache hit to memory and session cache
+   * Promote cache hit to memory cache
+   * Why: browser.storage.local への昇格は不要 — 既にそこから読み込んでいるため
    */
   private promoteToHigherTiers(cacheKey: string, translation: string): void {
     this.memoryCache.set(cacheKey, translation);
-    const entry: CacheEntry = {
-      text: cacheKey.split(":")[1],
-      translation,
-    };
-    this.saveToStorage(sessionStorage, cacheKey, entry);
   }
 
   /**
@@ -627,21 +620,18 @@ export class TranslationEngine {
     // Save to memory cache (always succeeds)
     this.memoryCache.set(cacheKey, translation);
 
-    // Save to session and local storage (graceful degradation)
-    this.saveToStorage(sessionStorage, cacheKey, entry);
-    this.saveToStorage(localStorage, cacheKey, entry);
+    // Save to browser.storage.local (replaces both session and local storage tiers)
+    await this.saveToStorage(cacheKey, entry);
   }
 
   /**
-   * Save entry to storage with error handling
+   * Save entry to browser.storage.local with error handling
+   * Why: sessionStorage/localStorage直接アクセスではなくbrowser.storage.local —
+   *      Chrome MV3 Service WorkerではDOM Storage APIが利用不可のため
    */
-  private saveToStorage(
-    storage: Storage,
-    cacheKey: string,
-    entry: CacheEntry,
-  ): void {
+  private async saveToStorage(cacheKey: string, entry: CacheEntry): Promise<void> {
     try {
-      storage.setItem(cacheKey, JSON.stringify(entry));
+      await browser.storage.local.set({ [cacheKey]: JSON.stringify(entry) });
     } catch (error) {
       logger.warn(`Storage write error for key ${cacheKey}:`, error);
     }
@@ -760,7 +750,14 @@ export class TranslationEngine {
         }
       | undefined,
     offset: number,
+    depth: number = 0,
   ): Promise<string[]> {
+    // Why: depth>=1でtranslateIndividually()にフォールバック —
+    //      二分割を繰り返してもcount mismatchが続く場合、O(n)個別翻訳の方が確実性が高いため
+    if (depth >= 1) {
+      return this.translateIndividually(texts, targetLanguage, requestBudget, options);
+    }
+
     if (texts.length === 0) {
       return [];
     }
@@ -810,6 +807,7 @@ export class TranslationEngine {
             requestBudget,
             options,
             chunkOffset,
+            depth + 1,
           );
         }
         throw error;
@@ -830,8 +828,10 @@ export class TranslationEngine {
     context: string,
     requestBudget: RequestBudgetContext,
   ): Promise<string[]> {
-    for (let attempt = 0; attempt <= RETRY_CONFIG.MAX_RETRIES; attempt++) {
-      try {
+    // Why: カスタムforループではなくretry()ユーティリティ —
+    //      バックオフロジックの重複実装を排除し、最大API呼び出し回数を maxRetries+1 に一元管理
+    return retry(
+      async () => {
         this.consumeApiCallBudget(requestBudget);
         const translated = await operation();
 
@@ -840,30 +840,23 @@ export class TranslationEngine {
         }
 
         return translated;
-      } catch (error) {
-        if (error instanceof ParseCountMismatchError) {
-          throw error;
-        }
-
-        if (attempt >= RETRY_CONFIG.MAX_RETRIES) {
-          throw error;
-        }
-
-        requestBudget.retryAttempts += 1;
-        logger.warn(
-          `${context} retry attempt ${attempt + 1}:`,
-          (error as Error).message,
-        );
-
-        const waitTime =
-          RETRY_CONFIG.BACKOFF === "exponential"
-            ? RETRY_CONFIG.INITIAL_DELAY * Math.pow(2, attempt)
-            : RETRY_CONFIG.INITIAL_DELAY * (attempt + 1);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-      }
-    }
-
-    throw new Error(`${context} failed unexpectedly`);
+      },
+      {
+        maxRetries: RETRY_CONFIG.MAX_RETRIES,
+        delay: RETRY_CONFIG.INITIAL_DELAY,
+        backoff: RETRY_CONFIG.BACKOFF as "exponential" | "linear",
+        // Why: ParseCountMismatchError はリトライ対象外 —
+        //      LLMの応答形式の問題はリトライでは改善せず、上位の fallback 処理（translateByBinarySplit 等）に委ねる
+        shouldRetry: (error) => !(error instanceof ParseCountMismatchError),
+        onError: (error, attempt) => {
+          requestBudget.retryAttempts += 1;
+          logger.warn(
+            `${context} retry attempt ${attempt + 1}:`,
+            error.message,
+          );
+        },
+      },
+    );
   }
 
   private assertCompleteResults(
@@ -1011,38 +1004,38 @@ export class TranslationEngine {
         break;
 
       case "session":
-        this.clearStorageCache(sessionStorage, "Session storage");
+        await this.clearStorageCache();
         break;
 
       case "local":
-        this.clearStorageCache(localStorage, "Local storage");
+        await this.clearStorageCache();
         break;
 
       case "all":
         await this.clearCache("memory");
-        await this.clearCache("session");
-        await this.clearCache("local");
+        await this.clearStorageCache();
         logger.log("All caches cleared");
         break;
     }
   }
 
   /**
-   * Clear translation entries from storage
+   * Clear translation entries from browser.storage.local
+   * Why: sessionStorage/localStorage直接アクセスではなくbrowser.storage.local —
+   *      Chrome MV3 Service WorkerではDOM Storage APIが利用不可のため
    */
-  private clearStorageCache(storage: Storage, storageName: string): void {
+  private async clearStorageCache(): Promise<void> {
     try {
-      const keys: string[] = [];
-      for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (key?.startsWith("translation:")) {
-          keys.push(key);
-        }
+      const allItems = await browser.storage.local.get(null);
+      const translationKeys = Object.keys(allItems).filter((key) =>
+        key.startsWith("translation:"),
+      );
+      if (translationKeys.length > 0) {
+        await browser.storage.local.remove(translationKeys);
       }
-      keys.forEach((key) => storage.removeItem(key));
-      logger.log(`${storageName} cache cleared`);
+      logger.log("browser.storage.local cache cleared");
     } catch (error) {
-      logger.error(`${storageName} clear error:`, error);
+      logger.error("browser.storage.local clear error:", error);
     }
   }
 
@@ -1052,27 +1045,26 @@ export class TranslationEngine {
    * @returns Cache statistics including hit rate
    */
   async getCacheStats(): Promise<CacheStats> {
+    const storageSize = await this.getStorageCacheSize();
     return {
       memory: this.memoryCache.size(),
-      session: this.getStorageCacheSize(sessionStorage),
-      local: this.getStorageCacheSize(localStorage),
+      session: storageSize,
+      local: storageSize,
       hitRate: this.calculateHitRate(),
     };
   }
 
   /**
-   * Get cache size for storage layer
+   * Get cache size from browser.storage.local
+   * Why: sessionStorage/localStorage直接アクセスではなくbrowser.storage.local —
+   *      Chrome MV3 Service WorkerではDOM Storage APIが利用不可のため
    */
-  private getStorageCacheSize(storage: Storage): number {
+  private async getStorageCacheSize(): Promise<number> {
     try {
-      let count = 0;
-      for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (key?.startsWith("translation:")) {
-          count++;
-        }
-      }
-      return count;
+      const allItems = await browser.storage.local.get(null);
+      return Object.keys(allItems).filter((key) =>
+        key.startsWith("translation:"),
+      ).length;
     } catch (error) {
       logger.warn("Storage access error:", error);
       return 0;

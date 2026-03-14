@@ -60,6 +60,18 @@ export interface RetryOptions {
    * @param attempt - Current attempt number (0-indexed)
    */
   onError?: (error: Error, attempt: number) => void;
+
+  /**
+   * Predicate to determine whether the error should be retried.
+   * When not provided, all errors are retried (backward compatible).
+   * @param error - The error that occurred
+   * @returns true if the error should be retried, false to stop immediately
+   *
+   * @example
+   * // Why: shouldRetry hook追加 — ParseCountMismatchError等のリトライ不可エラーを呼び出し元が制御できるようにするため
+   * shouldRetry: (error) => !(error instanceof ParseCountMismatchError)
+   */
+  shouldRetry?: (error: Error) => boolean;
 }
 
 /**
@@ -99,7 +111,7 @@ export async function retry<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { maxRetries, delay, backoff = 'exponential', onError } = options;
+  const { maxRetries, delay, backoff = 'exponential', onError, shouldRetry } = options;
   let lastError: Error;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -107,6 +119,11 @@ export async function retry<T>(
       return await fn();
     } catch (error) {
       lastError = error as Error;
+
+      // Why: shouldRetry hook — stop immediately for non-retryable errors (e.g. ParseCountMismatchError)
+      if (shouldRetry && !shouldRetry(lastError)) {
+        throw lastError;
+      }
 
       // Call error callback if provided
       if (onError && attempt < maxRetries) {

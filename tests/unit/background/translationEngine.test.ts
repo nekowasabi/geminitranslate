@@ -26,56 +26,70 @@ describe("TranslationEngine", () => {
   let mockApiClient: jest.Mocked<OpenRouterClient>;
   let mockStorage: jest.Mocked<StorageManager>;
 
-  // Mock storage data
-  const mockSessionStorage: Map<string, string> = new Map();
-  const mockLocalStorage: Map<string, string> = new Map();
+  // Mock browser.storage.local data store (replaces sessionStorage/localStorage)
+  const mockBrowserStorage: Map<string, string> = new Map();
 
   beforeEach(() => {
     // Clear all mocks
     jest.clearAllMocks();
-    mockSessionStorage.clear();
-    mockLocalStorage.clear();
+    mockBrowserStorage.clear();
 
-    // Mock sessionStorage
+    // Mock sessionStorage (kept for backward compat check in migration tests)
     Object.defineProperty(globalThis, "sessionStorage", {
       value: {
-        getItem: jest.fn((key: string) => mockSessionStorage.get(key) || null),
-        setItem: jest.fn((key: string, value: string) =>
-          mockSessionStorage.set(key, value),
-        ),
-        removeItem: jest.fn((key: string) => mockSessionStorage.delete(key)),
-        clear: jest.fn(() => mockSessionStorage.clear()),
-        get length() {
-          return mockSessionStorage.size;
-        },
-        key: jest.fn((index: number) => {
-          const keys = Array.from(mockSessionStorage.keys());
-          return keys[index] || null;
-        }),
+        getItem: jest.fn(() => null),
+        setItem: jest.fn(),
+        removeItem: jest.fn(),
+        clear: jest.fn(),
+        get length() { return 0; },
+        key: jest.fn(() => null),
       },
       writable: true,
       configurable: true,
     });
 
-    // Mock localStorage
+    // Mock localStorage (kept for backward compat check in migration tests)
     Object.defineProperty(globalThis, "localStorage", {
       value: {
-        getItem: jest.fn((key: string) => mockLocalStorage.get(key) || null),
-        setItem: jest.fn((key: string, value: string) =>
-          mockLocalStorage.set(key, value),
-        ),
-        removeItem: jest.fn((key: string) => mockLocalStorage.delete(key)),
-        clear: jest.fn(() => mockLocalStorage.clear()),
-        get length() {
-          return mockLocalStorage.size;
-        },
-        key: jest.fn((index: number) => {
-          const keys = Array.from(mockLocalStorage.keys());
-          return keys[index] || null;
-        }),
+        getItem: jest.fn(() => null),
+        setItem: jest.fn(),
+        removeItem: jest.fn(),
+        clear: jest.fn(),
+        get length() { return 0; },
+        key: jest.fn(() => null),
       },
       writable: true,
       configurable: true,
+    });
+
+    // Mock browser.storage.local with data-holding implementation
+    // Why: Tests need actual data persistence behavior to verify cache hit/miss logic
+    (global as any).browser.storage.local.get = jest.fn((keys: string | string[] | null) => {
+      if (keys === null) {
+        // Return all items
+        const result: Record<string, string> = {};
+        mockBrowserStorage.forEach((value, key) => { result[key] = value; });
+        return Promise.resolve(result);
+      }
+      const keysArray = Array.isArray(keys) ? keys : [keys];
+      const result: Record<string, string> = {};
+      keysArray.forEach((key: string) => {
+        if (mockBrowserStorage.has(key)) {
+          result[key] = mockBrowserStorage.get(key)!;
+        }
+      });
+      return Promise.resolve(result);
+    });
+    (global as any).browser.storage.local.set = jest.fn((data: Record<string, string>) => {
+      Object.entries(data).forEach(([key, value]) => {
+        mockBrowserStorage.set(key, value);
+      });
+      return Promise.resolve();
+    });
+    (global as any).browser.storage.local.remove = jest.fn((keys: string | string[]) => {
+      const keysArray = Array.isArray(keys) ? keys : [keys];
+      keysArray.forEach((key: string) => mockBrowserStorage.delete(key));
+      return Promise.resolve();
     });
 
     // Mock OpenRouterClient
@@ -136,12 +150,12 @@ describe("TranslationEngine", () => {
       expect(mockApiClient.translate).not.toHaveBeenCalled();
     });
 
-    it("should promote session storage hit to memory cache", async () => {
-      // RED: Session storage hit should populate memory cache
+    it("should promote browser.storage.local hit to memory cache", async () => {
+      // browser.storage.local hit should populate memory cache
       await engine.initialize();
 
-      // Pre-populate session storage
-      mockSessionStorage.set(
+      // Pre-populate browser.storage.local
+      mockBrowserStorage.set(
         "translation:Hello:Japanese",
         JSON.stringify({ text: "Hello", translation: "こんにちは" }),
       );
@@ -155,12 +169,12 @@ describe("TranslationEngine", () => {
       expect(cacheStats.memory).toBe(1);
     });
 
-    it("should promote local storage hit to memory and session cache", async () => {
-      // RED: Local storage hit should populate memory and session
+    it("should retrieve from browser.storage.local and report in cache stats", async () => {
+      // browser.storage.local hit should be reflected in cache stats
       await engine.initialize();
 
-      // Pre-populate local storage
-      mockLocalStorage.set(
+      // Pre-populate browser.storage.local
+      mockBrowserStorage.set(
         "translation:Hello:Japanese",
         JSON.stringify({ text: "Hello", translation: "こんにちは" }),
       );
@@ -169,7 +183,7 @@ describe("TranslationEngine", () => {
       expect(result).toEqual(["こんにちは"]);
       expect(mockApiClient.translate).not.toHaveBeenCalled();
 
-      // Verify all caches were populated
+      // Verify caches were populated (session and local both reflect browser.storage.local size)
       const cacheStats = await engine.getCacheStats();
       expect(cacheStats.memory).toBe(1);
       expect(cacheStats.session).toBe(1);
@@ -429,23 +443,25 @@ describe("TranslationEngine", () => {
       expect(stats.local).toBeGreaterThan(0);
     });
 
-    it("should clear session cache only", async () => {
-      // RED: clearCache('session') should only clear session
+    it("should clear browser.storage.local when clearCache('session') is called", async () => {
+      // After migration to browser.storage.local, 'session' and 'local' map to the same store
+      // Why: browser.storage.local統合後、session/localは同一ストアを参照するため両方クリアされる
       await engine.clearCache("session");
 
       const stats = await engine.getCacheStats();
       expect(stats.memory).toBeGreaterThan(0);
       expect(stats.session).toBe(0);
-      expect(stats.local).toBeGreaterThan(0);
+      expect(stats.local).toBe(0);
     });
 
-    it("should clear local cache only", async () => {
-      // RED: clearCache('local') should only clear local
+    it("should clear browser.storage.local when clearCache('local') is called", async () => {
+      // After migration to browser.storage.local, 'session' and 'local' map to the same store
+      // Why: browser.storage.local統合後、session/localは同一ストアを参照するため両方クリアされる
       await engine.clearCache("local");
 
       const stats = await engine.getCacheStats();
       expect(stats.memory).toBeGreaterThan(0);
-      expect(stats.session).toBeGreaterThan(0);
+      expect(stats.session).toBe(0);
       expect(stats.local).toBe(0);
     });
 
@@ -1068,6 +1084,165 @@ describe("TranslationEngine", () => {
       );
       expect(nodeIndices).toEqual(expectedIndices);
       expect(nodeIndices).not.toContain(5);
+    });
+  });
+
+  // RED: retry consolidation tests (BUG-003)
+  describe("retry consolidation (BUG-003)", () => {
+    it("should use retry utility instead of custom for-loop in executeTranslationWithRetry", async () => {
+      // BUG-003: engine 層に独自 for ループが残っていると、apiClient 層と二重リトライになる
+      // retry.ts 統合後は engine 層から独自ループが除去される
+      // このテストは engine 層が retry() を通じて正確に MAX_RETRIES+1 回だけ呼ぶことを検証
+      await engine.initialize();
+
+      mockApiClient.translate.mockRejectedValue(new Error("Persistent error"));
+
+      await expect(
+        engine.translateBatch(["Hello"], "Japanese"),
+      ).rejects.toThrow("Persistent error");
+
+      // MAX_RETRIES=3 → initial(1) + retries(3) = 4回
+      // 二重リトライになっていた場合はこれより多くなる
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(4);
+    }, 30000);
+
+    it("should NOT retry ParseCountMismatchError at engine layer (single text)", async () => {
+      // ParseCountMismatchError はリトライしない — engine 層の executeTranslationWithRetry が
+      // shouldRetry: false で即座に throw する
+      // 単一テキストの場合はフォールバックも発生しないので、呼び出し回数は1回のみ
+      // (複数テキストの場合は translateWithRetry が binary-split/individual へフォールバックする)
+      await engine.initialize();
+
+      const { ParseCountMismatchError } = await import("../../../src/background/apiClient");
+
+      // apiClient が ParseCountMismatchError を投げる場合（単一テキスト）
+      mockApiClient.translate.mockRejectedValue(
+        new ParseCountMismatchError(1, 0),
+      );
+
+      await expect(
+        engine.translateBatch(["Hello"], "Japanese"),
+      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+
+      // ParseCountMismatchError はリトライしないので1回のみ（通常エラーなら MAX_RETRIES+1=4回）
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // RED: binary-split depth limit tests (BUG-003 extension)
+  describe("BUG-003: binary-split depth limit", () => {
+    it("should fall back to translateIndividually at depth=1 instead of recursing", async () => {
+      // INDIVIDUAL_FALLBACK_THRESHOLD = 6 なので 7テキスト以上でbinary-splitフローに入る
+      // 8テキスト: depth=0で左[4]と右[4]に分割
+      //   左[4]: ParseMismatch → depth=1でtranslateIndividually → 4回個別翻訳
+      //   右[4]: ParseMismatch → depth=1でtranslateIndividually → 4回個別翻訳
+      // 合計: 初回batch(1) + 左chunk(1) + 右chunk(1) + 個別8テキスト(8) = 11回
+      await engine.initialize();
+
+      const { ParseCountMismatchError } = await import("../../../src/background/apiClient");
+
+      // Why: 8テキスト使用 — INDIVIDUAL_FALLBACK_THRESHOLD=6 を超えてbinary-splitフローに入るため
+      const texts = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
+      // Why: 左右チャンクはPromise.allで並列実行されるため、個別翻訳の呼び出し順は
+      //      A,E,B,F,C,G,D,H のようにインターリーブする。
+      //      mockResolvedValue（固定値）を使い、呼び出し回数のみ検証する。
+      mockApiClient.translate
+        .mockRejectedValueOnce(new ParseCountMismatchError(8, 1)) // 初回batch(8): mismatch → binary-split選択
+        .mockRejectedValueOnce(new ParseCountMismatchError(4, 1)) // 左chunk [A-D](4): mismatch → depth=1でfallback
+        .mockRejectedValueOnce(new ParseCountMismatchError(4, 1)) // 右chunk [E-H](4): mismatch → depth=1でfallback
+        .mockResolvedValue(["翻訳テキスト"]); // 個別翻訳はすべて成功（並列順不定）
+
+      const result = await engine.translateBatch(texts, "Japanese");
+
+      // 8テキスト分の翻訳結果が返ること（並列実行のため順序は問わない）
+      expect(result).toHaveLength(8);
+      expect(result).toEqual(expect.arrayContaining(Array(8).fill("翻訳テキスト")));
+      // depth=1でtranslateIndividuallyにフォールバックするため、再帰的binarySplitは発生しない
+      // 1(初回) + 1(左chunk) + 1(右chunk) + 8(個別) = 11回
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(11);
+    }, 30000);
+
+    it("should not recurse infinitely when ParseCountMismatchError keeps occurring", async () => {
+      // ParseCountMismatchError が全レベルで発生し続けても
+      // depth=1制限により有限回数のAPI呼び出しで終了すること
+      // Why: 8テキスト使用 — INDIVIDUAL_FALLBACK_THRESHOLD=6 を超えてbinary-splitフローに入るため
+      await engine.initialize();
+
+      const { ParseCountMismatchError } = await import("../../../src/background/apiClient");
+
+      // INDIVIDUAL_FALLBACK_THRESHOLD=6 を超える8テキストでbinary-splitフローを通す
+      const texts = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"];
+      // depth=1制限: 初回(1) + 左chunk(1) + 右chunk(1) + 個別8テキスト(8) = 最大11回
+      // ただし個別翻訳でもParseCountMismatchError が発生するため、1テキストずつ投げてエラーになる
+      const maxExpectedCalls = 15;
+
+      mockApiClient.translate.mockRejectedValue(new ParseCountMismatchError(8, 1));
+
+      // 個別翻訳でも1テキストでParseCountMismatchErrorが発生 → そのまま上位にthrow
+      await expect(
+        engine.translateBatch(texts, "Japanese"),
+      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+
+      // 無限ループでなければ呼び出し回数は有界
+      expect(mockApiClient.translate.mock.calls.length).toBeLessThanOrEqual(maxExpectedCalls);
+    }, 30000);
+  });
+
+  // RED: browser.storage.local migration tests
+  // These tests verify that the engine uses browser.storage.local instead of sessionStorage/localStorage
+  // Why: Chrome MV3 Service Workers do not have access to DOM Storage APIs (sessionStorage/localStorage)
+  describe("browser.storage.local migration (task-p1-storage)", () => {
+    beforeEach(async () => {
+      await engine.initialize();
+    });
+
+    it("should use browser.storage.local.get when checking persistent cache on getCachedTranslation", async () => {
+      // RED: browser.storage.local.get should be called during translateBatch (cache lookup)
+      // sessionStorage.getItem should NOT be called
+
+      mockApiClient.translate.mockResolvedValueOnce(["こんにちは"]);
+      await engine.translateBatch(["Hello"], "Japanese");
+
+      // After migration: browser.storage.local.get must be called
+      expect((global.chrome.storage.local.get as jest.Mock)).toHaveBeenCalled();
+
+      // After migration: sessionStorage.getItem must NOT be called
+      expect(globalThis.sessionStorage.getItem).not.toHaveBeenCalled();
+    });
+
+    it("should use browser.storage.local.set when saving to persistent cache on setCachedTranslation", async () => {
+      // RED: browser.storage.local.set should be called when translation is saved
+      // sessionStorage.setItem and localStorage.setItem should NOT be called
+
+      mockApiClient.translate.mockResolvedValueOnce(["こんにちは"]);
+      await engine.translateBatch(["Hello"], "Japanese");
+
+      // After migration: browser.storage.local.set must be called
+      expect((global.chrome.storage.local.set as jest.Mock)).toHaveBeenCalled();
+
+      // After migration: sessionStorage.setItem must NOT be called
+      expect(globalThis.sessionStorage.setItem).not.toHaveBeenCalled();
+      // After migration: localStorage.setItem must NOT be called
+      expect(globalThis.localStorage.setItem).not.toHaveBeenCalled();
+    });
+
+    it("should retrieve translation from browser.storage.local on cache hit", async () => {
+      // RED: When browser.storage.local has cached translation, it should be returned without API call
+
+      const cacheKey = "translation:Hello:Japanese";
+      const cachedEntry = JSON.stringify({ text: "Hello", translation: "こんにちは(キャッシュ)" });
+
+      // Pre-populate browser.storage.local mock with cached data
+      (global.chrome.storage.local.get as jest.Mock).mockResolvedValueOnce({
+        [cacheKey]: cachedEntry,
+      });
+
+      const result = await engine.translateBatch(["Hello"], "Japanese");
+
+      // Should return cached value from browser.storage.local
+      expect(result).toEqual(["こんにちは(キャッシュ)"]);
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
     });
   });
 });

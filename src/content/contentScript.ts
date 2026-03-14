@@ -16,7 +16,7 @@ import { MutationObserverManager } from "./mutationObserver";
 import { FloatingUI } from "./floatingUI";
 import { ProgressNotification } from "./progressNotification";
 import { MessageBus } from "@shared/messages/MessageBus";
-import { MessageType, Message } from "@shared/messages/types";
+import { MessageType, Message, TranslationPhase } from "@shared/messages/types";
 import { logger } from "@shared/utils";
 import { filterBatchTexts } from "@shared/utils/textFilter";
 import { EXCLUSION_SELECTORS } from "@shared/constants";
@@ -34,11 +34,8 @@ export class ContentScript {
   private messageBus: MessageBus;
   private isTranslated = false;
   private extractedNodes: TextNode[] = [];
-  /**
-   * Current translation nodes for batch-by-batch application
-   * Set during translatePage() before sending translation request
-   */
-  private currentTranslationNodes: TextNode[] = [];
+  // Why: currentTranslationNodes(単一配列)ではなくphaseNodes Map — Phase1/2のノードが相互に上書きされるレースコンディションを防ぐため
+  private phaseNodes: Map<TranslationPhase, TextNode[]> = new Map();
   /**
    * Last observed text snapshot per node to avoid duplicate re-translation
    */
@@ -304,9 +301,7 @@ export class ContentScript {
           this.progressNotification.completePhase(1);
         } else {
           // Store only filtered nodes for batch-by-batch application via BATCH_COMPLETED
-          this.currentTranslationNodes = originalIndices.map(
-            (i) => viewport[i],
-          );
+          this.phaseNodes.set(1, originalIndices.map((i) => viewport[i]));
 
           console.log(
             `[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`,
@@ -404,9 +399,7 @@ export class ContentScript {
 
           // P1 Fix: Use semiParallel=true for progressive rendering in Phase 2
           // Store Phase 2 nodes for handleBatchCompleted
-          this.currentTranslationNodes = oovIndices.map(
-            (i) => outOfViewport[i],
-          );
+          this.phaseNodes.set(2, oovIndices.map((i) => outOfViewport[i]));
 
           const response2 = await this.messageBus.send({
             type: MessageType.REQUEST_TRANSLATION,
@@ -557,6 +550,7 @@ export class ContentScript {
       this.pendingDynamicNodes.clear();
       this.isDynamicFlushScheduled = false;
       this.lastObservedNodeText = new WeakMap();
+      this.phaseNodes.clear();
 
       logger.log("Page reset to original state");
     } catch (error) {
@@ -646,20 +640,18 @@ export class ContentScript {
         progress: { current: number; total: number; percentage: number };
       };
 
-      if (
-        !this.currentTranslationNodes ||
-        this.currentTranslationNodes.length === 0
-      ) {
+      const phaseNodeList = this.phaseNodes.get(phase) ?? [];
+      if (phaseNodeList.length === 0) {
         console.warn(
-          `[Content:ContentScript] ${timestamp} - currentTranslationNodes is empty, skipping batch application`,
+          `[Content:ContentScript] ${timestamp} - phaseNodes[${phase}] is empty, skipping batch application`,
         );
         return;
       }
 
       // Extract corresponding nodes using nodeIndices
       const nodes = nodeIndices
-        .filter((i: number) => i < this.currentTranslationNodes.length)
-        .map((i: number) => this.currentTranslationNodes[i]);
+        .filter((i: number) => i < phaseNodeList.length)
+        .map((i: number) => phaseNodeList[i]);
 
       if (nodes.length !== translations.length) {
         console.warn(
