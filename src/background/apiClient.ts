@@ -22,9 +22,8 @@
 
 import StorageManager from "../shared/storage/StorageManager";
 import { logger } from "../shared/utils/logger";
-import { API_CONFIG, RETRY_CONFIG } from "../shared/constants/config";
+import { API_CONFIG } from "../shared/constants/config";
 import { getLanguageName } from "../shared/constants/languages";
-import { retry } from "../shared/utils/retry";
 
 /**
  * OpenRouter configuration interface
@@ -132,7 +131,7 @@ export class OpenRouterClient {
    * Initialize the client by loading configuration from storage
    */
   async initialize(): Promise<void> {
-    console.log("[OpenRouterClient] initialize() called");
+    logger.log("[OpenRouterClient] initialize() called");
     const storage = new StorageManager();
     const data = await storage.get([
       "openRouterApiKey",
@@ -140,20 +139,20 @@ export class OpenRouterClient {
       "openRouterProvider",
     ]);
 
-    console.log("[OpenRouterClient] Data received from StorageManager:", data);
-    console.log(
+    logger.log("[OpenRouterClient] Data received from StorageManager:", data);
+    logger.log(
       "[OpenRouterClient] openRouterApiKey exists:",
       !!data.openRouterApiKey,
     );
-    console.log(
+    logger.log(
       "[OpenRouterClient] openRouterApiKey value:",
       data.openRouterApiKey,
     );
-    console.log(
+    logger.log(
       "[OpenRouterClient] openRouterModel exists:",
       !!data.openRouterModel,
     );
-    console.log(
+    logger.log(
       "[OpenRouterClient] openRouterModel value:",
       data.openRouterModel,
     );
@@ -164,7 +163,7 @@ export class OpenRouterClient {
       provider: data.openRouterProvider,
     };
 
-    console.log("[OpenRouterClient] Config set to:", this.config);
+    logger.log("[OpenRouterClient] Config set to:", this.config);
   }
 
   /**
@@ -177,7 +176,7 @@ export class OpenRouterClient {
    */
   async translate(texts: string[], targetLanguage: string): Promise<string[]> {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Background:OpenRouterClient] ${timestamp} - translate() called:`,
       {
         textsCount: texts.length,
@@ -188,13 +187,13 @@ export class OpenRouterClient {
 
     // Ensure initialized
     if (!this.config) {
-      console.log(
+      logger.log(
         `[Background:OpenRouterClient] ${timestamp} - Config not loaded, initializing...`,
       );
       await this.initialize();
     }
 
-    console.log(`[Background:OpenRouterClient] ${timestamp} - Using config:`, {
+    logger.log(`[Background:OpenRouterClient] ${timestamp} - Using config:`, {
       hasApiKey: !!this.config?.apiKey,
       apiKeyPrefix: this.config?.apiKey?.substring(0, 10) + "...",
       model: this.config?.model,
@@ -203,7 +202,7 @@ export class OpenRouterClient {
 
     // Validate API key - check for empty or whitespace-only strings
     if (!this.config?.apiKey || this.config.apiKey.trim() === "") {
-      console.error(
+      logger.error(
         `[Background:OpenRouterClient] ${timestamp} - API key not configured or empty`,
       );
       throw new Error("API key not configured or empty");
@@ -211,7 +210,7 @@ export class OpenRouterClient {
 
     // Validate model - check for empty or whitespace-only strings
     if (!this.config?.model || this.config.model.trim() === "") {
-      console.error(
+      logger.error(
         `[Background:OpenRouterClient] ${timestamp} - Model not configured or empty`,
       );
       throw new Error(
@@ -219,125 +218,103 @@ export class OpenRouterClient {
       );
     }
 
-    // Why: カスタムforループではなくretry()ユーティリティ —
-    //      バックオフロジックの重複実装を排除し、最大API呼び出し回数を maxRetries+1 に一元管理
-    return await retry(
-      async () => {
-        const prompt = this.buildPrompt(texts, targetLanguage);
-        console.log(
-          `[Background:OpenRouterClient] ${timestamp} - Built prompt (first 100 chars):`,
-          {
-            prompt: prompt.substring(0, 100),
-          },
-        );
-
-        const requestBody: Record<string, unknown> = {
-          model: this.config!.model,
-          messages: [{ role: "user", content: prompt }],
-        };
-
-        // Add provider if configured
-        if (this.config!.provider) {
-          requestBody.provider = { order: [this.config!.provider] };
-        }
-
-        console.log(
-          `[Background:OpenRouterClient] ${timestamp} - Making API request:`,
-          {
-            endpoint: this.API_ENDPOINT,
-            model: this.config!.model,
-            hasProvider: !!this.config!.provider,
-          },
-        );
-
-        // Make API request with timeout
-        const response = await this.fetchWithTimeout(this.API_ENDPOINT, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.config!.apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": API_CONFIG.REFERER,
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        console.log(
-          `[Background:OpenRouterClient] ${timestamp} - Received API response:`,
-          {
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
-          },
-        );
-
-        // Handle errors
-        if (!response.ok) {
-          const error = await response.json();
-          const isRateLimit = response.status === 429;
-
-          console.error(
-            `[Background:OpenRouterClient] ${timestamp} - API request failed:`,
-            {
-              status: response.status,
-              statusText: response.statusText,
-              error,
-              isRateLimit,
-            },
-          );
-
-          logger.error("OpenRouter API error:", error);
-          throw new ApiError(
-            `API request failed: ${error.error?.message || response.statusText}`,
-            response.status,
-            isRateLimit,
-          );
-        }
-
-        // Parse response
-        const data = await response.json();
-        console.log(
-          `[Background:OpenRouterClient] ${timestamp} - Parsing API response:`,
-          {
-            hasChoices: !!data.choices,
-            choicesLength: data.choices?.length,
-            hasContent: !!data.choices?.[0]?.message?.content,
-          },
-        );
-
-        const translations = this.parseResponse(
-          data.choices[0].message.content,
-          texts.length,
-        );
-
-        console.log(
-          `[Background:OpenRouterClient] ${timestamp} - Translation successful:`,
-          {
-            translationsCount: translations.length,
-            firstTranslation: translations[0]?.substring(0, 50),
-          },
-        );
-
-        return translations;
-      },
+    // Why: retry を engine 層に一元化 — 二重 retry による最大16試行を防ぐため
+    // apiClient は単純な fetch + parse のみ担当
+    const prompt = this.buildPrompt(texts, targetLanguage);
+    logger.log(
+      `[Background:OpenRouterClient] ${timestamp} - Built prompt (first 100 chars):`,
       {
-        maxRetries: RETRY_CONFIG.MAX_RETRIES,
-        delay: RETRY_CONFIG.INITIAL_DELAY,
-        backoff: RETRY_CONFIG.BACKOFF as "exponential" | "linear",
-        // Why: ParseCountMismatchError はリトライ対象外 —
-        //      LLMの応答形式の問題はリトライでは改善しない。上位の engine 層 fallback に委ねる
-        shouldRetry: (error) => !(error instanceof ParseCountMismatchError),
-        onError: (error, attempt) => {
-          console.warn(
-            `[Background:OpenRouterClient] ${timestamp} - Retry attempt ${attempt + 1}:`,
-            {
-              error: error.message,
-              attempt,
-            },
-          );
-          logger.warn(`Translation attempt ${attempt + 1} failed:`, error.message);
-        },
+        prompt: prompt.substring(0, 100),
       },
     );
+
+    const requestBody: Record<string, unknown> = {
+      model: this.config!.model,
+      messages: [{ role: "user", content: prompt }],
+    };
+
+    // Add provider if configured
+    if (this.config!.provider) {
+      requestBody.provider = { order: [this.config!.provider] };
+    }
+
+    logger.log(
+      `[Background:OpenRouterClient] ${timestamp} - Making API request:`,
+      {
+        endpoint: this.API_ENDPOINT,
+        model: this.config!.model,
+        hasProvider: !!this.config!.provider,
+      },
+    );
+
+    // Make API request with timeout
+    const response = await this.fetchWithTimeout(this.API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.config!.apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": API_CONFIG.REFERER,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    logger.log(
+      `[Background:OpenRouterClient] ${timestamp} - Received API response:`,
+      {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      },
+    );
+
+    // Handle errors
+    if (!response.ok) {
+      const error = await response.json();
+      const isRateLimit = response.status === 429;
+
+      logger.error(
+        `[Background:OpenRouterClient] ${timestamp} - API request failed:`,
+        {
+          status: response.status,
+          statusText: response.statusText,
+          error,
+          isRateLimit,
+        },
+      );
+
+      logger.error("OpenRouter API error:", error);
+      throw new ApiError(
+        `API request failed: ${error.error?.message || response.statusText}`,
+        response.status,
+        isRateLimit,
+      );
+    }
+
+    // Parse response
+    const data = await response.json();
+    logger.log(
+      `[Background:OpenRouterClient] ${timestamp} - Parsing API response:`,
+      {
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        hasContent: !!data.choices?.[0]?.message?.content,
+      },
+    );
+
+    const translations = this.parseResponse(
+      data.choices[0].message.content,
+      texts.length,
+    );
+
+    logger.log(
+      `[Background:OpenRouterClient] ${timestamp} - Translation successful:`,
+      {
+        translationsCount: translations.length,
+        firstTranslation: translations[0]?.substring(0, 50),
+      },
+    );
+
+    return translations;
   }
 
   /**

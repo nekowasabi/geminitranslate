@@ -17,7 +17,7 @@
  * ```
  */
 
-type LogLevel = 'LOG' | 'WARN' | 'ERROR';
+type LogLevel = 'LOG' | 'WARN' | 'ERROR' | 'DEBUG';
 
 /**
  * Logger interface
@@ -26,6 +26,7 @@ interface Logger {
   log(message: string, ...args: unknown[]): void;
   warn(message: string, ...args: unknown[]): void;
   error(message: string, ...args: unknown[]): void;
+  debug(message: string, ...args: unknown[]): void;
 }
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -92,5 +93,20 @@ export const logger: Logger = {
   error(message: string, ...args: unknown[]): void {
     const prefix = createPrefix('ERROR');
     console.error(`${prefix} ${message}`, ...args);
+  },
+
+  /**
+   * Log a debug message (suppressed in production)
+   * @param message - Debug message to log
+   * @param args - Additional arguments to log
+   */
+  // Why: debug() を production で抑制 — debug は開発用途で本番ログには不要なため
+  debug(message: string, ...args: unknown[]): void {
+    if (isProduction) {
+      return;
+    }
+
+    const prefix = createPrefix('DEBUG');
+    console.debug(`${prefix} ${message}`, ...args);
   },
 };

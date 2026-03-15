@@ -60,7 +60,9 @@ export class MigrationManager {
     try {
       logger.log('Checking migration requirements...');
 
-      const data = await adapter.storage.get([
+      // Why: getBrowser() instead of direct adapter.storage — allows test mocks to intercept
+      const browser = adapter.getBrowser();
+      const data = await browser.storage.local.get([
         'version',
         'apiKey',
         'openRouterApiKey',
@@ -95,7 +97,6 @@ export class MigrationManager {
    * Migrate from v2.x to v3.0.0
    */
   private async migrateV2ToV3(oldData: V2Storage): Promise<void> {
-
     // Prepare new storage data
     const newData: V3Storage = {
       version: CURRENT_VERSION,
@@ -120,23 +121,57 @@ export class MigrationManager {
     }
 
     // Save new data
-    await adapter.storage.set(newData);
+    const browser = adapter.getBrowser();
+    await browser.storage.local.set(newData);
 
     // Remove old apiKey if it exists
     if (oldData.apiKey) {
-      await adapter.storage.remove(['apiKey']);
+      // Why: pass string not array — test expects remove('apiKey') signature
+      await browser.storage.local.remove('apiKey');
       logger.log('Removed old apiKey');
     }
 
+    // Show migration notice to user
+    await this.showMigrationNotice();
+
     logger.log('v2 → v3 migration completed', newData);
+  }
+
+  /**
+   * Show migration notice notification
+   */
+  private async showMigrationNotice(): Promise<void> {
+    try {
+      const browser = adapter.getBrowser();
+      if (!browser.notifications) {
+        return;
+      }
+      await browser.notifications.create('migration-notice', {
+        type: 'basic',
+        title: 'DoganayLab Translate v3.0 Migration',
+        message: 'Your settings have been successfully migrated to v3.0.0',
+      });
+    } catch (error) {
+      logger.error('Failed to show migration notice:', error);
+      // Don't throw - notification failure should not block migration
+    }
   }
 
   /**
    * Get current schema version
    */
   async getCurrentVersion(): Promise<string | undefined> {
-    const data = await adapter.storage.get(['version']);
+    const browser = adapter.getBrowser();
+    const data = await browser.storage.local.get(['version']);
     return data.version as string | undefined;
+  }
+
+  /**
+   * Reset storage (for testing/debugging)
+   */
+  async reset(): Promise<void> {
+    const browser = adapter.getBrowser();
+    await browser.storage.local.clear();
   }
 }
 

@@ -31,6 +31,7 @@ import { OpenRouterClient, ParseCountMismatchError } from "./apiClient";
 import { logger } from "../shared/utils/logger";
 import {
   BATCH_CONFIG,
+  CACHE_CONFIG,
   FEATURE_FLAGS,
   RETRY_CONFIG,
 } from "../shared/constants/config";
@@ -73,6 +74,8 @@ export interface CacheStats {
 interface CacheEntry {
   text: string;
   translation: string;
+  // Why: optional for backward compat — existing entries without createdAt remain valid
+  createdAt?: number;
 }
 
 /**
@@ -184,7 +187,7 @@ export class TranslationEngine {
     onBatchComplete?: BatchProgressCallback,
   ): Promise<string[]> {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - translateBatchSemiParallel() called:`,
       {
         textsCount: texts.length,
@@ -209,11 +212,11 @@ export class TranslationEngine {
     const requestBudget = this.createRequestBudgetContext(texts.length);
     let batchCount = 0;
 
-    // Check cache
+    // Why: getBulkCachedTranslations instead of N getCachedTranslation calls — single IPC round trip
+    const cachedResults = await this.getBulkCachedTranslations(texts, targetLanguage);
     for (let i = 0; i < texts.length; i++) {
-      const cached = await this.getCachedTranslation(texts[i], targetLanguage);
-      if (cached) {
-        results[i] = cached;
+      if (cachedResults[i] !== null) {
+        results[i] = cachedResults[i]!;
         this.cacheHits++;
       } else {
         uncachedIndices.push(i);
@@ -249,7 +252,7 @@ export class TranslationEngine {
     const priorityBatches = batches.slice(0, priorityCount);
     const remainingBatches = batches.slice(priorityCount);
 
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - Semi-parallel: ${priorityBatches.length} sequential, ${remainingBatches.length} parallel`,
     );
 
@@ -343,17 +346,17 @@ export class TranslationEngine {
       });
     }
 
-    // Store results and update cache
+    // Store results and update cache in bulk
+    // Why: setBulkCachedTranslations — memory update sync, storage write fire-and-forget
+    const cachePairsSemiParallel = uncachedIndices.map((originalIndex, i) => ({
+      text: texts[originalIndex],
+      targetLanguage,
+      translation: translatedTexts[i],
+    }));
     for (let i = 0; i < uncachedIndices.length; i++) {
-      const originalIndex = uncachedIndices[i];
-      const translation = translatedTexts[i];
-      results[originalIndex] = translation;
-      await this.setCachedTranslation(
-        texts[originalIndex],
-        targetLanguage,
-        translation,
-      );
+      results[uncachedIndices[i]] = translatedTexts[i];
     }
+    this.setBulkCachedTranslations(cachePairsSemiParallel);
 
     this.assertCompleteResults(
       results,
@@ -398,7 +401,7 @@ export class TranslationEngine {
 
     // Original parallel processing logic
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - translateBatch() called:`,
       {
         textsCount: texts.length,
@@ -408,7 +411,7 @@ export class TranslationEngine {
     );
 
     if (!this.initialized) {
-      console.error(
+      logger.error(
         `[Background:TranslationEngine] ${timestamp} - Engine not initialized`,
       );
       throw new Error(
@@ -418,7 +421,7 @@ export class TranslationEngine {
 
     // Handle empty input
     if (texts.length === 0) {
-      console.log(
+      logger.log(
         `[Background:TranslationEngine] ${timestamp} - Empty input, returning empty array`,
       );
       return [];
@@ -431,13 +434,14 @@ export class TranslationEngine {
     let batchCount = 0;
 
     // Check all cache layers
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - Checking cache for ${texts.length} texts...`,
     );
+    // Why: getBulkCachedTranslations instead of N getCachedTranslation calls — single IPC round trip
+    const cachedResultsBatch = await this.getBulkCachedTranslations(texts, targetLanguage);
     for (let i = 0; i < texts.length; i++) {
-      const cached = await this.getCachedTranslation(texts[i], targetLanguage);
-      if (cached) {
-        results[i] = cached;
+      if (cachedResultsBatch[i] !== null) {
+        results[i] = cachedResultsBatch[i]!;
         this.cacheHits++;
       } else {
         uncachedIndices.push(i);
@@ -445,7 +449,7 @@ export class TranslationEngine {
       }
     }
 
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - Cache check complete:`,
       {
         cacheHits: this.cacheHits,
@@ -460,14 +464,14 @@ export class TranslationEngine {
       const batches = this.chunkTextsByConstraints(uncachedTexts);
       batchCount = batches.length;
 
-      console.log(
+      logger.log(
         `[Background:TranslationEngine] ${timestamp} - Translating ${uncachedIndices.length} uncached texts in ${batches.length} batches`,
       );
 
       // Process batches in parallel
       const batchResults = await Promise.all(
         batches.map((batch, index) => {
-          console.log(
+          logger.log(
             `[Background:TranslationEngine] ${timestamp} - Processing batch ${index + 1}/${batches.length}:`,
             {
               batchSize: batch.length,
@@ -477,7 +481,7 @@ export class TranslationEngine {
         }),
       );
 
-      console.log(
+      logger.log(
         `[Background:TranslationEngine] ${timestamp} - All batches processed`,
       );
 
@@ -486,33 +490,31 @@ export class TranslationEngine {
         (result) => result.translations,
       );
 
-      console.log(
+      logger.log(
         `[Background:TranslationEngine] ${timestamp} - Flattened translations:`,
         {
           count: translations.length,
         },
       );
 
-      // Store results and update cache
+      // Store results and update cache in bulk
+      // Why: setBulkCachedTranslations — memory update sync, storage write fire-and-forget
+      const cachePairsBatch = uncachedIndices.map((originalIndex, i) => ({
+        text: texts[originalIndex],
+        targetLanguage,
+        translation: translations[i],
+      }));
       for (let i = 0; i < uncachedIndices.length; i++) {
-        const originalIndex = uncachedIndices[i];
-        const translation = translations[i];
-        results[originalIndex] = translation;
-
-        // Save to all cache layers
-        await this.setCachedTranslation(
-          texts[originalIndex],
-          targetLanguage,
-          translation,
-        );
+        results[uncachedIndices[i]] = translations[i];
       }
+      this.setBulkCachedTranslations(cachePairsBatch);
 
-      console.log(
+      logger.log(
         `[Background:TranslationEngine] ${timestamp} - Cache updated with new translations`,
       );
     }
 
-    console.log(
+    logger.log(
       `[Background:TranslationEngine] ${timestamp} - translateBatch() completed:`,
       {
         resultsCount: results.length,
@@ -562,6 +564,62 @@ export class TranslationEngine {
   }
 
   /**
+   * Get multiple cached translations in bulk
+   *
+   * Pass 1: Check memory cache synchronously (no I/O)
+   * Pass 2: Fetch remaining from storage in a single bulk get() call
+   *
+   * @param texts - Array of texts to look up
+   * @param targetLanguage - Target language
+   * @returns Array of cached translations or null for misses
+   */
+  // Why: get(keyArray) instead of N individual get() — single IPC round trip
+  private async getBulkCachedTranslations(
+    texts: string[],
+    targetLanguage: string,
+  ): Promise<(string | null)[]> {
+    const cacheKeys = texts.map((t) => this.getCacheKey(t, targetLanguage));
+
+    // Pass 1: memory cache (同期、I/Oなし)
+    const results: (string | null)[] = cacheKeys.map(
+      (key) => this.memoryCache.get(key) ?? null,
+    );
+
+    // Pass 2: storage bulk fetch for memory-miss keys
+    const missIndices = results
+      .map((r, i) => (r === null ? i : -1))
+      .filter((i) => i >= 0);
+
+    if (missIndices.length > 0) {
+      const missKeys = missIndices.map((i) => cacheKeys[i]);
+      try {
+        const storageResult = await browser.storage.local.get(missKeys);
+        for (const idx of missIndices) {
+          const data = storageResult[cacheKeys[idx]];
+          if (data) {
+            const entry: CacheEntry = JSON.parse(data as string);
+            // TTL check: expired entries treated as misses
+            // Why: createdAt なしエントリは有効 (後方互換) — 既存キャッシュを一斉無効化しない
+            if (
+              entry.createdAt &&
+              Date.now() - entry.createdAt > CACHE_CONFIG.TTL
+            ) {
+              browser.storage.local.remove(cacheKeys[idx]).catch(() => {});
+              continue;
+            }
+            results[idx] = entry.translation;
+            this.promoteToMemoryCache(cacheKeys[idx], entry.translation);
+          }
+        }
+      } catch (error) {
+        logger.warn("Bulk storage read failed:", error);
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Get translation from memory cache
    */
   private getFromMemoryCache(cacheKey: string): string | null {
@@ -579,6 +637,12 @@ export class TranslationEngine {
       const data = result[cacheKey];
       if (data) {
         const entry: CacheEntry = JSON.parse(data as string);
+        // TTL check: expired entries treated as misses
+        // Why: createdAt なしエントリは有効 (後方互換) — 既存キャッシュを一斉無効化しない
+        if (entry.createdAt && Date.now() - entry.createdAt > CACHE_CONFIG.TTL) {
+          browser.storage.local.remove(cacheKey).catch(() => {});
+          return null;
+        }
         return entry.translation;
       }
     } catch (error) {
@@ -595,14 +659,6 @@ export class TranslationEngine {
   }
 
   /**
-   * Promote cache hit to memory cache
-   * Why: browser.storage.local への昇格は不要 — 既にそこから読み込んでいるため
-   */
-  private promoteToHigherTiers(cacheKey: string, translation: string): void {
-    this.memoryCache.set(cacheKey, translation);
-  }
-
-  /**
    * Set cached translation to all cache layers
    *
    * @param text - Original text
@@ -615,7 +671,7 @@ export class TranslationEngine {
     translation: string,
   ): Promise<void> {
     const cacheKey = this.getCacheKey(text, targetLanguage);
-    const entry: CacheEntry = { text, translation };
+    const entry: CacheEntry = { text, translation, createdAt: Date.now() };
 
     // Save to memory cache (always succeeds)
     this.memoryCache.set(cacheKey, translation);
@@ -638,6 +694,39 @@ export class TranslationEngine {
   }
 
   /**
+   * Set multiple cached translations in bulk
+   *
+   * Updates memory cache synchronously and writes to storage as fire-and-forget (void + catch).
+   * Ensures Phase 2 starts immediately without waiting for storage I/O.
+   *
+   * @param pairs - Array of text/language/translation tuples to cache
+   */
+  private setBulkCachedTranslations(
+    pairs: Array<{
+      text: string;
+      targetLanguage: string;
+      translation: string;
+    }>,
+  ): void {
+    const bulkData: Record<string, string> = {};
+    for (const { text, targetLanguage, translation } of pairs) {
+      const cacheKey = this.getCacheKey(text, targetLanguage);
+      // 同期的にメモリキャッシュを更新（即時）
+      this.memoryCache.set(cacheKey, translation);
+      bulkData[cacheKey] = JSON.stringify({
+        text,
+        translation,
+        createdAt: Date.now(),
+      });
+    }
+    // Why: 1回のset()でまとめて書き込み、awaitしない — IPC往復をN回→1回に削減
+    // Why: fire-and-forget — cache write must not block Phase 2 start
+    browser.storage.local.set(bulkData).catch((error: unknown) => {
+      logger.warn("Bulk storage write failed:", error);
+    });
+  }
+
+  /**
    * Generate cache key
    *
    * @param text - Original text
@@ -645,7 +734,8 @@ export class TranslationEngine {
    * @returns Cache key string
    */
   private getCacheKey(text: string, targetLanguage: string): string {
-    return `translation:${text}:${targetLanguage}`;
+    // Why: encodeURIComponent instead of raw text — prevent key collision when text contains ':'
+    return `translation:${encodeURIComponent(text)}:${targetLanguage}`;
   }
 
   /**

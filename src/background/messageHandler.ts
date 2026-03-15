@@ -121,7 +121,7 @@ export class MessageHandler {
     sendResponse: (response?: HandlerResponse) => void,
   ): Promise<boolean> {
     const timestamp = new Date().toISOString();
-    console.log(`[Background:MessageHandler] ${timestamp} - handle() called:`, {
+    logger.log(`[Background:MessageHandler] ${timestamp} - handle() called:`, {
       messageType: message.type,
       action: message.action,
       payload: message.payload,
@@ -135,7 +135,7 @@ export class MessageHandler {
       // Validate message format with fallback support
       const action = message.action || this.inferActionFromType(message.type);
 
-      console.log(
+      logger.log(
         `[Background:MessageHandler] ${timestamp} - Action resolved:`,
         {
           originalAction: message.action,
@@ -145,7 +145,7 @@ export class MessageHandler {
       );
 
       if (!action) {
-        console.error(
+        logger.error(
           `[Background:MessageHandler] ${timestamp} - Invalid message format:`,
           {
             type: message.type,
@@ -170,7 +170,7 @@ export class MessageHandler {
       const handler = this.actionHandlers.get(action);
 
       if (handler) {
-        console.log(
+        logger.log(
           `[Background:MessageHandler] ${timestamp} - Routing to handler:`,
           {
             action,
@@ -179,7 +179,7 @@ export class MessageHandler {
         );
         await handler(payload, sendResponse, sender);
       } else {
-        console.error(
+        logger.error(
           `[Background:MessageHandler] ${timestamp} - Unknown action:`,
           action,
         );
@@ -189,7 +189,7 @@ export class MessageHandler {
         });
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `[Background:MessageHandler] ${timestamp} - Unexpected error:`,
         {
           error,
@@ -243,7 +243,7 @@ export class MessageHandler {
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Background:MessageHandler] ${timestamp} - handleRequestTranslation() called:`,
       {
         payload,
@@ -258,7 +258,7 @@ export class MessageHandler {
       const { texts, targetLanguage, semiParallel, priorityCount, phase } =
         payload;
 
-      console.log(
+      logger.log(
         `[Background:MessageHandler] ${timestamp} - Validating payload:`,
         {
           hasTexts: !!texts,
@@ -271,7 +271,7 @@ export class MessageHandler {
       );
 
       if (!texts || !Array.isArray(texts)) {
-        console.error(
+        logger.error(
           `[Background:MessageHandler] ${timestamp} - Invalid payload: texts must be an array`,
         );
         sendResponse({
@@ -282,7 +282,7 @@ export class MessageHandler {
       }
 
       if (!targetLanguage) {
-        console.error(
+        logger.error(
           `[Background:MessageHandler] ${timestamp} - Invalid payload: targetLanguage is required`,
         );
         sendResponse({
@@ -318,7 +318,7 @@ export class MessageHandler {
               ? Math.round((completedItems / totalItems) * 100)
               : 100;
 
-          console.log(
+          logger.log(
             `[Background:MessageHandler] ${timestamp} - Batch ${batchIndex} completed, sending BATCH_COMPLETED:`,
             {
               tabId,
@@ -351,7 +351,7 @@ export class MessageHandler {
               },
             } as BatchCompletedMessage);
           } catch (error) {
-            console.error(
+            logger.error(
               `[Background:MessageHandler] Failed to send BATCH_COMPLETED to tab ${tabId}:`,
               error,
             );
@@ -360,7 +360,7 @@ export class MessageHandler {
       }
 
       // Call TranslationEngine with optional semi-parallel processing
-      console.log(
+      logger.log(
         `[Background:MessageHandler] ${timestamp} - Calling TranslationEngine.translateBatch():`,
         {
           textsCount: texts.length,
@@ -381,7 +381,7 @@ export class MessageHandler {
           )
         : await this.engine.translateBatch(texts, targetLanguage);
 
-      console.log(
+      logger.log(
         `[Background:MessageHandler] ${timestamp} - Translation successful:`,
         {
           translationsCount: translations.length,
@@ -394,7 +394,7 @@ export class MessageHandler {
         data: { translations },
       });
     } catch (error) {
-      console.error(
+      logger.error(
         `[Background:MessageHandler] ${timestamp} - Translation error:`,
         {
           error,
@@ -517,16 +517,16 @@ export class MessageHandler {
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
     try {
-      console.log("[MessageHandler] Reloading OpenRouterClient config...");
+      logger.log("[MessageHandler] Reloading OpenRouterClient config...");
       await this.client.initialize();
-      console.log("[MessageHandler] Config reloaded successfully");
+      logger.log("[MessageHandler] Config reloaded successfully");
 
       sendResponse({
         success: true,
         data: { message: "Configuration reloaded successfully" },
       });
     } catch (error) {
-      console.error("[MessageHandler] Failed to reload config:", error);
+      logger.error("[MessageHandler] Failed to reload config:", error);
       sendResponse({
         success: false,
         error:

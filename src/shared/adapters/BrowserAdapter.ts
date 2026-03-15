@@ -14,6 +14,14 @@ class BrowserAdapter {
   }
 
   /**
+   * 生のブラウザAPIオブジェクトを返す
+   * Why: method instead of direct property access — enables test mocking via jest.mock
+   */
+  getBrowser(): any {
+    return this.api;
+  }
+
+  /**
    * runtime.lastErrorをチェックし、エラーがあればreject、なければresolveする
    * Chrome/Firefox両環境に対応
    * @param resolve Promiseのresolve関数

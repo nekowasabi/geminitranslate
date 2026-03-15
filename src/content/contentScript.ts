@@ -41,10 +41,10 @@ export class ContentScript {
    */
   private lastObservedNodeText: WeakMap<Node, string> = new WeakMap();
   /**
-   * Pending text nodes for microtask-batched dynamic translation
+   * Pending text nodes for debounce-batched dynamic translation
    */
   private pendingDynamicNodes: Set<Node> = new Set();
-  private isDynamicFlushScheduled = false;
+  private dynamicTranslationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.domManipulator = new DOMManipulator();
@@ -95,7 +95,7 @@ export class ContentScript {
     sendResponse: (response?: any) => void,
   ): Promise<void> {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Content:ContentScript] ${timestamp} - handleMessage() called:`,
       {
         messageType: message.type,
@@ -108,7 +108,7 @@ export class ContentScript {
     try {
       switch (message.type) {
         case MessageType.TRANSLATE_PAGE:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling TRANSLATE_PAGE:`,
             {
               targetLanguage:
@@ -118,49 +118,49 @@ export class ContentScript {
           await this.translatePage(
             "payload" in message ? message.payload.targetLanguage : "en",
           );
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - TRANSLATE_PAGE completed successfully`,
           );
           sendResponse({ success: true });
           break;
 
         case MessageType.TRANSLATE_SELECTION:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling TRANSLATE_SELECTION`,
           );
           await this.translateSelection(
             "payload" in message ? message.payload.targetLanguage : "en",
           );
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - TRANSLATE_SELECTION completed successfully`,
           );
           sendResponse({ success: true });
           break;
 
         case MessageType.TRANSLATE_CLIPBOARD:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling TRANSLATE_CLIPBOARD`,
           );
           await this.translateClipboard(
             "payload" in message ? message.payload.targetLanguage : "en",
           );
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - TRANSLATE_CLIPBOARD completed successfully`,
           );
           sendResponse({ success: true });
           break;
 
         case MessageType.RESET:
-          console.log(`[Content:ContentScript] ${timestamp} - Handling RESET`);
+          logger.log(`[Content:ContentScript] ${timestamp} - Handling RESET`);
           this.reset();
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - RESET completed successfully`,
           );
           sendResponse({ success: true });
           break;
 
         case MessageType.TRANSLATION_PROGRESS:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling TRANSLATION_PROGRESS`,
           );
           if ("payload" in message && message.payload) {
@@ -173,7 +173,7 @@ export class ContentScript {
           break;
 
         case MessageType.TRANSLATION_ERROR:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling TRANSLATION_ERROR`,
           );
           if (
@@ -188,7 +188,7 @@ export class ContentScript {
           break;
 
         case MessageType.BATCH_COMPLETED:
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Handling BATCH_COMPLETED`,
           );
           if ("payload" in message && message.payload) {
@@ -198,7 +198,7 @@ export class ContentScript {
           break;
 
         default:
-          console.warn(
+          logger.warn(
             `[Content:ContentScript] ${timestamp} - Unknown message type:`,
             message.type,
           );
@@ -206,7 +206,7 @@ export class ContentScript {
           sendResponse({ success: false, error: "Unknown message type" });
       }
     } catch (error) {
-      console.error(
+      logger.error(
         `[Content:ContentScript] ${timestamp} - Error handling message:`,
         {
           error,
@@ -236,7 +236,7 @@ export class ContentScript {
    */
   private async translatePage(targetLanguage: string): Promise<void> {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Content:ContentScript] ${timestamp} - translatePage() called:`,
       { targetLanguage },
     );
@@ -245,12 +245,12 @@ export class ContentScript {
       logger.log("Translating page to", targetLanguage);
 
       // Extract text nodes
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Extracting text nodes from DOM...`,
       );
       this.extractedNodes = this.domManipulator.extractTextNodes();
 
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Text nodes extracted:`,
         {
           count: this.extractedNodes.length,
@@ -258,7 +258,7 @@ export class ContentScript {
       );
 
       if (this.extractedNodes.length === 0) {
-        console.warn(
+        logger.warn(
           `[Content:ContentScript] ${timestamp} - No text nodes to translate`,
         );
         logger.log("No text nodes to translate");
@@ -266,13 +266,13 @@ export class ContentScript {
       }
 
       // Separate viewport and out-of-viewport nodes
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Detecting viewport nodes...`,
       );
       const { viewport, outOfViewport } =
         this.domManipulator.detectViewportNodes(this.extractedNodes);
 
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Viewport detection completed:`,
         {
           viewportCount: viewport.length,
@@ -282,7 +282,7 @@ export class ContentScript {
 
       // Phase 1: Translate viewport nodes first
       if (viewport.length > 0) {
-        console.log(
+        logger.log(
           `[Content:ContentScript] ${timestamp} - Starting Phase 1: Viewport translation`,
         );
         this.progressNotification.showPhase(1, viewport.length);
@@ -295,7 +295,7 @@ export class ContentScript {
 
         if (textsToTranslate.length === 0) {
           // All texts filtered out — skip Phase 1 API call
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Phase 1 skipped: All texts filtered`,
           );
           this.progressNotification.completePhase(1);
@@ -303,7 +303,7 @@ export class ContentScript {
           // Store only filtered nodes for batch-by-batch application via BATCH_COMPLETED
           this.phaseNodes.set(1, originalIndices.map((i) => viewport[i]));
 
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`,
             {
               type: MessageType.REQUEST_TRANSLATION,
@@ -330,7 +330,7 @@ export class ContentScript {
             },
           });
 
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Phase 1 response received:`,
             {
               success: response1?.success,
@@ -339,7 +339,7 @@ export class ContentScript {
           );
 
           if (response1?.success && response1?.data?.translations) {
-            console.log(
+            logger.log(
               `[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`,
             );
             // Apply all translations including cache hits (same pattern as Phase 2)
@@ -349,29 +349,29 @@ export class ContentScript {
               response1.data.translations,
             );
             this.progressNotification.completePhase(1);
-            console.log(
+            logger.log(
               `[Content:ContentScript] ${timestamp} - Phase 1 completed with all translations applied`,
             );
           } else {
-            console.warn(
+            logger.warn(
               `[Content:ContentScript] ${timestamp} - Phase 1 failed:`,
               response1,
             );
           }
 
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`,
           );
         }
       } else {
-        console.log(
+        logger.log(
           `[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`,
         );
       }
 
       // Phase 2: Translate out-of-viewport nodes
       if (outOfViewport.length > 0) {
-        console.log(
+        logger.log(
           `[Content:ContentScript] ${timestamp} - Starting Phase 2: Full-page translation`,
         );
         this.progressNotification.showPhase(2, outOfViewport.length);
@@ -383,7 +383,7 @@ export class ContentScript {
           filterBatchTexts(outOfViewportTexts);
 
         if (oovTexts.length > 0) {
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Sending Phase 2 REQUEST_TRANSLATION:`,
             {
               type: MessageType.REQUEST_TRANSLATION,
@@ -413,7 +413,7 @@ export class ContentScript {
             },
           });
 
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Phase 2 response received:`,
             {
               success: response2?.success,
@@ -422,7 +422,7 @@ export class ContentScript {
           );
 
           if (response2?.success && response2?.data?.translations) {
-            console.log(
+            logger.log(
               `[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`,
             );
             const nodesToTranslate = oovIndices.map((i) => outOfViewport[i]);
@@ -431,23 +431,23 @@ export class ContentScript {
               response2.data.translations,
             );
             this.progressNotification.completePhase(2);
-            console.log(
+            logger.log(
               `[Content:ContentScript] ${timestamp} - Phase 2 completed`,
             );
           } else {
-            console.warn(
+            logger.warn(
               `[Content:ContentScript] ${timestamp} - Phase 2 failed:`,
               response2,
             );
           }
         } else {
-          console.log(
+          logger.log(
             `[Content:ContentScript] ${timestamp} - Phase 2 skipped: All texts filtered`,
           );
           this.progressNotification.completePhase(2);
         }
       } else {
-        console.log(
+        logger.log(
           `[Content:ContentScript] ${timestamp} - Phase 2 skipped: No out-of-viewport nodes`,
         );
       }
@@ -458,12 +458,12 @@ export class ContentScript {
       // P0 Fix: Enable MutationObserver for infinite scroll / dynamic content
       this.enableDynamicTranslation(targetLanguage);
 
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Page translation completed successfully`,
       );
       logger.log("Page translation completed");
     } catch (error) {
-      console.error(
+      logger.error(
         `[Content:ContentScript] ${timestamp} - Failed to translate page:`,
         {
           error,
@@ -548,7 +548,10 @@ export class ContentScript {
       this.domManipulator.reset();
       this.floatingUI.hide();
       this.pendingDynamicNodes.clear();
-      this.isDynamicFlushScheduled = false;
+      if (this.dynamicTranslationTimer) {
+        clearTimeout(this.dynamicTranslationTimer);
+        this.dynamicTranslationTimer = null;
+      }
       this.lastObservedNodeText = new WeakMap();
       this.phaseNodes.clear();
 
@@ -613,7 +616,10 @@ export class ContentScript {
   disableDynamicTranslation(): void {
     this.mutationObserver.disconnect();
     this.pendingDynamicNodes.clear();
-    this.isDynamicFlushScheduled = false;
+    if (this.dynamicTranslationTimer) {
+      clearTimeout(this.dynamicTranslationTimer);
+      this.dynamicTranslationTimer = null;
+    }
     logger.log("Dynamic translation disabled");
   }
 
@@ -627,7 +633,7 @@ export class ContentScript {
    */
   private handleBatchCompleted(payload: any): void {
     const timestamp = new Date().toISOString();
-    console.log(
+    logger.log(
       `[Content:ContentScript] ${timestamp} - handleBatchCompleted() called:`,
       payload,
     );
@@ -642,7 +648,7 @@ export class ContentScript {
 
       const phaseNodeList = this.phaseNodes.get(phase) ?? [];
       if (phaseNodeList.length === 0) {
-        console.warn(
+        logger.warn(
           `[Content:ContentScript] ${timestamp} - phaseNodes[${phase}] is empty, skipping batch application`,
         );
         return;
@@ -654,12 +660,12 @@ export class ContentScript {
         .map((i: number) => phaseNodeList[i]);
 
       if (nodes.length !== translations.length) {
-        console.warn(
+        logger.warn(
           `[Content:ContentScript] ${timestamp} - Mismatch: nodes(${nodes.length}) vs translations(${translations.length})`,
         );
       }
 
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Applying batch translations:`,
         {
           nodesCount: nodes.length,
@@ -677,7 +683,7 @@ export class ContentScript {
         this.progressNotification.updatePhase(phase, progress.percentage);
       }
 
-      console.log(
+      logger.log(
         `[Content:ContentScript] ${timestamp} - Batch applied successfully:`,
         `Progress: ${progress.current}/${progress.total} (${progress.percentage}%)`,
       );
@@ -686,7 +692,7 @@ export class ContentScript {
         `Batch ${payload.batchIndex} completed: ${translations.length} texts translated`,
       );
     } catch (error) {
-      console.error(
+      logger.error(
         `[Content:ContentScript] ${timestamp} - Failed to handle batch completed:`,
         {
           error,
@@ -789,14 +795,10 @@ export class ContentScript {
       this.pendingDynamicNodes.add(node);
     }
 
-    if (this.isDynamicFlushScheduled) {
-      return;
-    }
-
-    this.isDynamicFlushScheduled = true;
-
-    queueMicrotask(() => {
-      this.isDynamicFlushScheduled = false;
+    // Why: setTimeout(50ms) instead of queueMicrotask — debounce for SPA high-frequency mutations
+    if (this.dynamicTranslationTimer) clearTimeout(this.dynamicTranslationTimer);
+    this.dynamicTranslationTimer = setTimeout(() => {
+      this.dynamicTranslationTimer = null;
 
       if (!this.isTranslated || this.pendingDynamicNodes.size === 0) {
         this.pendingDynamicNodes.clear();
@@ -806,7 +808,7 @@ export class ContentScript {
       const nodesToTranslate = Array.from(this.pendingDynamicNodes);
       this.pendingDynamicNodes.clear();
       void this.translateNewNodes(nodesToTranslate, targetLanguage);
-    });
+    }, 50);
   }
 
   private collectTextNodesFromAddedNode(
@@ -873,24 +875,21 @@ export class ContentScript {
   }
 
   private isElementVisible(element: Element): boolean {
-    if (element.closest('[hidden], [aria-hidden="true"]')) {
-      return false;
-    }
+    // Fast path 1: hidden 属性チェック（低コスト）
+    if (element.closest('[hidden], [aria-hidden="true"]')) return false;
 
-    let current: Element | null = element;
+    // Fast path 2: 対象要素自身の display:none を先に確認
+    // Why: getComputedStyle を1回だけ呼び、display:none なら即リターン
+    const selfStyle = window.getComputedStyle(element);
+    if (selfStyle.display === "none" || selfStyle.visibility === "hidden") return false;
+
+    // 祖先トラバース（必要な場合のみ）
+    let current: Element | null = element.parentElement;
     while (current) {
-      if (
-        current.hasAttribute("hidden") ||
-        current.getAttribute("aria-hidden") === "true"
-      ) {
-        return false;
-      }
-
+      // hidden 属性の簡易チェックを先行
+      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden") === "true") return false;
       const style = window.getComputedStyle(current);
-      if (style.display === "none" || style.visibility === "hidden") {
-        return false;
-      }
-
+      if (style.display === "none" || style.visibility === "hidden") return false;
       current = current.parentElement;
     }
 
@@ -904,7 +903,10 @@ export class ContentScript {
     this.selectionHandler.disable();
     this.mutationObserver.disconnect();
     this.pendingDynamicNodes.clear();
-    this.isDynamicFlushScheduled = false;
+    if (this.dynamicTranslationTimer) {
+      clearTimeout(this.dynamicTranslationTimer);
+      this.dynamicTranslationTimer = null;
+    }
     this.floatingUI.hide();
     this.progressNotification.remove();
     logger.log("ContentScript cleaned up");
