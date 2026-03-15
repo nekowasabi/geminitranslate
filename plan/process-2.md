@@ -1,68 +1,85 @@
-# Process 2: P0 レースコンディション修正 (contentScript.ts)
+# Process 2: P0 キャッシュ読み込みバッチ化 (translationEngine.ts)
 
 ## Overview
-Phase 1→Phase 2でインスタンス変数`currentTranslationNodes`が上書きされ、遅延到着した Phase 1 の BATCH_COMPLETED が誤ったDOMノードに翻訳を適用する問題を解消する。クロージャスナップショットまたはMap分離で競合を排除する。
+getCachedTranslation() がループ内で1件ずつ browser.storage.local.get(singleKey) を呼び、N回のIPC往復が発生する。全キーを事前計算し browser.storage.local.get(allKeys) で1回取得するバッチ読み込みに変更する。
 
 ## Affected Files
 
 | ファイル | 行番号 | 変更内容 |
 |---------|--------|---------|
-| `src/content/contentScript.ts` | L41 | `currentTranslationNodes: TextNode[]` インスタンス変数を削除または `Map<1\|2, TextNode[]>` に変更 |
-| `src/content/contentScript.ts` | L307-309 | Phase1ノード代入 → `const phase1Snapshot = originalIndices.map(...)` のローカル定数化 |
-| `src/content/contentScript.ts` | L407-409 | Phase2ノード代入 → `const phase2Snapshot = oovIndices.map(...)` のローカル定数化 |
-| `src/content/contentScript.ts` | L650-662 | `handleBatchCompleted` 内の参照を phaseキーで分岐するMapから参照 |
+| `src/background/translationEngine.ts` | L213-222 | translateBatchSemiParallel 内のキャッシュチェックループ → `getBulkCachedTranslations()` |
+| `src/background/translationEngine.ts` | L437-446 | translateBatch 内のキャッシュチェックループ → 同上 |
+| `src/background/translationEngine.ts` | 新規 | `getBulkCachedTranslations(texts[], targetLanguage)` メソッド追加 |
 
 ## Implementation Notes
 
-### 変更前（現状の問題）
+### 変更前（現状）
 ```typescript
-// contentScript.ts:41
-private currentTranslationNodes: TextNode[] = [];
-
-// L307-309: Phase1開始
-this.currentTranslationNodes = originalIndices.map(i => viewport[i]);
-await this.messageBus.send(...);  // Phase1の非同期完了を待つ
-
-// L407-409: Phase2開始（Phase1のBATCH_COMPLETEDが未完了でも上書き）
-this.currentTranslationNodes = oovIndices.map(i => outOfViewport[i]);
-
-// L650-662: BATCH_COMPLETED handler（Phase1の遅延メッセージがPhase2のノードを参照）
-const node = this.currentTranslationNodes[batchIndex];  // 誤参照
+// translationEngine.ts:213-222 — N回のIPC往復
+for (let i = 0; i < texts.length; i++) {
+  const cached = await this.getCachedTranslation(texts[i], targetLanguage);
+  if (cached) { results[i] = cached; this.cacheHits++; }
+  else { uncachedIndices.push(i); this.cacheMisses++; }
+}
 ```
 
-### 変更後（推奨案A: Mapによるフェーズ分離）
+### 変更後（目標）
 ```typescript
-// Why: shared mutable instance var → phase-keyed Map
-//      currentTranslationNodes was overwritten before Phase 1 BATCH_COMPLETED messages
-//      arrived, causing wrong DOM nodes to receive translations.
-private phaseNodes: Map<1 | 2, TextNode[]> = new Map();
-
-// Phase1開始
-this.phaseNodes.set(1, originalIndices.map(i => viewport[i]));
-await this.messageBus.send({ phase: 1, ... });
-
-// Phase2開始（Phase1のMapエントリは維持される）
-this.phaseNodes.set(2, oovIndices.map(i => outOfViewport[i]));
-
-// BATCH_COMPLETED handler
-const phaseNodes = this.phaseNodes.get(payload.phase);
-if (!phaseNodes) return;  // 不明なphaseは無視
-const node = phaseNodes[batchIndex];
+// Why: get(keyArray) instead of N individual get() — single IPC round trip
+const cachedResults = await this.getBulkCachedTranslations(texts, targetLanguage);
+for (let i = 0; i < texts.length; i++) {
+  if (cachedResults[i] !== null) {
+    results[i] = cachedResults[i]!;
+    this.cacheHits++;
+  } else {
+    uncachedIndices.push(i);
+    this.cacheMisses++;
+  }
+}
 ```
 
-### 事前確認事項
-- `payload.phase` フィールドが実際に BATCH_COMPLETED メッセージに存在するか確認（L642付近）
-- `applyTranslationsAndTrack` の二重適用（L346-355 と L680-681）が競合していないか確認
+### 新規メソッド
+```typescript
+private async getBulkCachedTranslations(
+  texts: string[], targetLanguage: string
+): Promise<(string | null)[]> {
+  const cacheKeys = texts.map(t => this.getCacheKey(t, targetLanguage));
+  // Pass 1: memory cache (同期)
+  const results: (string | null)[] = cacheKeys.map(
+    key => this.memoryCache.get(key) ?? null
+  );
+  // Pass 2: storage bulk fetch for memory-miss keys
+  const missIndices = results.map((r, i) => r === null ? i : -1).filter(i => i >= 0);
+  if (missIndices.length > 0) {
+    const missKeys = missIndices.map(i => cacheKeys[i]);
+    try {
+      const storageResult = await browser.storage.local.get(missKeys);
+      for (const idx of missIndices) {
+        const data = storageResult[cacheKeys[idx]];
+        if (data) {
+          const entry = JSON.parse(data as string);
+          results[idx] = entry.translation;
+          this.promoteToMemoryCache(cacheKeys[idx], entry.translation);
+        }
+      }
+    } catch (error) {
+      logger.warn('Bulk storage read failed:', error);
+    }
+  }
+  return results;
+}
+```
 
 ---
 
 ## Red Phase: テスト作成と失敗確認
 
-- [ ] ブリーフィング確認: `docs/requirements/zero-base-redesign-report.md` BUG-004 セクション
-- [ ] `tests/unit/content/contentScript.test.ts` に以下のテストケースを追加:
-  - Phase1の BATCH_COMPLETED が Phase2開始後に到達した場合、Phase2のノードに誤適用されないこと
-  - Phase1のノードがPhase2開始後も正しく参照されること
-- [ ] テストを実行して失敗することを確認
+- [x] テスト追加:
+  - 全件 memory hit → storage.get 呼ばれないこと
+  - 全件 miss → storage.get が1回、キー配列で呼ばれること
+  - 一部 hit / 一部 miss の混在
+  - storage エラー時は null 扱い（graceful degradation）
+- [x] テスト実行で失敗を確認
 
 ✅ **Phase Complete**
 
@@ -70,12 +87,10 @@ const node = phaseNodes[batchIndex];
 
 ## Green Phase: 最小実装と成功確認
 
-- [ ] ブリーフィング確認
-- [ ] `currentTranslationNodes` インスタンス変数を `phaseNodes: Map<1 | 2, TextNode[]>` に変更
-- [ ] `translatePage()` 内のPhase1/Phase2ノード代入を `phaseNodes.set()` に変更
-- [ ] `handleBatchCompleted()` 内の参照を `phaseNodes.get(payload.phase)` に変更
-- [ ] Phase完了後に `phaseNodes.delete(phase)` でメモリ解放
-- [ ] テストを実行して成功することを確認
+- [x] `getBulkCachedTranslations()` メソッドを追加
+- [x] translateBatchSemiParallel (L213-222) を置き換え
+- [x] translateBatch (L437-446) を置き換え
+- [x] `npm test -- translationEngine` で成功確認
 
 ✅ **Phase Complete**
 
@@ -83,15 +98,13 @@ const node = phaseNodes[batchIndex];
 
 ## Refactor Phase: 品質改善
 
-- [ ] `applyTranslationsAndTrack` の二重適用問題を確認し、残存していれば解消
-- [ ] Whyコメントを追加
-- [ ] `npm run lint` がクリーンであることを確認
-- [ ] テストが継続して成功することを確認
+- [x] 2メソッドの重複キャッシュチェックが共通化されたことを確認
+- [x] `npx tsc --noEmit` 通過
 
 ✅ **Phase Complete**
 
 ---
 
 ## Dependencies
-- Requires: -（独立して実施可能、Process 1と並列実施可）
-- Blocks: Process 5（同一ファイル contentScript.ts に依存）
+- Requires: -（独立、Process 1 と並列可）
+- Blocks: Process 10

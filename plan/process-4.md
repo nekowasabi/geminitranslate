@@ -1,81 +1,43 @@
-# Process 4: P1 binary-split深度制限 (translationEngine.ts)
+# Process 4: P1 retry二重実装の一元化 (apiClient + translationEngine)
 
 ## Overview
-`translateByBinarySplit()` の無制限再帰を解消する。100テキストバッチでのParseCountMismatchError発生時、最大512 API呼び出しが発生していた問題を、深度1キャップで100呼び出し以内に制限する。
+apiClient.translate() と translationEngine.executeTranslationWithRetry() の両方で retry() が呼ばれ、最大 (3+1)×(3+1)=16 回の API 呼び出しが発生しうる。apiClient 側の retry を除去し engine 層に一元化する。
 
 ## Affected Files
 
 | ファイル | 行番号 | 変更内容 |
 |---------|--------|---------|
-| `src/background/translationEngine.ts` | L753 | `translateByBinarySplit()` シグネチャに `depth: number = 0` 引数を追加 |
-| `src/background/translationEngine.ts` | L806-813 | 再帰呼び出し箇所に深度チェックを追加 |
-| `src/shared/constants/config.ts` | - | `MAX_BINARY_SPLIT_DEPTH = 1` 定数を追加 |
+| `src/background/apiClient.ts` | L224 | `retry()` ラッパーを除去し、直接 fetch を実行 |
+| `src/background/translationEngine.ts` | L833 | 変更なし（retry 一元化先として残す） |
 
 ## Implementation Notes
 
-### 変更前（現状の問題）
+### 変更前（apiClient.ts:224）
 ```typescript
-// translationEngine.ts:753 — 深度制限なし
-private async translateByBinarySplit(
-  texts: string[],
-  targetLanguage: string,
-  requestBudget: RequestBudgetContext,
-  options: TranslationOptions,
-  offset: number
-): Promise<string[]> {
-  // ...
-  // L806-813: 再帰呼び出し（深度制限なし → 最大log2(100)=7層）
-  const [leftResult, rightResult] = await Promise.all([
-    this.translateByBinarySplit(leftTexts, ...),
-    this.translateByBinarySplit(rightTexts, ...)
-  ]);
-}
+return await retry(
+  async () => { /* fetch + parse */ },
+  { maxRetries: MAX_RETRIES, shouldRetry: (e) => !(e instanceof ParseCountMismatchError) }
+);
 ```
 
-### 変更後（目標）
+### 変更後
 ```typescript
-// config.ts に追加
-// Why: unlimited recursion → depth-capped binary split (MAX_BINARY_SPLIT_DEPTH=1)
-//      Unbounded recursion causes 512 API calls for 100 texts on persistent ParseCountMismatch.
-export const MAX_BINARY_SPLIT_DEPTH = 1;
-
-// translationEngine.ts:753
-// Why: depth parameter added to cap recursion
-private async translateByBinarySplit(
-  texts: string[],
-  targetLanguage: string,
-  requestBudget: RequestBudgetContext,
-  options: TranslationOptions,
-  offset: number,
-  depth: number = 0  // 追加
-): Promise<string[]> {
-  // L806-813: 深度チェックを追加
-  if (depth >= MAX_BINARY_SPLIT_DEPTH) {
-    // 深度上限到達: 個別翻訳にフォールバック
-    return await this.translateIndividually(texts, targetLanguage, requestBudget, options, offset);
-  }
-  const [leftResult, rightResult] = await Promise.all([
-    this.translateByBinarySplit(leftTexts, ..., depth + 1),
-    this.translateByBinarySplit(rightTexts, ..., depth + 1)
-  ]);
-}
+// Why: retry を engine 層に一元化 — 二重 retry による最大16試行を防ぐため
+// apiClient は単純な fetch + parse のみ担当
+const response = await this.fetchWithTimeout(...);
+return this.parseResponse(response, texts.length);
 ```
 
-### 期待される効果
-- 変更前: ParseCountMismatch × 100テキスト → 最大512 API呼び出し
-- 変更後: ParseCountMismatch × 100テキスト → 最大100 API呼び出し（個別翻訳フォールバック）
-- 改善率: 80%以上
+### 注意: testConnection() への影響
+`testConnection()` と `testConnectionWithConfig()` は apiClient を直接呼ぶ。これらはユーザー操作（ボタンクリック）で1回だけ呼ばれるため retry なしで許容。
 
 ---
 
 ## Red Phase: テスト作成と失敗確認
 
-- [ ] ブリーフィング確認: `docs/requirements/zero-base-redesign-report.md` BUG-003 セクション
-- [ ] `tests/unit/background/translationEngine.test.ts` に以下のテストケースを追加:
-  - ParseCountMismatchError発生時、`translateByBinarySplit` が深度2以上で再帰しないこと
-  - 深度1到達後は `translateIndividually` が呼ばれること
-  - 100テキストバッチでのAPI呼び出し回数が100回以内であること
-- [ ] テストを実行して失敗することを確認
+- [x] apiClient テストで retry 呼び出しの期待値を更新（retry なしに変更）
+- [x] translationEngine テストで retry が engine 層でのみ発生することを確認
+- [x] テスト実行で差分確認
 
 ✅ **Phase Complete**
 
@@ -83,13 +45,9 @@ private async translateByBinarySplit(
 
 ## Green Phase: 最小実装と成功確認
 
-- [ ] ブリーフィング確認
-- [ ] `config.ts` に `MAX_BINARY_SPLIT_DEPTH = 1` を追加
-- [ ] `translateByBinarySplit()` シグネチャに `depth: number = 0` を追加
-- [ ] 再帰呼び出し箇所に `depth >= MAX_BINARY_SPLIT_DEPTH` チェックを追加
-- [ ] チェック到達時は `translateIndividually()` に委譲
-- [ ] 再帰呼び出しに `depth + 1` を渡す
-- [ ] テストを実行して成功することを確認
+- [x] apiClient.translate() から retry() ラッパーを除去
+- [x] エラーハンドリング（ApiError, TimeoutError のスロー）はそのまま維持
+- [x] `npm test` で全テスト成功確認
 
 ✅ **Phase Complete**
 
@@ -97,14 +55,13 @@ private async translateByBinarySplit(
 
 ## Refactor Phase: 品質改善
 
-- [ ] Whyコメントを `config.ts` の `MAX_BINARY_SPLIT_DEPTH` 定義箇所と `translateByBinarySplit` シグネチャに追加
-- [ ] `npm run lint` がクリーンであることを確認
-- [ ] テストが継続して成功することを確認
+- [x] Why コメント追加
+- [x] `npx tsc --noEmit` 通過
 
 ✅ **Phase Complete**
 
 ---
 
 ## Dependencies
-- Requires: Process 1（同一ファイル）、Process 3（`executeTranslationWithRetry` 変更後）
-- Blocks: Process 5, Process 10
+- Requires: -（独立だが Sprint 2 推奨）
+- Blocks: Process 10
