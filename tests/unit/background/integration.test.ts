@@ -213,7 +213,7 @@ describe('Background Layer Integration', () => {
         },
       };
 
-      client.translate = jest.fn().mockResolvedValue(['テスト']);
+      (engine as any).apiClient.translate = jest.fn().mockResolvedValue(['テスト']);
 
       const mockSendResponse = jest.fn();
       const mockSender = { id: 'test' } as any;

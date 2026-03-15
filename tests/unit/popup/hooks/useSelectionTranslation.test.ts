@@ -9,12 +9,20 @@ import { MessageType } from '@shared/messages/types';
 // Mock browser API
 const mockAddListener = jest.fn();
 const mockRemoveListener = jest.fn();
+const mockSessionSet = jest.fn().mockResolvedValue(undefined);
+const mockSessionGet = jest.fn().mockResolvedValue({});
 
 global.browser = {
   runtime: {
     onMessage: {
       addListener: mockAddListener,
       removeListener: mockRemoveListener,
+    },
+  },
+  storage: {
+    session: {
+      get: mockSessionGet,
+      set: mockSessionSet,
     },
   },
 } as any;

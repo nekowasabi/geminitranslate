@@ -149,11 +149,16 @@ describe('BrowserAdapter', () => {
     it('should send message to tab', async () => {
       const tabId = 1;
       const message = { action: 'test' };
-      (global.chrome.tabs.sendMessage as jest.Mock).mockResolvedValue({ status: 'ok' });
+      (global.chrome.tabs.sendMessage as jest.Mock).mockImplementation(
+        (tabId: number, message: any, callback?: (response: any) => void) => {
+          if (callback) callback({ status: 'ok' });
+          return Promise.resolve({ status: 'ok' });
+        }
+      );
 
       await BrowserAdapter.tabs.sendMessage(tabId, message);
 
-      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(tabId, message);
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(tabId, message, expect.any(Function));
     });
   });
 });

@@ -1189,6 +1189,197 @@ describe("TranslationEngine", () => {
     }, 30000);
   });
 
+  // RED: setBulkCachedTranslations tests (P1 bulk write)
+  describe("setBulkCachedTranslations (P1 bulk write)", () => {
+    beforeEach(async () => {
+      await engine.initialize();
+    });
+
+    it("should call browser.storage.local.set only once for multiple translations", async () => {
+      mockApiClient.translate.mockResolvedValueOnce(["翻訳1", "翻訳2", "翻訳3"]);
+
+      await engine.translateBatch(["text1", "text2", "text3"], "Japanese");
+
+      // After T1 fix: storage.set should be called exactly once (bulk), not 3 times
+      expect((global as any).browser.storage.local.set).toHaveBeenCalledTimes(1);
+    });
+
+    it("should update memory cache immediately so subsequent calls hit memory without storage", async () => {
+      mockApiClient.translate.mockResolvedValueOnce(["こんにちは"]);
+      await engine.translateBatch(["Hello"], "Japanese");
+
+      // Clear mock counts but keep implementation
+      jest.clearAllMocks();
+      // Override storage.get to return empty (simulate storage unavailable)
+      (global as any).browser.storage.local.get = jest.fn().mockResolvedValue({});
+
+      // Second call: memory cache should be hit, no API call needed
+      await engine.translateBatch(["Hello"], "Japanese");
+
+      // setBulkCachedTranslations updated memory cache synchronously
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
+    });
+
+    it("should not propagate storage write failure to caller", async () => {
+      // Make storage.set throw
+      (global as any).browser.storage.local.set = jest.fn().mockRejectedValue(
+        new Error("Storage quota exceeded"),
+      );
+
+      mockApiClient.translate.mockResolvedValueOnce(["こんにちは"]);
+
+      // Should resolve successfully even when storage write fails
+      await expect(
+        engine.translateBatch(["Hello"], "Japanese"),
+      ).resolves.toEqual(["こんにちは"]);
+    });
+  });
+
+  // RED: getBulkCachedTranslations tests (P2 bulk read)
+  describe("getBulkCachedTranslations (P2 bulk read)", () => {
+    beforeEach(async () => {
+      await engine.initialize();
+    });
+
+    it("should not call storage.get with key array when all texts are in memory cache", async () => {
+      // Pre-populate memory cache
+      mockApiClient.translate.mockResolvedValueOnce(["翻訳A", "翻訳B"]);
+      await engine.translateBatch(["TextA", "TextB"], "Japanese");
+
+      jest.clearAllMocks();
+      const storageGetSpy = jest.fn().mockResolvedValue({});
+      (global as any).browser.storage.local.get = storageGetSpy;
+      (global as any).browser.storage.local.set = jest.fn().mockResolvedValue(undefined);
+
+      // Second call: all in memory cache
+      await engine.translateBatch(["TextA", "TextB"], "Japanese");
+
+      // No API call
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
+      // storage.get should NOT be called with a non-empty key array
+      const arrayCalls = storageGetSpy.mock.calls.filter(
+        (call) => Array.isArray(call[0]) && call[0].length > 0,
+      );
+      expect(arrayCalls).toHaveLength(0);
+    });
+
+    it("should call storage.get once with array of all miss keys", async () => {
+      // Fresh engine: no memory cache
+      const storageGetSpy = jest.fn().mockResolvedValue({});
+      (global as any).browser.storage.local.get = storageGetSpy;
+
+      mockApiClient.translate.mockResolvedValueOnce(["翻訳X", "翻訳Y", "翻訳Z"]);
+      await engine.translateBatch(["TextX", "TextY", "TextZ"], "Japanese");
+
+      // storage.get should be called with an array of keys (bulk lookup)
+      const arrayCalls = storageGetSpy.mock.calls.filter(
+        (call) => Array.isArray(call[0]) && call[0].length > 0,
+      );
+      expect(arrayCalls.length).toBeGreaterThan(0);
+      // The array should contain all 3 cache keys
+      const keysRequested = arrayCalls[0][0] as string[];
+      expect(keysRequested).toHaveLength(3);
+    });
+
+    it("should gracefully degrade when storage.get throws", async () => {
+      // Make storage.get throw
+      (global as any).browser.storage.local.get = jest
+        .fn()
+        .mockRejectedValue(new Error("Storage read error"));
+
+      mockApiClient.translate.mockResolvedValueOnce(["翻訳1"]);
+
+      // Should still succeed (graceful degradation)
+      await expect(
+        engine.translateBatch(["text1"], "Japanese"),
+      ).resolves.toEqual(["翻訳1"]);
+    });
+  });
+
+  // RED: getCacheKey encoding tests (P6 safe key encoding)
+  describe("getCacheKey (P6 safe key encoding)", () => {
+    beforeEach(async () => {
+      await engine.initialize();
+    });
+
+    it("should cache and retrieve text containing colons correctly", async () => {
+      const textWithColons = "http://example.com:8080/path";
+      mockApiClient.translate.mockResolvedValueOnce(["例URL翻訳"]);
+
+      const result1 = await engine.translateBatch([textWithColons], "Japanese");
+      expect(result1).toEqual(["例URL翻訳"]);
+
+      // Second call should hit memory cache (no API call)
+      jest.clearAllMocks();
+      const result2 = await engine.translateBatch([textWithColons], "Japanese");
+      expect(result2).toEqual(["例URL翻訳"]);
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
+    });
+
+    it("should not use legacy unencoded key for text containing colons", async () => {
+      // Without encodeURIComponent: "a:b" with lang "Japanese" → key "translation:a:b:Japanese"
+      // With encodeURIComponent: "a:b" → key "translation:a%3Ab:Japanese"
+      // Pre-populate with the OLD (unencoded) key to ensure it is NOT returned
+      const unencodedKey = "translation:a:b:Japanese";
+      const oldEntry = JSON.stringify({ text: "a:b", translation: "古いキャッシュ" });
+      mockBrowserStorage.set(unencodedKey, oldEntry);
+
+      // After T4 (encodeURIComponent), getCacheKey("a:b", "Japanese") = "translation:a%3Ab:Japanese"
+      // so the pre-populated "translation:a:b:Japanese" should NOT be returned
+      mockApiClient.translate.mockResolvedValueOnce(["新しい翻訳"]);
+      const result = await engine.translateBatch(["a:b"], "Japanese");
+
+      // API should be called because the old key doesn't match the new encoded key
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(["新しい翻訳"]);
+    });
+  });
+
+  // RED: TTL cache expiration tests (P8)
+  describe("TTL cache expiration (P8)", () => {
+    beforeEach(async () => {
+      await engine.initialize();
+    });
+
+    it("should return null for entries older than TTL (expired)", async () => {
+      const ONE_HOUR_PLUS = 60 * 60 * 1000 + 1; // TTL + 1ms
+
+      // Store an already-expired entry directly in mock storage
+      const cacheKey = "translation:TTLTest:Japanese";
+      const expiredEntry = JSON.stringify({
+        text: "TTLTest",
+        translation: "期限切れ翻訳",
+        createdAt: Date.now() - ONE_HOUR_PLUS, // already expired
+      });
+      mockBrowserStorage.set(cacheKey, expiredEntry);
+
+      // Should be treated as a miss (expired), so API is called
+      mockApiClient.translate.mockResolvedValueOnce(["新しい翻訳"]);
+      const result = await engine.translateBatch(["TTLTest"], "Japanese");
+
+      // Should get fresh translation, not the expired cached one
+      expect(result).toEqual(["新しい翻訳"]);
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(1);
+    });
+
+    it("should treat entries without createdAt as valid (backward compatibility)", async () => {
+      // Legacy format without createdAt field
+      const cacheKey = "translation:LegacyTest:Japanese";
+      const legacyEntry = JSON.stringify({
+        text: "LegacyTest",
+        translation: "レガシー翻訳",
+        // No createdAt field
+      });
+      mockBrowserStorage.set(cacheKey, legacyEntry);
+
+      const result = await engine.translateBatch(["LegacyTest"], "Japanese");
+
+      // Should return the legacy cached value (backward compat — no createdAt = valid forever)
+      expect(result).toEqual(["レガシー翻訳"]);
+      expect(mockApiClient.translate).not.toHaveBeenCalled();
+    });
+  });
+
   // RED: browser.storage.local migration tests
   // These tests verify that the engine uses browser.storage.local instead of sessionStorage/localStorage
   // Why: Chrome MV3 Service Workers do not have access to DOM Storage APIs (sessionStorage/localStorage)

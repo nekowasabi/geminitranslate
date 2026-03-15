@@ -172,8 +172,11 @@ describe('IconBadge', () => {
       const badge = document.querySelector('.icon-badge') as HTMLElement;
       badge.click();
 
-      // Badge should be removed after click
-      expect(document.querySelector('.icon-badge')).toBeNull();
+      // Why: hide() is intentionally NOT called in handleClick() — it is called by
+      // showTranslationResult() or error handlers after async operations complete.
+      // So badge remains visible after click until the caller removes it.
+      expect(document.querySelector('.icon-badge')).not.toBeNull();
+      expect(onClick).toHaveBeenCalledTimes(1);
     });
   });
 

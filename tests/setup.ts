@@ -6,7 +6,9 @@ global.chrome = {
     sendMessage: jest.fn(),
     onMessage: {
       addListener: jest.fn(),
+      removeListener: jest.fn(),
     },
+    lastError: undefined,
     getManifest: jest.fn(() => ({ version: '3.0.0', manifest_version: 3 })),
     openOptionsPage: jest.fn(),
   },
@@ -30,6 +32,17 @@ global.chrome = {
         }
         return Promise.resolve();
       }),
+      clear: jest.fn((callback) => {
+        if (callback) {
+          callback();
+        }
+        return Promise.resolve();
+      }),
+    },
+    // Why: session storage mock added — useSelectionTranslation uses browser.storage.session
+    session: {
+      get: jest.fn().mockResolvedValue({}),
+      set: jest.fn().mockResolvedValue(undefined),
     },
   },
   tabs: {
@@ -39,7 +52,13 @@ global.chrome = {
       }
       return Promise.resolve([]);
     }),
-    sendMessage: jest.fn(),
+    // Why: callback form instead of Promise-only — BrowserAdapter.tabs.sendMessage uses callback
+    sendMessage: jest.fn((tabId, message, callback) => {
+      if (callback) {
+        callback(undefined);
+      }
+      return Promise.resolve(undefined);
+    }),
   },
   commands: {
     onCommand: {

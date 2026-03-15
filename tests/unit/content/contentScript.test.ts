@@ -2429,6 +2429,7 @@ describe("ContentScript", () => {
     let mutationCallback: (mutations: MutationRecord[]) => void;
 
     beforeEach(() => {
+      jest.useFakeTimers();
       jest.clearAllMocks();
 
       // Default filterBatchTexts mock
@@ -2445,6 +2446,10 @@ describe("ContentScript", () => {
         },
       );
       contentScript["mutationObserver"].observe = mockObserve;
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it("should only translate new text nodes instead of full page re-translation", async () => {
@@ -2551,7 +2556,9 @@ describe("ContentScript", () => {
       } as MutationRecord;
 
       if (mutationCallback) {
-        await mutationCallback([mockMutation]);
+        mutationCallback([mockMutation]);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
       }
 
       // filterBatchTexts should have been called
@@ -2716,7 +2723,7 @@ describe("ContentScript", () => {
 
       if (mutationCallback) {
         mutationCallback([mockMutation]);
-        await Promise.resolve();
+        jest.advanceTimersByTime(50);
         await Promise.resolve();
       }
 
@@ -2762,7 +2769,7 @@ describe("ContentScript", () => {
 
       if (mutationCallback) {
         mutationCallback([mockMutation]);
-        await Promise.resolve();
+        jest.advanceTimersByTime(50);
         await Promise.resolve();
       }
 
@@ -2804,7 +2811,7 @@ describe("ContentScript", () => {
 
       if (mutationCallback) {
         mutationCallback([mockMutation]);
-        await Promise.resolve();
+        jest.advanceTimersByTime(50);
         await Promise.resolve();
       }
 
@@ -2814,7 +2821,7 @@ describe("ContentScript", () => {
 
       if (mutationCallback) {
         mutationCallback([mockMutation]);
-        await Promise.resolve();
+        jest.advanceTimersByTime(50);
         await Promise.resolve();
       }
 
@@ -2857,6 +2864,107 @@ describe("ContentScript", () => {
 
       // extractTextNodes (full page scan) should NOT be called
       expect(extractSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("isElementVisible", () => {
+    it("should return false for element with display:none", () => {
+      const el = document.createElement("div");
+      el.style.display = "none";
+      document.body.appendChild(el);
+      expect((contentScript as any).isElementVisible(el)).toBe(false);
+      document.body.removeChild(el);
+    });
+
+    it("should return false for element with visibility:hidden", () => {
+      const el = document.createElement("div");
+      el.style.visibility = "hidden";
+      document.body.appendChild(el);
+      expect((contentScript as any).isElementVisible(el)).toBe(false);
+      document.body.removeChild(el);
+    });
+
+    it("should return false when ancestor has hidden attribute", () => {
+      const parent = document.createElement("div");
+      parent.setAttribute("hidden", "");
+      const el = document.createElement("span");
+      parent.appendChild(el);
+      document.body.appendChild(parent);
+      expect((contentScript as any).isElementVisible(el)).toBe(false);
+      document.body.removeChild(parent);
+    });
+
+    it("should return false when ancestor has aria-hidden=true", () => {
+      const parent = document.createElement("div");
+      parent.setAttribute("aria-hidden", "true");
+      const el = document.createElement("span");
+      parent.appendChild(el);
+      document.body.appendChild(parent);
+      expect((contentScript as any).isElementVisible(el)).toBe(false);
+      document.body.removeChild(parent);
+    });
+
+    it("should return true for a normal visible element", () => {
+      const el = document.createElement("div");
+      document.body.appendChild(el);
+      expect((contentScript as any).isElementVisible(el)).toBe(true);
+      document.body.removeChild(el);
+    });
+  });
+
+  describe("queueDynamicTranslation debounce", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("should debounce multiple calls within 50ms into a single translation", async () => {
+      (contentScript as any).isTranslated = true;
+
+      const node1 = document.createTextNode("Text 1");
+      const node2 = document.createTextNode("Text 2");
+      document.body.appendChild(node1);
+      document.body.appendChild(node2);
+
+      const translateSpy = jest
+        .spyOn(contentScript as any, "translateNewNodes")
+        .mockResolvedValue(undefined);
+
+      (contentScript as any).queueDynamicTranslation([node1], "ja");
+      (contentScript as any).queueDynamicTranslation([node2], "ja");
+
+      expect(translateSpy).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+
+      expect(translateSpy).toHaveBeenCalledTimes(1);
+      expect(translateSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([node1, node2]),
+        "ja",
+      );
+    });
+
+    it("should execute translation after 50ms debounce", () => {
+      (contentScript as any).isTranslated = true;
+
+      const node = document.createTextNode("Test text");
+      document.body.appendChild(node);
+
+      const translateSpy = jest
+        .spyOn(contentScript as any, "translateNewNodes")
+        .mockResolvedValue(undefined);
+
+      (contentScript as any).queueDynamicTranslation([node], "ja");
+
+      jest.advanceTimersByTime(49);
+      expect(translateSpy).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
+      expect(translateSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -31,7 +31,7 @@ describe('UI Integration Flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (StorageManager as jest.Mock).mockImplementation(() => mockStorageManager);
-    (MessageBus.send as jest.Mock) = mockMessageBus.send;
+    (MessageBus.send as jest.Mock).mockImplementation(mockMessageBus.send);
 
     // Default storage data
     mockStorageManager.get.mockResolvedValue({
@@ -130,8 +130,8 @@ describe('UI Integration Flow', () => {
       const { default: OptionsApp } = await import('@options/App');
 
       mockMessageBus.send.mockResolvedValue({
-        status: 'success',
-        data: { responseTime: 123 },
+        success: true,
+        data: { success: true, responseTime: 123 },
       });
 
       render(<OptionsApp />);
@@ -144,9 +144,12 @@ describe('UI Integration Flow', () => {
       fireEvent.click(testButton);
 
       await waitFor(() => {
-        expect(mockMessageBus.send).toHaveBeenCalledWith({
-          type: MessageType.TEST_CONNECTION,
-        });
+        expect(mockMessageBus.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: MessageType.TEST_CONNECTION,
+            action: 'testConnection',
+          })
+        );
       });
 
       await waitFor(() => {

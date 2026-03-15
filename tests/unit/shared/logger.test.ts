@@ -140,6 +140,47 @@ describe('Logger', () => {
     });
   });
 
+  describe('debug', () => {
+    let consoleDebugSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation();
+    });
+
+    afterEach(() => {
+      consoleDebugSpy.mockRestore();
+    });
+
+    it('should prefix with [DEBUG]', () => {
+      logger.debug('test message');
+      expect(consoleDebugSpy).toHaveBeenCalledTimes(1);
+      const callArgs = consoleDebugSpy.mock.calls[0];
+      expect(callArgs[0]).toContain('[DEBUG]');
+      expect(callArgs[0]).toContain('test message');
+    });
+
+    it('should pass multiple arguments', () => {
+      logger.debug('arg1', 'arg2', 'arg3');
+      expect(consoleDebugSpy).toHaveBeenCalledTimes(1);
+      const callArgs = consoleDebugSpy.mock.calls[0];
+      expect(callArgs[0]).toContain('arg1');
+      expect(callArgs[1]).toBe('arg2');
+      expect(callArgs[2]).toBe('arg3');
+    });
+
+    it('should suppress in production mode', () => {
+      // productionモードではdebugも抑制する
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      jest.resetModules();
+      const { logger: prodLogger } = require('../../../src/shared/utils/logger');
+      prodLogger.debug('should be suppressed');
+      expect(consoleDebugSpy).not.toHaveBeenCalled();
+      process.env.NODE_ENV = originalEnv;
+      jest.resetModules();
+    });
+  });
+
   describe('formatting', () => {
     it('should format objects correctly', () => {
       const obj = { foo: 'bar', nested: { key: 'value' } };

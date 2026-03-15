@@ -246,6 +246,18 @@ describe("OpenRouterClient", () => {
       }
     });
 
+    it("should NOT retry internally — retry is handled by engine layer (P4)", async () => {
+      // Why: apiClient の retry を engine 層に一元化 — 二重 retry による最大16試行を防ぐため
+      // After T3: apiClient.translate should call fetch exactly once (no internal retry)
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network error"));
+
+      const translatePromise = client.translate(["Hello"], "Japanese");
+      await Promise.allSettled([translatePromise, jest.runAllTimersAsync()]);
+
+      // After T3: fetch called only once (no retry in apiClient)
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it("should not include provider when not configured", async () => {
       (global.chrome.storage.local.get as jest.Mock).mockImplementation(
         (keys, callback) => {
@@ -795,9 +807,10 @@ describe("OpenRouterClient", () => {
       await client.initialize();
     });
 
-    it("should call fetch at most MAX_RETRIES+1 times on network error (not 16 times)", async () => {
-      // BUG-003: apiClient と translationEngine が二重リトライしていた場合、最大16回になる
-      // retry.ts 統合後は apiClient 層で最大4回(MAX_RETRIES+1=4)に制限される
+    it("should call fetch exactly once on network error (retry moved to engine layer, P4)", async () => {
+      // P4: retry を engine 層に一元化 — apiClient は fetch を1回だけ呼ぶ
+      // Before P4: apiClient で最大4回(MAX_RETRIES=3+1=4)
+      // After P4: engine 層で retry を制御し、apiClient は1回のみ
       (global.fetch as jest.Mock).mockRejectedValue(new Error("network error"));
 
       const translatePromise = client.translate(["hello"], "Japanese");
@@ -807,8 +820,8 @@ describe("OpenRouterClient", () => {
       ]);
 
       expect(result.status).toBe("rejected");
-      // 二重リトライで16回ではなく、最大4回(MAX_RETRIES=3, なので3+1=4)
-      expect(global.fetch).toHaveBeenCalledTimes(4);
+      // Why: engine 層に一元化 — apiClient は fetch を1回だけ呼ぶ
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it("should NOT retry ParseCountMismatchError", async () => {
