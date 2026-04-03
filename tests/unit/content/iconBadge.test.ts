@@ -233,4 +233,54 @@ describe('IconBadge', () => {
       expect(badge).not.toBeNull();
     });
   });
+
+  describe('mouseup競合防止', () => {
+    it('バッジ要素のmousedownイベントがdocumentに伝播しないこと', () => {
+      const position: Position = { x: 100, y: 200 };
+      const onClick = jest.fn();
+
+      iconBadge.show(position, onClick);
+
+      const badge = document.querySelector('.icon-badge') as HTMLElement;
+      expect(badge).not.toBeNull();
+
+      // documentレベルのmousedownリスナーを設置して伝播を監視
+      const documentMouseDownHandler = jest.fn();
+      document.addEventListener('mousedown', documentMouseDownHandler);
+
+      // バッジ要素上でmousedownイベントを発火（bubbles: trueで伝播するはず）
+      const mouseDownEvent = new MouseEvent('mousedown', { bubbles: true });
+      badge.dispatchEvent(mouseDownEvent);
+
+      // バッジ要素がstopPropagationしていればdocumentには伝播しない
+      expect(documentMouseDownHandler).not.toHaveBeenCalled();
+
+      // Cleanup
+      document.removeEventListener('mousedown', documentMouseDownHandler);
+    });
+
+    it('バッジ要素のmouseupイベントがdocumentに伝播しないこと', () => {
+      const position: Position = { x: 100, y: 200 };
+      const onClick = jest.fn();
+
+      iconBadge.show(position, onClick);
+
+      const badge = document.querySelector('.icon-badge') as HTMLElement;
+      expect(badge).not.toBeNull();
+
+      // documentレベルのmouseupリスナーを設置して伝播を監視
+      const documentMouseUpHandler = jest.fn();
+      document.addEventListener('mouseup', documentMouseUpHandler);
+
+      // バッジ要素上でmouseupイベントを発火（bubbles: trueで伝播するはず）
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      badge.dispatchEvent(mouseUpEvent);
+
+      // バッジ要素がstopPropagationしていればdocumentには伝播しない
+      expect(documentMouseUpHandler).not.toHaveBeenCalled();
+
+      // Cleanup
+      document.removeEventListener('mouseup', documentMouseUpHandler);
+    });
+  });
 });

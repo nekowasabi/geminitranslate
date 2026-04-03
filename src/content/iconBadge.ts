@@ -15,6 +15,7 @@ import { Position } from './floatingUI';
 import StorageManager from '@shared/storage/StorageManager';
 
 export class IconBadge {
+  static readonly CLASS_NAME = 'icon-badge';
   private badgeElement: HTMLElement | null = null;
   private clickHandler: (() => void) | null = null;
   private floatingResultElement: HTMLElement | null = null;
@@ -115,7 +116,7 @@ export class IconBadge {
    */
   private createBadgeElement(): HTMLElement {
     const badge = document.createElement('div');
-    badge.className = 'icon-badge';
+    badge.className = IconBadge.CLASS_NAME;
 
     // Detect dark mode
     const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -153,6 +154,10 @@ export class IconBadge {
       badge.style.transform = 'scale(1)';
       badge.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
     });
+
+    // Why: stopPropagation単体では将来のUI要素追加時に漏れる可能性あり。二重防御。
+    badge.addEventListener('mousedown', (e) => e.stopPropagation());
+    badge.addEventListener('mouseup', (e) => e.stopPropagation());
 
     return badge;
   }

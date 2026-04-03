@@ -185,6 +185,13 @@ export class SelectionHandler {
    * Handle mouseup event
    */
   private handleMouseUp(event: MouseEvent): void {
+    // Why: stopPropagation単体では将来のUI要素追加時に漏れる可能性あり。二重防御。
+    // Why: instanceofチェック — Documentノード等HTMLElement以外のtargetでclosestが未定義となるのを防ぐ
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest(`.${IconBadge.CLASS_NAME}`)) {
+      return;
+    }
+
     // Small delay to ensure selection is complete
     setTimeout(async () => {
       const selectedText = this.getSelectedText();
