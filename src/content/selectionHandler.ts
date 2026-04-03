@@ -15,6 +15,35 @@ import { logger } from '@shared/utils';
 import { IconBadge } from './iconBadge';
 import StorageManager from '@shared/storage/StorageManager';
 
+/**
+ * Toast style constants - consistent with ProgressNotification
+ * Why: Reusing ProgressNotification color constants directly would require importing the entire module.
+ * Instead, define matching constants here to keep SelectionHandler self-contained.
+ */
+const TOAST_STYLES = {
+  POSITION: {
+    BOTTOM: '20px',
+    RIGHT: '20px',
+  },
+  Z_INDEX: '10001',
+  COLORS: {
+    loading: '#4F46E5',  // ProgressNotification NORMAL_BG
+    error: '#EF4444',    // ProgressNotification ERROR_BG
+    info: '#3B82F6',     // Informational blue
+  },
+  AUTO_HIDE_MS: 5000,
+} as const;
+
+// Why: shared message constants for toast and inline error — avoids message drift between the two UI surfaces.
+const TOAST_MESSAGES = {
+  LOADING: '翻訳中...',
+  TRANSLATION_FAILED: '翻訳に失敗しました',
+  TRANSLATION_ERROR: '翻訳エラーが発生しました',
+  IMAGE_SELECTION: '画像を含む選択ではテキスト部分のみ翻訳できます',
+} as const;
+
+export type ToastType = 'loading' | 'error' | 'info';
+
 export class SelectionHandler {
   private messageBus: MessageBus;
   private iconBadge: IconBadge;
@@ -26,6 +55,10 @@ export class SelectionHandler {
   // Why: error flag instead of re-throw — translateSelection is called directly in tests expecting null return;
   // re-throwing would break those tests. Flag lets the click callback distinguish "error" vs "empty result".
   private lastTranslationErrored = false;
+
+  // Toast notification state
+  private toastElement: HTMLElement | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.messageBus = new MessageBus();
@@ -91,8 +124,70 @@ export class SelectionHandler {
     this.mouseUpHandler = null;
     this.enabled = false;
     this.iconBadge.hide();
+    this.hideSelectionToast();
 
     logger.log('SelectionHandler disabled');
+  }
+
+  /**
+   * Show a lightweight toast notification near the selection area
+   * Why: Dedicated toast instead of reusing ProgressNotification — ProgressNotification includes
+   // a progress bar and phase management designed for full-page translation. Selection translation
+   // needs a simpler, lightweight notification.
+   *
+   * @param message - Toast message text
+   * @param type - Toast style type: 'loading' (persistent), 'error' (auto-hide 5s), 'info' (auto-hide 5s)
+   */
+  showSelectionToast(message: string, type: ToastType): void {
+    this.hideSelectionToast();
+
+    const toast = document.createElement('div');
+    toast.className = 'gemini-translate-selection-toast';
+
+    Object.assign(toast.style, {
+      position: 'fixed',
+      bottom: TOAST_STYLES.POSITION.BOTTOM,
+      right: TOAST_STYLES.POSITION.RIGHT,
+      zIndex: TOAST_STYLES.Z_INDEX,
+      padding: '12px 16px',
+      borderRadius: '8px',
+      backgroundColor: TOAST_STYLES.COLORS[type],
+      color: '#FFFFFF',
+      fontSize: '14px',
+      fontWeight: '500',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+      transition: 'opacity 0.3s ease',
+      opacity: '0',
+    });
+
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Trigger fade-in via rAF
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+
+    this.toastElement = toast;
+
+    // Why: loading type has no auto-hide — it persists until explicitly hidden (e.g. translation completes).
+    // error/info auto-hide after 5s to avoid lingering stale notifications.
+    if (type === 'error' || type === 'info') {
+      this.toastTimer = setTimeout(() => this.hideSelectionToast(), TOAST_STYLES.AUTO_HIDE_MS);
+    }
+  }
+
+  /**
+   * Hide and remove the current toast notification
+   */
+  hideSelectionToast(): void {
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
+    }
+    if (this.toastElement?.parentNode) {
+      this.toastElement.remove();
+      this.toastElement = null;
+    }
   }
 
   /**
@@ -222,6 +317,7 @@ export class SelectionHandler {
               // Why: try-finally で setLoading(false) を確実解除。成功/失敗/例外の全パスで解除漏れゼロを保証。
               try {
                 this.iconBadge.setLoading(true);
+                this.showSelectionToast(TOAST_MESSAGES.LOADING, 'loading');
 
                 const targetLanguage = await this.storageManager.getTargetLanguage();
 
@@ -237,6 +333,7 @@ export class SelectionHandler {
 
                 // Show FloatingUI with translation result
                 if (translatedText && selectedText) {
+                  this.hideSelectionToast();
                   await this.iconBadge.showTranslationResult(
                     selectedText,
                     translatedText,
@@ -251,19 +348,34 @@ export class SelectionHandler {
                   // Why: distinguish exception path (lastTranslationErrored) from empty-response path
                   // to show the correct user-facing message in each case.
                   if (this.lastTranslationErrored) {
-                    this.iconBadge.showInlineError('翻訳エラーが発生しました');
+                    this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, 'error');
+                    this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
                   } else {
-                    this.iconBadge.showInlineError('翻訳に失敗しました');
+                    this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_FAILED, 'error');
+                    this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_FAILED);
                   }
                 }
               } catch (error) {
                 logger.error('Failed to handle IconBadge click:', error);
-                this.iconBadge.showInlineError('翻訳エラーが発生しました');
+                this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, 'error');
+                this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
               } finally {
                 this.iconBadge.setLoading(false);
               }
             }
           );
+        }
+      } else {
+        // Why: 画像翻訳は大規模機能（OCR等が必要）でスコープ外。
+        // ユーザーが「なぜ反応しないか」を理解できるフィードバックに留める。
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const container = range.cloneContents();
+          const hasImages = container.querySelectorAll('img').length > 0;
+          if (hasImages) {
+            this.showSelectionToast(TOAST_MESSAGES.IMAGE_SELECTION, 'info');
+          }
         }
       }
     }, 10);
