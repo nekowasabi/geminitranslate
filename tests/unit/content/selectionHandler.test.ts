@@ -28,12 +28,15 @@ const mockSetLoading = jest.fn();
 const mockShowInlineError = jest.fn();
 jest.mock('@content/iconBadge', () => {
   return {
-    IconBadge: jest.fn().mockImplementation(() => ({
-      show: mockIconBadgeShow,
-      hide: mockIconBadgeHide,
-      setLoading: mockSetLoading,
-      showInlineError: mockShowInlineError,
-    })),
+    IconBadge: Object.assign(
+      jest.fn().mockImplementation(() => ({
+        show: mockIconBadgeShow,
+        hide: mockIconBadgeHide,
+        setLoading: mockSetLoading,
+        showInlineError: mockShowInlineError,
+      })),
+      { CLASS_NAME: 'icon-badge' }
+    ),
   };
 });
 
@@ -635,6 +638,126 @@ describe('SelectionHandler', () => {
 
       // Cleanup
       document.body.removeChild(div);
+    });
+  });
+
+  describe('mouseup競合防止', () => {
+    it('バッジ要素上のmouseupではhandleMouseUpの本体処理が実行されないこと', (done) => {
+      // バッジ要素を模擬的に作成
+      const badgeElement = document.createElement('div');
+      badgeElement.className = 'icon-badge';
+      document.body.appendChild(badgeElement);
+
+      const div = document.createElement('div');
+      div.textContent = 'Selected text near badge';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      // テキストを選択状態にする
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      // バッジ要素をtargetにしたmouseupイベントを発火
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+      });
+      Object.defineProperty(mouseUpEvent, 'target', {
+        value: badgeElement,
+        writable: false,
+      });
+      document.dispatchEvent(mouseUpEvent);
+
+      // handleMouseUp内のsetTimeout(10ms)後に確認
+      setTimeout(() => {
+        // バッジ要素上のmouseupではIconBadge.showが呼ばれないこと
+        expect(mockIconBadgeShow).not.toHaveBeenCalled();
+
+        // Cleanup
+        document.body.removeChild(badgeElement);
+        document.body.removeChild(div);
+        done();
+      }, 30);
+    });
+
+    it('バッジの子要素上のmouseupでもhandleMouseUpの本体処理が実行されないこと', (done) => {
+      // バッジ要素とその子要素を作成
+      const badgeElement = document.createElement('div');
+      badgeElement.className = 'icon-badge';
+      const childSpan = document.createElement('span');
+      childSpan.textContent = 'T';
+      badgeElement.appendChild(childSpan);
+      document.body.appendChild(badgeElement);
+
+      const div = document.createElement('div');
+      div.textContent = 'Selected text near badge child';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      // テキストを選択状態にする
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      // バッジの子要素をtargetにしたmouseupイベントを発火
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+      });
+      Object.defineProperty(mouseUpEvent, 'target', {
+        value: childSpan,
+        writable: false,
+      });
+      document.dispatchEvent(mouseUpEvent);
+
+      // handleMouseUp内のsetTimeout(10ms)後に確認
+      setTimeout(() => {
+        // バッジ子要素上のmouseupではIconBadge.showが呼ばれないこと
+        expect(mockIconBadgeShow).not.toHaveBeenCalled();
+
+        // Cleanup
+        document.body.removeChild(badgeElement);
+        document.body.removeChild(div);
+        done();
+      }, 30);
+    });
+
+    it('通常のテキスト選択後のmouseupは正常に処理されること', (done) => {
+      const div = document.createElement('div');
+      div.textContent = 'Normal text selection';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      // テキストを選択状態にする
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      // 通常要素上でmouseupイベントを発火
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        clientX: 100,
+        clientY: 200,
+      });
+      document.dispatchEvent(mouseUpEvent);
+
+      // handleMouseUp内のsetTimeout(10ms)後に確認
+      setTimeout(() => {
+        // 通常のテキスト選択ではIconBadge.showが呼ばれること
+        expect(mockIconBadgeShow).toHaveBeenCalled();
+
+        // Cleanup
+        document.body.removeChild(div);
+        done();
+      }, 30);
     });
   });
 });

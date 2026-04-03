@@ -1,92 +1,34 @@
-# Process 10: テスト: iconBadge.test.ts カバレッジ更新
+# Process 10: 回帰テスト確認
 
 ## Overview
-Process 1 で追加した `setLoading()` と `showInlineError()` の新メソッドに対するテストケースを `tests/unit/content/iconBadge.test.ts` に追加する。既存の11テストケースを破壊せず、新しい `describe` ブロックとして追加する。
+全Processの実装後、既存テストスイートの全パスを確認し、新規テストとの整合性を検証する。
 
 ## Affected Files
-
-| ファイル | 行番号 | 変更内容 |
-|---------|--------|---------|
-| `tests/unit/content/iconBadge.test.ts` | L236 以降（末尾に追加） | `describe('setLoading()')` ブロック追加（3ケース） |
-| `tests/unit/content/iconBadge.test.ts` | setLoading ブロックの後 | `describe('showInlineError()')` ブロック追加（2ケース） |
+| ファイル | 変更内容 |
+|---------|---------|
+| 全テストファイル | 実行のみ（変更なし） |
 
 ## Implementation Notes
 
-### setLoading() テストケース
-```typescript
-describe('setLoading()', () => {
-  it('should show loading state when setLoading(true) is called', () => {
-    const badge = new IconBadge(mockStorageManager);
-    badge.show({ x: 100, y: 100 }, jest.fn());
-    badge.setLoading(true);
-    // バッジテキストが '⟳' に変わること
-    const badgeEl = document.querySelector('.icon-badge') as HTMLElement;
-    expect(badgeEl.textContent).toBe('⟳');
-    expect(badgeEl.style.pointerEvents).toBe('none');
-  });
-
-  it('should restore normal state when setLoading(false) is called', () => {
-    const badge = new IconBadge(mockStorageManager);
-    badge.show({ x: 100, y: 100 }, jest.fn());
-    badge.setLoading(true);
-    badge.setLoading(false);
-    const badgeEl = document.querySelector('.icon-badge') as HTMLElement;
-    expect(badgeEl.textContent).toBe('T');
-    expect(badgeEl.style.pointerEvents).toBe('auto');
-  });
-
-  it('should not throw when called before show()', () => {
-    const badge = new IconBadge(mockStorageManager);
-    // バッジ未表示状態でも例外を投げないこと
-    expect(() => badge.setLoading(true)).not.toThrow();
-    expect(() => badge.setLoading(false)).not.toThrow();
-  });
-});
+### 自動テスト
+```bash
+npm run lint
+npm test
 ```
 
-### showInlineError() テストケース
-```typescript
-describe('showInlineError()', () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  it('should insert error toast into DOM', () => {
-    const badge = new IconBadge(mockStorageManager);
-    badge.showInlineError('翻訳エラーが発生しました');
-    // エラートーストがDOMに存在すること
-    const toasts = document.querySelectorAll('[style*="background:#d32f2f"]');
-    expect(toasts.length).toBeGreaterThan(0);
-    expect(toasts[0].textContent).toBe('翻訳エラーが発生しました');
-  });
-
-  it('should auto-remove error toast after 3 seconds', () => {
-    const badge = new IconBadge(mockStorageManager);
-    badge.showInlineError('翻訳エラーが発生しました');
-    expect(document.querySelectorAll('[style*="background:#d32f2f"]').length).toBe(1);
-    jest.advanceTimersByTime(3000);
-    // 3秒後に自動消滅すること
-    expect(document.querySelectorAll('[style*="background:#d32f2f"]').length).toBe(0);
-  });
-});
-```
-
-### 注意事項
-- `jest.useFakeTimers()` と `jest.useRealTimers()` を `beforeEach/afterEach` で対にすること
-- DOM クエリは `document.querySelector('.icon-badge')` で取得（既存テストと同じパターン）
-- テスト後は `document.body.innerHTML = ''` でDOMをクリーンアップすること（他テストとの干渉防止）
+### 手動テストシナリオ
+1. **通常テキスト選択→翻訳**: テキスト選択 → バッジ表示 → クリック → 「翻訳中...」トースト → 翻訳結果パネル表示
+2. **バッジクリック時の競合なし**: バッジクリックでバッジが意図せず消えない/再作成されない
+3. **API未設定時のエラー通知**: APIキーなし → バッジクリック → 「翻訳に失敗しました」エラートースト → 5秒後自動非表示
+4. **長時間無応答時のタイムアウト**: MessageBusタイムアウト（30秒）後にエラートースト表示、`isTranslating` がリセットされる
+5. **画像のみ選択**: 画像のみ選択 → 「画像を含む選択ではテキスト部分のみ翻訳できます」infoトースト
+6. **テキスト+画像選択**: 混在選択 → 通常通りバッジ表示 → テキスト部分が翻訳される
 
 ---
 
 ## Red Phase: テスト作成と失敗確認
 
-- [ ] 上記テストケースを `tests/unit/content/iconBadge.test.ts` の末尾に追加
-- [ ] `npm test -- --testPathPattern=iconBadge` を実行
-- [ ] `setLoading` / `showInlineError` が未実装のため失敗することを確認
+N/A（回帰テストのみ）
 
 ✅ **Phase Complete**
 
@@ -94,9 +36,9 @@ describe('showInlineError()', () => {
 
 ## Green Phase: 最小実装と成功確認
 
-- [ ] Process 1 が完了していることを確認（`setLoading` / `showInlineError` 実装済み）
-- [ ] `npm test -- --testPathPattern=iconBadge` を実行して成功を確認
-- [ ] 既存テスト（11件）が引き続き成功することを確認
+- [ ] `npm run lint` 全パス
+- [ ] `npm test` 全パス
+- [ ] 手動テストシナリオ 1-6 全確認
 
 ✅ **Phase Complete**
 
@@ -104,14 +46,12 @@ describe('showInlineError()', () => {
 
 ## Refactor Phase: 品質改善
 
-- [ ] テストコードの重複がないか確認
-- [ ] `npm test` 全件（771+新規）が通ることを確認
-- [ ] カバレッジレポートで `iconBadge.ts` の新メソッドがカバーされていることを確認
+N/A
 
 ✅ **Phase Complete**
 
 ---
 
 ## Dependencies
-- Requires: Process 1（setLoading/showInlineError の実装）, Process 2（selectionHandler 変更）
-- Blocks: -（最終タスク）
+- Requires: Process 1, 2, 3, 4, 5（全Process完了後）
+- Blocks: Process 300
