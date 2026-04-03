@@ -24,11 +24,15 @@ jest.mock('@shared/messages/MessageBus', () => {
 // Mock IconBadge
 const mockIconBadgeShow = jest.fn();
 const mockIconBadgeHide = jest.fn();
+const mockSetLoading = jest.fn();
+const mockShowInlineError = jest.fn();
 jest.mock('@content/iconBadge', () => {
   return {
     IconBadge: jest.fn().mockImplementation(() => ({
       show: mockIconBadgeShow,
       hide: mockIconBadgeHide,
+      setLoading: mockSetLoading,
+      showInlineError: mockShowInlineError,
     })),
   };
 });
@@ -525,6 +529,109 @@ describe('SelectionHandler', () => {
           targetLanguage: 'Japanese',
         },
       });
+
+      // Cleanup
+      document.body.removeChild(div);
+    });
+
+    it('should call setLoading(true) then setLoading(false) on successful translation', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['翻訳結果'],
+        },
+      });
+
+      const div = document.createElement('div');
+      div.textContent = 'Loading state test';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      await new Promise(resolve => setTimeout(resolve, 15));
+
+      const onClickCallback = mockIconBadgeShow.mock.calls[0][1];
+      await onClickCallback();
+
+      expect(mockSetLoading).toHaveBeenCalledWith(true);
+      expect(mockSetLoading).toHaveBeenCalledWith(false);
+      // setLoading(true) should be called before setLoading(false)
+      const calls = mockSetLoading.mock.calls;
+      const trueCallIndex = calls.findIndex((c: unknown[]) => c[0] === true);
+      const falseCallIndex = calls.findIndex((c: unknown[]) => c[0] === false);
+      expect(trueCallIndex).toBeLessThan(falseCallIndex);
+
+      // Cleanup
+      document.body.removeChild(div);
+    });
+
+    it('should call showInlineError when translation returns null', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: [],
+        },
+      });
+
+      const div = document.createElement('div');
+      div.textContent = 'Null translation test';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      await new Promise(resolve => setTimeout(resolve, 15));
+
+      const onClickCallback = mockIconBadgeShow.mock.calls[0][1];
+      await onClickCallback();
+
+      expect(mockShowInlineError).toHaveBeenCalledWith('翻訳に失敗しました');
+
+      // Cleanup
+      document.body.removeChild(div);
+    });
+
+    it('should call showInlineError when translation throws an exception', async () => {
+      mockSend.mockRejectedValue(new Error('Network error'));
+
+      const div = document.createElement('div');
+      div.textContent = 'Exception test';
+      document.body.appendChild(div);
+
+      selectionHandler.enable();
+
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      const mouseUpEvent = new MouseEvent('mouseup', { bubbles: true });
+      document.dispatchEvent(mouseUpEvent);
+
+      await new Promise(resolve => setTimeout(resolve, 15));
+
+      const onClickCallback = mockIconBadgeShow.mock.calls[0][1];
+      await onClickCallback();
+
+      expect(mockShowInlineError).toHaveBeenCalledWith('翻訳エラーが発生しました');
 
       // Cleanup
       document.body.removeChild(div);

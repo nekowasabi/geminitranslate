@@ -512,6 +512,13 @@ ${combined}`;
     // Step 1: Remove any prompt artifacts from response
     const cleanedContent = this.removePromptArtifacts(content);
 
+    // Why: expectedCount===1 ではセパレータ分割不要。
+    // LLMが翻訳文中にセパレータを含めることがあり、分割すると expected=1/got=2 の
+    // ParseCountMismatchError になる。1テキスト要求では全体を1翻訳として返す。
+    if (expectedCount === 1) {
+      return [cleanedContent.trim()];
+    }
+
     let parsedTranslations: string[] = [];
 
     // Step 2: Try standard separator-based split
@@ -527,6 +534,19 @@ ${combined}`;
         cleanedContent,
         expectedCount,
       );
+    }
+
+    // Why: parsedCount が expectedCount をちょうど1つだけ超過した場合のみjoinして最善推定。
+    // LLMが末尾テキストを余分に1分割した場合（got === expected+1）は末尾2パーツをjoinして回復。
+    // 2つ以上の超過はプロンプトアーティファクト混入など別の問題を示すため ParseCountMismatchError を投げる。
+    if (parsedTranslations.length === expectedCount + 1) {
+      logger.warn(
+        `Translation count exceeds expected by 1: expected ${expectedCount}, got ${parsedTranslations.length}. Joining last two parts.`,
+      );
+      const result = parsedTranslations.slice(0, expectedCount - 1);
+      const remainder = parsedTranslations.slice(expectedCount - 1).join(" ");
+      result.push(remainder);
+      parsedTranslations = result;
     }
 
     if (parsedTranslations.length !== expectedCount) {

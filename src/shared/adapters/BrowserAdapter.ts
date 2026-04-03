@@ -115,11 +115,17 @@ class BrowserAdapter {
        * @param message 送信するメッセージ
        * @returns Promise<レスポンス>
        */
+      // Why: reject なし + runtime.lastError 無視だと Phase 2 の Promise が永久 pending になる。
+      // Phase 1 長時間処理後にメッセージチャネルが不安定化すると Phase 2 がハングする原因。
       sendMessage: <T = any>(message: any): Promise<T> => {
-        return new Promise((resolve) => {
-          this.api.runtime.sendMessage(message, (response) => {
-            resolve(response);
-          });
+        return new Promise((resolve, reject) => {
+          try {
+            this.api.runtime.sendMessage(message, (response) => {
+              this.handleRuntimeError(resolve, reject, response as T);
+            });
+          } catch (error) {
+            reject(error);
+          }
         });
       },
 
@@ -161,11 +167,17 @@ class BrowserAdapter {
        * @param tabId タブID
        * @param message 送信するメッセージ
        */
+      // Why: reject なし + runtime.lastError 無視だと、タブが存在しない場合に Promise が永久 pending になる。
+      // runtime.sendMessage と同じパターンで修正。
       sendMessage: <T = any>(tabId: number, message: any): Promise<T> => {
-        return new Promise((resolve) => {
-          this.api.tabs.sendMessage(tabId, message, (response) => {
-            resolve(response as T);
-          });
+        return new Promise((resolve, reject) => {
+          try {
+            this.api.tabs.sendMessage(tabId, message, (response) => {
+              this.handleRuntimeError(resolve, reject, response as T);
+            });
+          } catch (error) {
+            reject(error);
+          }
         });
       },
     };

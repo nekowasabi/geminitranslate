@@ -233,4 +233,51 @@ describe('IconBadge', () => {
       expect(badge).not.toBeNull();
     });
   });
+
+  describe('setLoading()', () => {
+    it('should show loading indicator when setLoading(true) is called', () => {
+      iconBadge.show({ x: 100, y: 200 }, jest.fn());
+      iconBadge.setLoading(true);
+      const badge = document.querySelector('.icon-badge') as HTMLElement;
+      expect(badge).not.toBeNull();
+      expect(badge.textContent).toBe('⟳');
+    });
+
+    it('should restore badge when setLoading(false) is called', () => {
+      iconBadge.show({ x: 100, y: 200 }, jest.fn());
+      iconBadge.setLoading(true);
+      iconBadge.setLoading(false);
+      const badge = document.querySelector('.icon-badge') as HTMLElement;
+      expect(badge.textContent).toBe('T');
+    });
+
+    it('should not throw when called without showing badge first', () => {
+      expect(() => iconBadge.setLoading(true)).not.toThrow();
+      expect(() => iconBadge.setLoading(false)).not.toThrow();
+    });
+  });
+
+  describe('showInlineError()', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.clearAllTimers();
+    });
+
+    it('should show error toast when showInlineError is called', () => {
+      iconBadge.showInlineError('翻訳に失敗しました');
+      const toast = document.querySelector('.gemini-translate-inline-error') as HTMLElement;
+      expect(toast).not.toBeNull();
+      expect(toast.textContent).toBe('翻訳に失敗しました');
+    });
+
+    it('should auto-remove error toast after 3 seconds', () => {
+      iconBadge.showInlineError('翻訳に失敗しました');
+      jest.advanceTimersByTime(3000);
+      const toast = document.querySelector('.gemini-translate-inline-error');
+      expect(toast).toBeNull();
+    });
+  });
 });

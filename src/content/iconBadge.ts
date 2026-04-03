@@ -18,6 +18,7 @@ export class IconBadge {
   private badgeElement: HTMLElement | null = null;
   private clickHandler: (() => void) | null = null;
   private floatingResultElement: HTMLElement | null = null;
+  private errorToastElement: HTMLElement | null = null;
   private storageManager: StorageManager;
 
   constructor() {
@@ -195,6 +196,50 @@ export class IconBadge {
 
     // NOTE: hide() is now called by showTranslationResult() or error handlers
     // to ensure proper timing with async operations
+  }
+
+  /**
+   * Set loading state on badge
+   * @param isLoading - Whether to show loading state
+   */
+  // Why: setLoading でバッジの視覚状態を変更。実装未存在でユーザーが処理中か不明だったため追加。
+  setLoading(isLoading: boolean): void {
+    if (!this.badgeElement) return;
+    if (isLoading) {
+      this.badgeElement.textContent = '⟳';
+      this.badgeElement.style.opacity = '0.7';
+      this.badgeElement.style.cursor = 'not-allowed';
+      this.badgeElement.style.pointerEvents = 'none';
+    } else {
+      this.badgeElement.textContent = 'T';
+      this.badgeElement.style.opacity = '1';
+      this.badgeElement.style.cursor = 'pointer';
+      this.badgeElement.style.pointerEvents = 'auto';
+    }
+  }
+
+  /**
+   * Show inline error toast message
+   * @param message - Error message to display
+   */
+  // Why: showInlineError でエラーをユーザーに通知。失敗時に hide() のみでは何が起きたか不明だったため追加。
+  showInlineError(message: string): void {
+    // 既存トーストを削除して重複防止
+    if (this.errorToastElement && this.errorToastElement.parentNode) {
+      this.errorToastElement.parentNode.removeChild(this.errorToastElement);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'gemini-translate-inline-error';
+    toast.textContent = message;
+    Object.assign(toast.style, { position: 'fixed', bottom: '20px', right: '20px', background: '#d32f2f', color: '#fff', padding: '8px 16px', borderRadius: '4px', zIndex: '10003', fontSize: '14px' });
+    document.body.appendChild(toast);
+    this.errorToastElement = toast;
+    setTimeout(() => {
+      if (this.errorToastElement === toast && toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+        this.errorToastElement = null;
+      }
+    }, 3000);
   }
 
   /**

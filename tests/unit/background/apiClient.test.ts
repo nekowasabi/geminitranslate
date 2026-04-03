@@ -660,6 +660,60 @@ describe("OpenRouterClient", () => {
       expect(result).toEqual(["こんにちは", "さようなら"]);
     });
 
+    it("should return entire response as single item when expectedCount is 1 and LLM inserts separator", async () => {
+      // Why: LLMが1テキストの翻訳にセパレータを含めることがある。
+      // expected=1では分割は不要 — 全体を1つの翻訳として返す。
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                // LLM inserts ---NEXT-TEXT--- inside a single translation
+                content: "これは最初の部分です---NEXT-TEXT---これは2番目の部分です",
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      // Single text input → expectedCount = 1
+      const result = await client.translate(["This is some text"], "Japanese");
+
+      // Should return 1 element with the full content (separator joined back)
+      expect(result).toHaveLength(1);
+      expect(result[0]).toContain("これは最初の部分です");
+      expect(result[0]).toContain("これは2番目の部分です");
+    });
+
+    it("should join excess parts when parsedCount exceeds expectedCount", async () => {
+      // Why: expected>1で超過時もjoinして最善推定。
+      // e.g., expected=2 but LLM returns 3 parts → join last parts into one.
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                // expected=2, but LLM returns 3 parts
+                content: "翻訳A---NEXT-TEXT---翻訳B前半---NEXT-TEXT---翻訳B後半",
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate(["Text A", "Text B"], "Japanese");
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBe("翻訳A");
+      // Last parts joined back together
+      expect(result[1]).toContain("翻訳B前半");
+      expect(result[1]).toContain("翻訳B後半");
+    });
+
     it("should throw when separator instruction artifacts still cause count mismatch", async () => {
       const mockResponse = {
         ok: true,

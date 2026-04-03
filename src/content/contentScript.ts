@@ -401,44 +401,57 @@ export class ContentScript {
           // Store Phase 2 nodes for handleBatchCompleted
           this.phaseNodes.set(2, oovIndices.map((i) => outOfViewport[i]));
 
-          const response2 = await this.messageBus.send({
-            type: MessageType.REQUEST_TRANSLATION,
-            action: "requestTranslation",
-            payload: {
-              texts: oovTexts,
-              targetLanguage,
-              semiParallel: true,
-              priorityCount: 0,
-              phase: 2,
-            },
-          });
+          // Why: try-catch を追加。BrowserAdapter.sendMessage が reject した場合（runtime.lastError 等）に
+          // Promise が永久 pending になるのを防ぐ。Phase 1 長時間処理後にメッセージチャネルが不安定化する場合に有効。
+          try {
+            const response2 = await this.messageBus.send({
+              type: MessageType.REQUEST_TRANSLATION,
+              action: "requestTranslation",
+              payload: {
+                texts: oovTexts,
+                targetLanguage,
+                semiParallel: true,
+                priorityCount: 0,
+                phase: 2,
+              },
+            });
 
-          logger.log(
-            `[Content:ContentScript] ${timestamp} - Phase 2 response received:`,
-            {
-              success: response2?.success,
-              hasTranslations: !!response2?.data?.translations,
-            },
-          );
-
-          if (response2?.success && response2?.data?.translations) {
             logger.log(
-              `[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`,
+              `[Content:ContentScript] ${timestamp} - Phase 2 response received:`,
+              {
+                success: response2?.success,
+                hasTranslations: !!response2?.data?.translations,
+              },
             );
-            const nodesToTranslate = oovIndices.map((i) => outOfViewport[i]);
-            this.applyTranslationsAndTrack(
-              nodesToTranslate,
-              response2.data.translations,
+
+            if (response2?.success && response2?.data?.translations) {
+              logger.log(
+                `[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`,
+              );
+              const nodesToTranslate = oovIndices.map((i) => outOfViewport[i]);
+              this.applyTranslationsAndTrack(
+                nodesToTranslate,
+                response2.data.translations,
+              );
+              this.progressNotification.completePhase(2);
+              logger.log(
+                `[Content:ContentScript] ${timestamp} - Phase 2 completed`,
+              );
+            } else {
+              logger.warn(
+                `[Content:ContentScript] ${timestamp} - Phase 2 failed:`,
+                response2,
+              );
+              // Why: completePhase(2) を呼ばない選択肢を却下。呼ばないとプログレスバーが止まり、ユーザーがフリーズと誤認する。
+              this.progressNotification.completePhase(2);
+            }
+          } catch (error) {
+            logger.error(
+              `[Content:ContentScript] ${timestamp} - Phase 2 translation error:`,
+              error,
             );
+            // Why: エラー時も completePhase(2) を呼ぶ。呼ばないとプログレスバーがフリーズしユーザーが操作不能になる。
             this.progressNotification.completePhase(2);
-            logger.log(
-              `[Content:ContentScript] ${timestamp} - Phase 2 completed`,
-            );
-          } else {
-            logger.warn(
-              `[Content:ContentScript] ${timestamp} - Phase 2 failed:`,
-              response2,
-            );
           }
         } else {
           logger.log(

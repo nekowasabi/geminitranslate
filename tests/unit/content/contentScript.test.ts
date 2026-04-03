@@ -806,6 +806,43 @@ describe("ContentScript", () => {
       expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(2, 1);
       expect(mockSend).toHaveBeenCalledTimes(1);
     });
+
+    it("should call completePhase(2) even when Phase 2 fails (success: false)", async () => {
+      // Phase 1 succeeds, Phase 2 returns failure response
+      mockSend
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ["こんにちは世界"],
+          },
+        })
+        .mockResolvedValueOnce({
+          // Phase 2 failure: success=false, no translations
+          success: false,
+          error: "Translation failed",
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        sendResponse,
+      );
+
+      // completePhase(2) must be called even when Phase 2 fails
+      // Without this, the progress bar freezes and users think the extension is stuck
+      const completePhaseCalls =
+        mockProgressNotification.completePhase.mock.calls;
+      const phaseTwoCalled = completePhaseCalls.some((call) => call[0] === 2);
+      expect(phaseTwoCalled).toBe(true);
+    });
   });
 
   // Process4: ProgressNotification integration tests

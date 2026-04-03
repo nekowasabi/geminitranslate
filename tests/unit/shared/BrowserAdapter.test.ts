@@ -123,6 +123,32 @@ describe('BrowserAdapter', () => {
       expect(result).toEqual(mockResponse);
     });
 
+    it('should reject when runtime.lastError is set on sendMessage', async () => {
+      const errorMessage = 'Could not establish connection';
+      (global.chrome.runtime.sendMessage as jest.Mock).mockImplementation((message, callback) => {
+        (global.chrome.runtime as any).lastError = { message: errorMessage };
+        if (callback) {
+          callback(undefined);
+        }
+        delete (global.chrome.runtime as any).lastError;
+      });
+
+      await expect(BrowserAdapter.runtime.sendMessage({ action: 'test' })).rejects.toThrow(errorMessage);
+    });
+
+    it('should reject when runtime.lastError is set on tabs.sendMessage', async () => {
+      const errorMessage = 'Tab not found';
+      (global.chrome.tabs.sendMessage as jest.Mock).mockImplementation(
+        (tabId: number, message: any, callback?: (response: any) => void) => {
+          (global.chrome.runtime as any).lastError = { message: errorMessage };
+          if (callback) callback(undefined);
+          delete (global.chrome.runtime as any).lastError;
+        }
+      );
+
+      await expect(BrowserAdapter.tabs.sendMessage(1, { action: 'test' })).rejects.toThrow(errorMessage);
+    });
+
     it('should get manifest', () => {
       const manifest = BrowserAdapter.runtime.getManifest();
 

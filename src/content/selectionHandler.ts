@@ -23,6 +23,9 @@ export class SelectionHandler {
   private mouseUpHandler: ((e: MouseEvent) => void) | null = null;
   private isTranslating = false;
   private selectionFontSizeCache: number | null = null;
+  // Why: error flag instead of re-throw — translateSelection is called directly in tests expecting null return;
+  // re-throwing would break those tests. Flag lets the click callback distinguish "error" vs "empty result".
+  private lastTranslationErrored = false;
 
   constructor() {
     this.messageBus = new MessageBus();
@@ -133,6 +136,7 @@ export class SelectionHandler {
       return null;
     }
 
+    this.lastTranslationErrored = false;
     try {
       this.isTranslating = true;
       logger.log('Translating selection:', selectedText.substring(0, 50));
@@ -175,6 +179,7 @@ export class SelectionHandler {
       return null;
     } catch (error) {
       logger.error('Failed to translate selection:', error);
+      this.lastTranslationErrored = true;
       return null;
     } finally {
       this.isTranslating = false;
@@ -207,7 +212,10 @@ export class SelectionHandler {
             async () => {
               // IconBadge clicked - trigger translation
               // Use captured selectedText from mouseup event to ensure full text is translated
+              // Why: try-finally で setLoading(false) を確実解除。成功/失敗/例外の全パスで解除漏れゼロを保証。
               try {
+                this.iconBadge.setLoading(true);
+
                 const targetLanguage = await this.storageManager.getTargetLanguage();
 
                 if (!targetLanguage) {
@@ -219,11 +227,6 @@ export class SelectionHandler {
                 // Pass selectedText explicitly to ensure full text is translated
                 // even if user has deselected the text before clicking IconBadge
                 const translatedText = await this.translateSelection(targetLanguage, selectedText);
-
-                // Debug logs for translation issues
-                logger.log('[DEBUG] Selected text:', selectedText.substring(0, 100));
-                logger.log('[DEBUG] Translated text:', translatedText ? translatedText.substring(0, 100) : 'null');
-                logger.log('[DEBUG] Target language:', targetLanguage);
 
                 // Show FloatingUI with translation result
                 if (translatedText && selectedText) {
@@ -237,12 +240,20 @@ export class SelectionHandler {
                     }
                   );
                 } else {
-                  // Translation failed - hide badge
-                  this.iconBadge.hide();
+                  // Translation failed - show inline error
+                  // Why: distinguish exception path (lastTranslationErrored) from empty-response path
+                  // to show the correct user-facing message in each case.
+                  if (this.lastTranslationErrored) {
+                    this.iconBadge.showInlineError('翻訳エラーが発生しました');
+                  } else {
+                    this.iconBadge.showInlineError('翻訳に失敗しました');
+                  }
                 }
               } catch (error) {
                 logger.error('Failed to handle IconBadge click:', error);
-                this.iconBadge.hide();
+                this.iconBadge.showInlineError('翻訳エラーが発生しました');
+              } finally {
+                this.iconBadge.setLoading(false);
               }
             }
           );

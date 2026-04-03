@@ -809,6 +809,56 @@ describe("DOMManipulator", () => {
       expect(result.viewport[0].index).toBe(0);
     });
 
+    describe("zero-size parentRect filtering", () => {
+      it("ゼロサイズの親要素を持つノードは outOfViewport に分類されること", () => {
+        // PROBLEM: When the text node's own rect is (0,0,0,0), code falls back to parentElement.
+        // If parentRect is also zero-size (display:none, visibility:hidden, etc.),
+        // parentRect.top (=0) < window.innerHeight (=768) evaluates to true,
+        // causing the node to be misclassified as viewport.
+        testContainer.innerHTML = "<p>Hidden Text</p>";
+        const textNodes = domManipulator.extractTextNodes();
+
+        // Mock Range.getBoundingClientRect() returning zero-size rect (empty text node edge case)
+        const mockRange = {
+          selectNodeContents: jest.fn(),
+          getBoundingClientRect: jest.fn(() => ({
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            width: 0,
+            height: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => {},
+          })),
+        };
+        jest.spyOn(document, "createRange").mockReturnValue(mockRange as any);
+
+        // Mock parentElement.getBoundingClientRect() also returning zero-size
+        // (simulates display:none or element not rendered)
+        const pElement = testContainer.querySelector("p")!;
+        pElement.getBoundingClientRect = jest.fn(() => ({
+          top: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => {},
+        }));
+
+        const result = domManipulator.detectViewportNodes(textNodes);
+
+        // Zero-size parent means element is not rendered (display:none etc.)
+        // Should be classified as outOfViewport, NOT viewport
+        expect(result.outOfViewport.length).toBe(1);
+        expect(result.viewport.length).toBe(0);
+      });
+    });
+
     describe("Reddit-style nested containers", () => {
       it("should correctly classify text nodes based on their actual position, not parent container", () => {
         // THE REAL BUG SCENARIO:
