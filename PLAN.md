@@ -1,27 +1,28 @@
 ---
-title: "翻訳・表示速度改善 実装計画"
-status: completed
-created: "2026-03-15"
+title: "選択翻訳の無反応バグ修正・通知UI追加"
+status: planning
+created: "2026-04-03"
 ---
 
 # Commander's Intent
 
 ## Purpose
-Storage I/O のシリアル実行（キャッシュ読み書きが1件ずつ await）により、初回翻訳で約300msの不要な遅延が発生している。Viewport-Priority + Batch Streaming による74%改善（380ms→100ms）は達成済みだが、storage層の最適化でさらに70%の追加改善が可能。
+画像を含むテキスト選択→翻訳ボタンクリック時に無反応になるバグを修正し、翻訳開始/失敗時のユーザーフィードバックを追加する。
 
 ## End State
-browser.storage.local のバルク操作により初回翻訳の体感速度が350ms→105ms に改善され、retry が単一層に統合（最大4試行）、DOM操作が最適化された状態で CI 全グリーンであること。
+バッジクリック時のmouseup競合が解消され、翻訳失敗時にエラートーストが表示され、MessageBus通信ハング時に30秒でタイムアウトし、画像のみ選択時にフィードバックが表示される状態。CI全グリーン。
 
 ## Key Tasks
-- Process 1+2（P0、並列可）: storage読み書きのバルク化で最大効果の即効改善
-- Process 4+5（P1-P2、Sprint 2）: retry一元化とDOM操作最適化で安定性向上
-- Process 8（P3、要設計）: TTL + eviction でストレージ肥大化を防止
+- Process 1+2+4（P0-P1、並列可）: mouseup競合防止・トースト通知基盤・MessageBusタイムアウト
+- Process 3+5（P0-P1、Process 2依存）: 通知統合・画像選択フィードバック
+- Process 10（回帰テスト）: 全修正の検証
 
 ## Constraints
-- Firefox MV2 + Chrome MV3 両対応必須（browser.storage.local API のバッチ操作互換性確認）
+- Firefox MV2 + Chrome MV3 両対応（browser.runtime.sendMessage互換性）
 - TDD ファースト（RED → GREEN → REFACTOR）
-- 既存テスト（731 PASS）を壊さない
-- fire-and-forget 書き込みの失敗は catch + logger.warn で記録
+- 既存テストを壊さない
+- MessageBus.send() のtimeoutはオプショナルパラメータ（後方互換）
+- Firefox CSP制約: eval/innerHTML 不可、DOM API使用
 
 ---
 
@@ -29,17 +30,15 @@ browser.storage.local のバルク操作により初回翻訳の体感速度が3
 
 | Process | Title | Status | File |
 |---------|-------|--------|------|
-| 1 | P0: キャッシュ書き込みバルク化 + fire-and-forget (translationEngine.ts) | ☑ done | [→ plan/process-1.md](plan/process-1.md) |
-| 2 | P0: キャッシュ読み込みバッチ化 (translationEngine.ts) | ☑ done | [→ plan/process-2.md](plan/process-2.md) |
-| 3 | P3: promoteToHigherTiers() デッドコード削除 | ☑ done | [→ plan/process-3.md](plan/process-3.md) |
-| 4 | P1: retry二重実装の一元化 (apiClient + translationEngine) | ☑ done | [→ plan/process-4.md](plan/process-4.md) |
-| 5 | P2: isElementVisible() 最適化 (contentScript.ts) | ☑ done | [→ plan/process-5.md](plan/process-5.md) |
-| 6 | P1: キャッシュキー安全化 (translationEngine.ts) | ☑ done | [→ plan/process-6.md](plan/process-6.md) |
-| 7 | P2: MutationObserver debounce (contentScript.ts) | ☑ done | [→ plan/process-7.md](plan/process-7.md) |
-| 8 | P3: TTL + Eviction 戦略設計 (translationEngine.ts + config.ts) | ☑ done | [→ plan/process-8.md](plan/process-8.md) |
-| 10 | 修正後の回帰テスト確認 | ☑ done | [→ plan/process-10.md](plan/process-10.md) |
+| 1 | P0: mouseup競合防止（selectionHandler + iconBadge） | ☐ planning | [→ plan/process-01.md](plan/process-01.md) |
+| 2 | P0: トースト通知メソッド追加（selectionHandler） | ☐ planning | [→ plan/process-02.md](plan/process-02.md) |
+| 3 | P0: 翻訳開始/失敗通知の統合（selectionHandler） | ☐ planning | [→ plan/process-03.md](plan/process-03.md) |
+| 4 | P1: MessageBusタイムアウト追加 | ☐ planning | [→ plan/process-04.md](plan/process-04.md) |
+| 5 | P1: 画像選択時のフィードバック改善 | ☐ planning | [→ plan/process-05.md](plan/process-05.md) |
+| 10 | 回帰テスト確認 | ☐ planning | [→ plan/process-10.md](plan/process-10.md) |
+| 300 | OODA振り返り | ☐ planning | [→ plan/process-300.md](plan/process-300.md) |
 
-**Overall**: ☑ 9/9 completed
+**Overall**: ☐ 0/7 completed
 
 ---
 
@@ -47,11 +46,11 @@ browser.storage.local のバルク操作により初回翻訳の体感速度が3
 
 | @ref | @target | @test |
 |------|---------|-------|
-| `src/background/translationEngine.ts` | L214,351,438,503 (cache I/O) / L320 (Promise.all) / L601 (dead code) / L647 (cacheKey) / L833 (retry) | `tests/unit/background/translationEngine.test.ts` |
-| `src/background/apiClient.ts` | L224 (retry) | `tests/unit/background/apiClient.test.ts` |
-| `src/content/contentScript.ts` | L784-810 (queueDynamic) / L875-898 (isElementVisible) | `tests/unit/content/contentScript.test.ts` |
-| `src/shared/constants/config.ts` | L34 (CONCURRENCY_LIMIT) / L40 (BATCH_SIZE) / L73 (TTL) | - |
-| `docs/requirements/performance-improvement-plan.md` | 調査レポート（Sprint 1-3 詳細） | - |
+| `src/content/selectionHandler.ts` | L99-112 (getSelectedText), L120-181 (translateSelection), L186-251 (handleMouseUp) | `tests/unit/content/selectionHandler.test.ts` |
+| `src/content/iconBadge.ts` | L31-51 (show), L57-63 (hide), L115-157 (createBadgeElement), L187-198 (handleClick) | `tests/unit/content/iconBadge.test.ts` |
+| `src/shared/messages/MessageBus.ts` | L18-25 (send) | `tests/unit/shared/messages/MessageBus.test.ts` |
+| `src/content/contentScript.ts` | L127-138 (TRANSLATE_SELECTION), L487-514 (translateSelection) | `tests/unit/content/contentScript.test.ts` |
+| `src/content/progressNotification.ts` | L113-142 (show), L265-289 (error) — トーストパターン参照 | - |
 
 ---
 
@@ -59,6 +58,6 @@ browser.storage.local のバルク操作により初回翻訳の体感速度が3
 
 | リスク | 対策 |
 |--------|------|
-| fire-and-forget でストレージ書き込み失敗が無音化 | catch + logger.warn で記録。翻訳キャッシュはベストエフォート |
-| apiClient retry 削除で testConnection() に影響 | testConnection はユーザー操作なので retry なし許容 |
-| browser.storage.local のサイズ上限（Chrome 10MB） | Process 8 で TTL + eviction 戦略を設計 |
+| stopPropagationが他のイベントリスナー（analytics等）を阻害 | バッジ要素のみに限定、document全体には影響させない |
+| MessageBusタイムアウトが正常な長時間翻訳を誤中断 | デフォルト30秒。選択翻訳は短文のため十分余裕あり |
+| ProgressNotification注入によるSelectionHandler初期化失敗 | オプショナルパラメータ＋loggerフォールバック |

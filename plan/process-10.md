@@ -1,24 +1,57 @@
-# Process 10: 修正後の回帰テスト確認
+# Process 10: 回帰テスト確認
 
 ## Overview
-全 Process 完了後の最終確認。CI 全グリーンを確認してクローズ。
+全Processの実装後、既存テストスイートの全パスを確認し、新規テストとの整合性を検証する。
 
-## Verification Commands
+## Affected Files
+| ファイル | 変更内容 |
+|---------|---------|
+| 全テストファイル | 実行のみ（変更なし） |
 
+## Implementation Notes
+
+### 自動テスト
 ```bash
-npm test && npx tsc --noEmit && npm run lint && npm run build:chrome && npm run build:firefox
+npm run lint
+npm test
 ```
 
-## Checklist
+### 手動テストシナリオ
+1. **通常テキスト選択→翻訳**: テキスト選択 → バッジ表示 → クリック → 「翻訳中...」トースト → 翻訳結果パネル表示
+2. **バッジクリック時の競合なし**: バッジクリックでバッジが意図せず消えない/再作成されない
+3. **API未設定時のエラー通知**: APIキーなし → バッジクリック → 「翻訳に失敗しました」エラートースト → 5秒後自動非表示
+4. **長時間無応答時のタイムアウト**: MessageBusタイムアウト（30秒）後にエラートースト表示、`isTranslating` がリセットされる
+5. **画像のみ選択**: 画像のみ選択 → 「画像を含む選択ではテキスト部分のみ翻訳できます」infoトースト
+6. **テキスト+画像選択**: 混在選択 → 通常通りバッジ表示 → テキスト部分が翻訳される
 
-- [x] `npm test` — 全テスト PASS（3件の pre-existing failure は許容）
-- [x] `npx tsc --noEmit` — 型エラーなし
-- [x] `npm run lint` — エラーなし
-- [x] `npm run build:chrome` — compiled successfully
-- [x] `npm run build:firefox` — compiled successfully
-- [x] storage I/O のバルク化が正常動作（キャッシュヒット/ミスの混在テスト）
-- [x] fire-and-forget 書き込みでエラーが logger.warn に記録されること
+---
+
+## Red Phase: テスト作成と失敗確認
+
+N/A（回帰テストのみ）
+
+✅ **Phase Complete**
+
+---
+
+## Green Phase: 最小実装と成功確認
+
+- [ ] `npm run lint` 全パス
+- [ ] `npm test` 全パス
+- [ ] 手動テストシナリオ 1-6 全確認
+
+✅ **Phase Complete**
+
+---
+
+## Refactor Phase: 品質改善
+
+N/A
+
+✅ **Phase Complete**
+
+---
 
 ## Dependencies
-- Requires: Process 1-8 全完了
-- Blocks: -
+- Requires: Process 1, 2, 3, 4, 5（全Process完了後）
+- Blocks: Process 300
