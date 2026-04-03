@@ -11,18 +11,43 @@ import { Message, MessageType, MessageListener } from './types';
 export class MessageBus {
   private listeners: Map<MessageListener, Function> = new Map();
 
+  // Why: 30秒デフォルト。選択翻訳は通常1-3文で1-5秒以内に完了。
+  // ネットワーク遅延・API負荷の余裕を確保しつつ、ハング時の永続待機を防ぐ。
+  static readonly DEFAULT_TIMEOUT_MS = 30000;
+
   /**
    * Send a message to the background script or content script
    * @param message - The message to send
+   * @param timeout - Timeout in milliseconds. Default: 30000. Set 0 to disable.
    * @returns Promise resolving to the response
    */
-  async send<T = any>(message: Message): Promise<T> {
+  // Why: Promise.race パターンを採用。AbortController は browser.runtime.sendMessage に非対応。
+  async send<T = any>(message: Message, timeout: number = MessageBus.DEFAULT_TIMEOUT_MS): Promise<T> {
     const messageWithTimestamp = {
       ...message,
       timestamp: message.timestamp || Date.now(),
     };
 
-    return BrowserAdapter.runtime.sendMessage<T>(messageWithTimestamp);
+    const sendPromise = BrowserAdapter.runtime.sendMessage<T>(messageWithTimestamp);
+
+    if (timeout <= 0) {
+      return sendPromise;
+    }
+
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => {
+        reject(new Error(`MessageBus timeout after ${timeout}ms`));
+      }, timeout);
+    });
+
+    try {
+      return await Promise.race([sendPromise, timeoutPromise]);
+    } finally {
+      if (timerId !== undefined) {
+        clearTimeout(timerId);
+      }
+    }
   }
 
   /**

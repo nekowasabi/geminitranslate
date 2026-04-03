@@ -43,13 +43,13 @@ static async send(message: Message, timeout: number = 30000): Promise<any> {
 
 ## Red Phase: テスト作成と失敗確認
 
-- [ ] ブリーフィング確認
-- [ ] テストケースを作成（実装前に失敗確認）
+- [x] ブリーフィング確認
+- [x] テストケースを作成（実装前に失敗確認）
   - 正常応答がタイムアウト前に返る場合、結果が正しく返ること
   - タイムアウト時間を超えた場合、エラーがthrowされること
   - timeout=0 でタイムアウト無効化されること
   - エラーメッセージにタイムアウト時間が含まれること
-- [ ] テストを実行して失敗することを確認
+- [x] テストを実行して失敗することを確認 (2 failed, 11 passed → timeout未実装でJestタイムアウトに到達)
 
 ✅ **Phase Complete**
 
@@ -57,10 +57,10 @@ static async send(message: Message, timeout: number = 30000): Promise<any> {
 
 ## Green Phase: 最小実装と成功確認
 
-- [ ] ブリーフィング確認
-- [ ] `MessageBus.send()` に timeout パラメータ追加
-- [ ] Promise.race によるタイムアウト実装
-- [ ] テストを実行して成功することを確認
+- [x] ブリーフィング確認
+- [x] `MessageBus.send()` に timeout パラメータ追加
+- [x] Promise.race によるタイムアウト実装
+- [x] テストを実行して成功することを確認 (13 passed, 0 failed)
 
 ✅ **Phase Complete**
 
@@ -68,8 +68,10 @@ static async send(message: Message, timeout: number = 30000): Promise<any> {
 
 ## Refactor Phase: 品質改善
 
-- [ ] タイムアウトのデフォルト値をconfig定数に抽出を検討
-- [ ] テストが継続して成功することを確認
+- [x] タイムアウトのデフォルト値をconfig定数に抽出を検討
+  → `static readonly DEFAULT_TIMEOUT_MS = 30000` としてクラス内定数に抽出済み
+  → MessageBus固有の値なので外部configには移動しない（再利用箇所なし）
+- [x] テストが継続して成功することを確認 (13 passed)
 
 ✅ **Phase Complete**
 

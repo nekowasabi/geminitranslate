@@ -153,6 +153,68 @@ describe('MessageBus', () => {
     });
   });
 
+  describe('send with timeout', () => {
+    it('should resolve when response arrives before default 30s timeout', async () => {
+      const mockResponse = { success: true };
+      mockRuntimeSendMessage.mockResolvedValue(mockResponse);
+
+      const message: Message = { type: MessageType.RESET };
+
+      // Default timeout (30000ms) — response resolves immediately
+      const response = await messageBus.send(message);
+
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should accept custom timeout value', async () => {
+      const mockResponse = { data: 'ok' };
+      mockRuntimeSendMessage.mockResolvedValue(mockResponse);
+
+      const message: Message = { type: MessageType.RESET };
+
+      // Custom timeout of 5000ms — response resolves immediately
+      const response = await messageBus.send(message, 5000);
+
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should reject with timeout error when response exceeds timeout', async () => {
+      // Never-resolving promise to simulate hang
+      mockRuntimeSendMessage.mockReturnValue(new Promise(() => {}));
+
+      const message: Message = { type: MessageType.RESET };
+
+      await expect(messageBus.send(message, 100)).rejects.toThrow(
+        'MessageBus timeout after 100ms'
+      );
+    });
+
+    it('should include timeout duration in error message', async () => {
+      mockRuntimeSendMessage.mockReturnValue(new Promise(() => {}));
+
+      const message: Message = { type: MessageType.RESET };
+
+      await expect(messageBus.send(message, 250)).rejects.toThrow(
+        'MessageBus timeout after 250ms'
+      );
+    });
+
+    it('should disable timeout when timeout is 0', async () => {
+      // Delayed response (50ms) — should still resolve with timeout disabled
+      const mockResponse = { late: true };
+      mockRuntimeSendMessage.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(mockResponse), 50))
+      );
+
+      const message: Message = { type: MessageType.RESET };
+
+      // timeout=0 means no timeout — delayed response should still arrive
+      const response = await messageBus.send(message, 0);
+
+      expect(response).toEqual(mockResponse);
+    });
+  });
+
   describe('sendToTab', () => {
     it('should send message to specific tab', async () => {
       const mockResponse = { received: true };
