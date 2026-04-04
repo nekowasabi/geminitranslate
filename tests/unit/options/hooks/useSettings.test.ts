@@ -145,7 +145,7 @@ describe('useSettings Hook', () => {
   });
 
   describe('saveSettings', () => {
-    it('should save all settings to StorageManager', async () => {
+    it('should save only dirty keys to StorageManager', async () => {
       const { result } = renderHook(() => useSettings());
 
       await act(async () => {
@@ -161,12 +161,10 @@ describe('useSettings Hook', () => {
         await result.current.saveSettings();
       });
 
+      // Why: dirty tracking — only changed keys are persisted, not the full settings object
       expect(mockStorageManager.set).toHaveBeenCalledWith({
         openRouterApiKey: 'new-key',
-        openRouterModel: 'google/gemini-2.0-flash-exp:free',
         targetLanguage: 'ja',
-        fontSize: 16,
-        lineHeight: 1.5,
       });
     });
 

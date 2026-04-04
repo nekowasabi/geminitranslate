@@ -63,7 +63,7 @@ describe('StorageManager', () => {
       const result = await storageManager.get();
 
       expect(result.lineHeight).toBe(1.5);
-      expect(savedData).toEqual({ lineHeight: 1.5 });
+      expect(savedData).toEqual({ lineHeight: 1.5, schemaVersion: 4 });
       expect(chrome.storage.local.set).toHaveBeenCalled();
     });
 
@@ -96,6 +96,63 @@ describe('StorageManager', () => {
       const result = await storageManager.get();
 
       expect(result.lineHeight).toBe(2.0);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
+    it('should migrate lineHeight when schemaVersion < 4 and lineHeight > 2.0', async () => {
+      const mockData = { lineHeight: 4, schemaVersion: 3 };
+      let savedData: any = null;
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      (global.chrome.storage.local.set as jest.Mock).mockImplementation((data, callback) => {
+        savedData = data;
+        if (callback) {
+          callback();
+        }
+        return Promise.resolve();
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(1.5);
+      expect(savedData).toEqual({ lineHeight: 1.5, schemaVersion: 4 });
+    });
+
+    it('should NOT migrate lineHeight when schemaVersion >= 4', async () => {
+      const mockData = { lineHeight: 4, schemaVersion: 4 };
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(4);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
+    it('should NOT migrate when schemaVersion >= 4 even with high lineHeight', async () => {
+      const mockData = { lineHeight: 5, schemaVersion: 5 };
+
+      (global.chrome.storage.local.get as jest.Mock).mockImplementation((keys, callback) => {
+        if (callback) {
+          callback(mockData);
+        }
+        return Promise.resolve(mockData);
+      });
+
+      const result = await storageManager.get();
+
+      expect(result.lineHeight).toBe(5);
       expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
   });
