@@ -16,7 +16,7 @@ class StorageManager {
     try {
       console.log('[StorageManager] get() called with keys:', keys);
 
-      const data = keys
+      let data = keys
         ? await BrowserAdapter.storage.get<Partial<StorageData>>(keys)
         : await BrowserAdapter.storage.get<Partial<StorageData>>([]);
 
@@ -25,11 +25,8 @@ class StorageManager {
       console.log('[StorageManager] openRouterApiKey:', data.openRouterApiKey);
       console.log('[StorageManager] openRouterModel:', data.openRouterModel);
 
-      // lineHeightマイグレーション処理: 2.0より大きい値を1.5に修正
-      if (data.lineHeight && data.lineHeight > 2.0) {
-        data.lineHeight = 1.5;
-        await this.set({ lineHeight: 1.5 });
-      }
+      // lineHeightマイグレーション処理: schemaVersion < 4 の場合のみ実行
+      data = await this.migrateData(data);
 
       // デフォルト値とマージ
       const result = { ...DEFAULT_STORAGE, ...data };
@@ -87,6 +84,24 @@ class StorageManager {
       console.error('StorageManager.clear error:', error);
       throw error;
     }
+  }
+
+  /**
+   * マイグレーション処理: get() から分離した副作用
+   * Why: get() 内の書き込み副作用を分離 — auto-save 導入時に競合の危険がある。
+   * 読み取り操作に書き込み副作用があると推論が困難。
+   */
+  private async migrateData(data: Partial<StorageData>): Promise<Partial<StorageData>> {
+    const migrated = { ...data };
+    const currentVersion = migrated.schemaVersion ?? 0;
+
+    if (currentVersion < 4 && migrated.lineHeight && migrated.lineHeight > 2.0) {
+      migrated.lineHeight = 1.5;
+      migrated.schemaVersion = 4;
+      await this.set({ lineHeight: 1.5, schemaVersion: 4 });
+    }
+
+    return migrated;
   }
 
   /**

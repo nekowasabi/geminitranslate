@@ -37,6 +37,6 @@ export const DEFAULT_STORAGE: StorageData = {
   lineHeight: 1.5,
   darkMode: false,
   openRouterModel: '',
-  schemaVersion: 3,
+  schemaVersion: 4,
   selectionFontSize: 14,
 };

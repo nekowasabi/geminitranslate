@@ -19,6 +19,7 @@ const App: React.FC = () => {
     saving,
     testing,
     error,
+    dirty,
     updateSettings,
     saveSettings,
     testConnection,
@@ -77,6 +78,11 @@ const App: React.FC = () => {
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Translation Settings
+            {dirty && (
+              <span className="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                Unsaved changes
+              </span>
+            )}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
             Configure your translation preferences and API settings
@@ -220,19 +226,21 @@ const App: React.FC = () => {
         <div className="mt-6 flex justify-end">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !dirty}
             className={`
               px-6 py-3 rounded-md font-medium text-white
               ${
                 saving
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
+                  : dirty
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-gray-400 cursor-not-allowed'
               }
               disabled:opacity-50 disabled:cursor-not-allowed
               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
             `}
           >
-            {saving ? 'Saving...' : 'Save Settings'}
+            {saving ? 'Saving...' : dirty ? 'Save Settings *' : 'Save Settings'}
           </button>
         </div>
       </div>
