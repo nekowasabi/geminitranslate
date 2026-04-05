@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import StorageManager from '@shared/storage/StorageManager';
+import storageManager, { StorageManager } from '@shared/storage/StorageManager';
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
 import { StorageData, StorageKeys } from '@shared/types';
@@ -50,7 +50,6 @@ export function useSettings(): UseSettingsReturn {
   // avoiding unnecessary writes and reducing race conditions with debounce.
   const [dirtyKeys, setDirtyKeys] = useState<Set<StorageKeys>>(new Set());
 
-  const storageManager = useMemo(() => new StorageManager(), []);
 
   // --- Closure fix refs ---
   // Why: useRef pattern instead of adding settings to useCallback deps —

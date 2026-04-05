@@ -5,11 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { SUPPORTED_LANGUAGES } from '@shared/constants/languages';
-import StorageManager from '@shared/storage/StorageManager';
+import storageManager from '@shared/storage/StorageManager';
 
 export const LanguageSelector: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
-  const storageManager = new StorageManager();
 
   // Load saved language on mount
   useEffect(() => {

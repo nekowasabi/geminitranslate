@@ -159,4 +159,8 @@ class StorageManager {
   }
 }
 
-export default StorageManager;
+export { StorageManager };
+
+// Why: module-level singleton export — BrowserAdapterと同じパターンに統一。ad-hocインスタンス化を排除
+export const storageManager = new StorageManager();
+export default storageManager;

@@ -20,7 +20,7 @@
  * ```
  */
 
-import StorageManager from "../shared/storage/StorageManager";
+import storageManager from "../shared/storage/StorageManager";
 import { logger } from "../shared/utils/logger";
 import { API_CONFIG } from "../shared/constants/config";
 import { getLanguageName } from "../shared/constants/languages";
@@ -132,8 +132,7 @@ export class OpenRouterClient {
    */
   async initialize(): Promise<void> {
     logger.log("[OpenRouterClient] initialize() called");
-    const storage = new StorageManager();
-    const data = await storage.get([
+    const data = await storageManager.get([
       "openRouterApiKey",
       "openRouterModel",
       "openRouterProvider",

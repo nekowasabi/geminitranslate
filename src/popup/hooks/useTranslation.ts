@@ -6,7 +6,7 @@
 import { useState, useCallback } from 'react';
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
-import StorageManager from '@shared/storage/StorageManager';
+import storageManager from '@shared/storage/StorageManager';
 
 export type TranslationStatus = 'idle' | 'translating' | 'success' | 'error';
 
@@ -29,7 +29,6 @@ export function useTranslation(): UseTranslationReturn {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
 
-  const storageManager = new StorageManager();
 
   /**
    * Translate the current page

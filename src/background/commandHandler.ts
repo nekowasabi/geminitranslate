@@ -28,7 +28,7 @@ import BrowserAdapter from '../shared/adapters/BrowserAdapter';
 import { MessageBus } from '../shared/messages/MessageBus';
 import { MessageType, PageTranslationMessage } from '../shared/messages/types';
 import { logger } from '../shared/utils/logger';
-import StorageManager from '../shared/storage/StorageManager';
+import storageManager from '../shared/storage/StorageManager';
 
 /**
  * Command handler function type
@@ -161,7 +161,6 @@ export class CommandHandler {
     const timestamp = new Date().toISOString();
 
     // Get latest language setting from Storage
-    const storageManager = new StorageManager();
     const targetLanguage = await storageManager.getTargetLanguage();
 
     console.log(`[Background:CommandHandler] ${timestamp} - sendTranslatePageMessage() - Preparing message:`, {
@@ -209,7 +208,6 @@ export class CommandHandler {
   private async sendTranslateSelectionMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
       // Get latest language setting from Storage
-      const storageManager = new StorageManager();
       const targetLanguage = await storageManager.getTargetLanguage();
 
       const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {
@@ -235,7 +233,6 @@ export class CommandHandler {
   private async sendTranslateClipboardMessage(tabId: number): Promise<{success: boolean; error?: string}> {
     try {
       // Get latest language setting from Storage
-      const storageManager = new StorageManager();
       const targetLanguage = await storageManager.getTargetLanguage();
 
       const response = await this.messageBus.sendToTab<{success: boolean}>(tabId, {

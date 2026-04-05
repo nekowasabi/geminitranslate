@@ -13,7 +13,7 @@ import { MessageBus } from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
 import { logger } from '@shared/utils';
 import { IconBadge } from './iconBadge';
-import StorageManager from '@shared/storage/StorageManager';
+import storageManager, { StorageManager } from '@shared/storage/StorageManager';
 
 /**
  * Toast style constants - consistent with ProgressNotification
@@ -63,7 +63,7 @@ export class SelectionHandler {
   constructor() {
     this.messageBus = new MessageBus();
     this.iconBadge = new IconBadge();
-    this.storageManager = new StorageManager();
+    this.storageManager = storageManager;
     this.setupStorageListener();
   }
 

@@ -12,7 +12,7 @@
 import { logger } from '@shared/utils';
 import { UI_CONFIG } from '@shared/constants';
 import { Position } from './floatingUI';
-import StorageManager from '@shared/storage/StorageManager';
+import storageManager, { StorageManager } from '@shared/storage/StorageManager';
 
 export class IconBadge {
   static readonly CLASS_NAME = 'icon-badge';
@@ -23,7 +23,7 @@ export class IconBadge {
   private storageManager: StorageManager;
 
   constructor() {
-    this.storageManager = new StorageManager();
+    this.storageManager = storageManager;
   }
 
   /**
