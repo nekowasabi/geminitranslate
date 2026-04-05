@@ -5,12 +5,19 @@
  * Tests settings sync between Popup and Options UI
  */
 
-import StorageManager from '@shared/storage/StorageManager';
+// Why: named import { StorageManager } instead of default — default is the singleton instance;
+// this test uses new StorageManager() to simulate multiple consumers, so the class is needed.
+import { StorageManager } from '@shared/storage/StorageManager';
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
 
 // Mock modules
-jest.mock('@shared/storage/StorageManager');
+// Why: mock the named StorageManager class so tests can control instances via mockImplementation
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  StorageManager: jest.fn(),
+  default: {},
+}));
 jest.mock('@shared/messages/MessageBus');
 
 describe('Settings Synchronization Integration', () => {

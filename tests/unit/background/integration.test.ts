@@ -28,17 +28,16 @@ jest.mock('../../../src/shared/utils/logger', () => ({
 }));
 
 // Mock StorageManager
-jest.mock('../../../src/shared/storage/StorageManager', () => {
-  return {
-    __esModule: true,
-    default: jest.fn().mockImplementation(() => ({
-      getTargetLanguage: jest.fn().mockResolvedValue('Japanese'),
-      getApiKey: jest.fn().mockResolvedValue('test-api-key'),
-      getModel: jest.fn().mockResolvedValue('test-model'),
-      getProvider: jest.fn().mockResolvedValue('Google'),
-    })),
-  };
-});
+// Why: default export is now a singleton instance, not a class — mock the object directly
+jest.mock('../../../src/shared/storage/StorageManager', () => ({
+  __esModule: true,
+  default: {
+    getTargetLanguage: jest.fn().mockResolvedValue('Japanese'),
+    getApiKey: jest.fn().mockResolvedValue('test-api-key'),
+    getModel: jest.fn().mockResolvedValue('test-model'),
+    getProvider: jest.fn().mockResolvedValue('Google'),
+  },
+}));
 
 describe('Background Layer Integration', () => {
   let messageHandler: MessageHandler;

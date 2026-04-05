@@ -41,13 +41,17 @@ jest.mock('@popup/hooks/useTranslation', () => ({
   }),
 }));
 
-// Mock StorageManager
-const mockGetApiKey = jest.fn();
-jest.mock('@shared/storage/StorageManager', () => {
-  return jest.fn().mockImplementation(() => ({
-    getApiKey: mockGetApiKey,
-  }));
-});
+// Why: default export is now a singleton instance, not a class — mock the object directly.
+// jest.fn() must be inline in factory because jest.mock is hoisted before variable declarations.
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  default: {
+    getApiKey: jest.fn(),
+  },
+}));
+
+import storageManager from '@shared/storage/StorageManager';
+const mockGetApiKey = storageManager.getApiKey as jest.MockedFunction<typeof storageManager.getApiKey>;
 
 // Mock chrome.runtime
 const mockOpenOptionsPage = jest.fn();

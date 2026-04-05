@@ -472,6 +472,59 @@ describe("DOMManipulator", () => {
     });
   });
 
+  describe("isExcludedElement", () => {
+    it("should return false for a normal element", () => {
+      const div = document.createElement("div");
+      testContainer.appendChild(div);
+      expect(domManipulator.isExcludedElement(div)).toBe(false);
+    });
+
+    it("should return true for element matching exclusion selector (svg)", () => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      testContainer.appendChild(svg);
+      expect(domManipulator.isExcludedElement(svg)).toBe(true);
+    });
+
+    it("should return true for element with data-no-translate", () => {
+      const div = document.createElement("div");
+      div.setAttribute("data-no-translate", "");
+      testContainer.appendChild(div);
+      expect(domManipulator.isExcludedElement(div)).toBe(true);
+    });
+
+    it("should return true for element with .no-translate class", () => {
+      const div = document.createElement("div");
+      div.className = "no-translate";
+      testContainer.appendChild(div);
+      expect(domManipulator.isExcludedElement(div)).toBe(true);
+    });
+
+    it("should return true for element with contenteditable=true", () => {
+      const div = document.createElement("div");
+      div.setAttribute("contenteditable", "true");
+      testContainer.appendChild(div);
+      expect(domManipulator.isExcludedElement(div)).toBe(true);
+    });
+
+    it("should return true for child element nested inside excluded ancestor", () => {
+      const outer = document.createElement("div");
+      outer.setAttribute("data-no-translate", "");
+      const inner = document.createElement("p");
+      outer.appendChild(inner);
+      testContainer.appendChild(outer);
+      expect(domManipulator.isExcludedElement(inner)).toBe(true);
+    });
+
+    it("should return false for sibling of excluded element", () => {
+      const excluded = document.createElement("div");
+      excluded.setAttribute("data-no-translate", "");
+      const sibling = document.createElement("div");
+      testContainer.appendChild(excluded);
+      testContainer.appendChild(sibling);
+      expect(domManipulator.isExcludedElement(sibling)).toBe(false);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty DOM", () => {
       testContainer.innerHTML = "";

@@ -20,11 +20,12 @@ jest.mock('../../../src/shared/utils/logger', () => ({
     error: jest.fn(),
   },
 }));
+// Why: default export is now a singleton instance, not a class — mock the object directly
 jest.mock('../../../src/shared/storage/StorageManager', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
+  default: {
     getTargetLanguage: jest.fn().mockResolvedValue('ja'),
-  })),
+  },
 }));
 
 describe('CommandHandler', () => {

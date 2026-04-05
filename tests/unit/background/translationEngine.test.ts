@@ -7,12 +7,12 @@
 
 import { TranslationEngine } from "../../../src/background/translationEngine";
 import { OpenRouterClient } from "../../../src/background/apiClient";
-import StorageManager from "../../../src/shared/storage/StorageManager";
 import { BATCH_CONFIG } from "../../../src/shared/constants/config";
 
 // Mock dependencies
 jest.mock("../../../src/background/apiClient");
-jest.mock("../../../src/shared/storage/StorageManager");
+// Why: StorageManager mock removed — TranslationEngine no longer imports StorageManager directly;
+//      cache persistence is handled by TranslationCache via browser.storage.local mock below.
 jest.mock("../../../src/shared/utils/logger", () => ({
   logger: {
     log: jest.fn(),
@@ -24,7 +24,6 @@ jest.mock("../../../src/shared/utils/logger", () => ({
 describe("TranslationEngine", () => {
   let engine: TranslationEngine;
   let mockApiClient: jest.Mocked<OpenRouterClient>;
-  let mockStorage: jest.Mocked<StorageManager>;
 
   // Mock browser.storage.local data store (replaces sessionStorage/localStorage)
   const mockBrowserStorage: Map<string, string> = new Map();
@@ -101,17 +100,6 @@ describe("TranslationEngine", () => {
     (
       OpenRouterClient as jest.MockedClass<typeof OpenRouterClient>
     ).mockImplementation(() => mockApiClient);
-
-    // Mock StorageManager
-    mockStorage = {
-      get: jest.fn().mockResolvedValue({}),
-      set: jest.fn().mockResolvedValue(undefined),
-      remove: jest.fn().mockResolvedValue(undefined),
-      clear: jest.fn().mockResolvedValue(undefined),
-    } as any;
-    (
-      StorageManager as jest.MockedClass<typeof StorageManager>
-    ).mockImplementation(() => mockStorage);
 
     engine = new TranslationEngine();
   });

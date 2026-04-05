@@ -4,22 +4,27 @@
 
 import { renderHook, act } from '@testing-library/react';
 import { useSettings } from '@options/hooks/useSettings';
-import StorageManager from '@shared/storage/StorageManager';
+// Why: source uses singleton default import directly — mock default object methods, not the class.
+import storageManager from '@shared/storage/StorageManager';
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType } from '@shared/messages/types';
 
 // Mock dependencies
-jest.mock('@shared/storage/StorageManager');
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  StorageManager: jest.fn(),
+  default: {
+    get: jest.fn(),
+    set: jest.fn(),
+    getApiKey: jest.fn(),
+    setApiKey: jest.fn(),
+    getTargetLanguage: jest.fn(),
+    setTargetLanguage: jest.fn(),
+  },
+}));
 jest.mock('@shared/messages/MessageBus');
 
-const mockStorageManager = {
-  get: jest.fn(),
-  set: jest.fn(),
-  getApiKey: jest.fn(),
-  setApiKey: jest.fn(),
-  getTargetLanguage: jest.fn(),
-  setTargetLanguage: jest.fn(),
-};
+const mockStorageManager = storageManager as jest.Mocked<typeof storageManager>;
 
 const mockMessageBus = {
   send: jest.fn(),
@@ -28,7 +33,6 @@ const mockMessageBus = {
 describe('useSettings Hook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (StorageManager as jest.Mock).mockImplementation(() => mockStorageManager);
     (MessageBus.send as jest.Mock) = mockMessageBus.send;
 
     // Default storage data

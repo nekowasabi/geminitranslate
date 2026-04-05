@@ -8,17 +8,19 @@ import '@testing-library/jest-dom';
 import { LanguageSelector } from '@popup/components/LanguageSelector';
 import { SUPPORTED_LANGUAGES } from '@shared/constants/languages';
 
-// Mock StorageManager
-const mockGetTargetLanguage = jest.fn();
-const mockSetTargetLanguage = jest.fn();
-
+// Why: default export is now a singleton instance, not a class — mock the object directly.
+// jest.fn() must be inline in factory because jest.mock is hoisted before variable declarations.
 jest.mock('@shared/storage/StorageManager', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    getTargetLanguage: mockGetTargetLanguage,
-    setTargetLanguage: mockSetTargetLanguage,
-  })),
+  default: {
+    getTargetLanguage: jest.fn(),
+    setTargetLanguage: jest.fn(),
+  },
 }));
+
+import storageManager from '@shared/storage/StorageManager';
+const mockGetTargetLanguage = storageManager.getTargetLanguage as jest.MockedFunction<typeof storageManager.getTargetLanguage>;
+const mockSetTargetLanguage = storageManager.setTargetLanguage as jest.MockedFunction<typeof storageManager.setTargetLanguage>;
 
 describe('LanguageSelector Component', () => {
   beforeEach(() => {

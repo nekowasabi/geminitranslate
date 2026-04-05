@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import StorageManager from '@shared/storage/StorageManager';
+// Why: named import { StorageManager } instead of default — default export is now the singleton instance,
+// but this test needs to instantiate fresh instances to test methods in isolation.
+import { StorageManager } from '@shared/storage/StorageManager';
 import { DEFAULT_STORAGE, StorageData } from '@shared/types';
 
 describe('StorageManager', () => {

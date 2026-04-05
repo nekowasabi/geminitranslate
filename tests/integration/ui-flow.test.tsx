@@ -7,22 +7,27 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 // Mock StorageManager and MessageBus
-jest.mock('@shared/storage/StorageManager');
-jest.mock('@shared/messages/MessageBus');
-
-import StorageManager from '@shared/storage/StorageManager';
-import MessageBus from '@shared/messages/MessageBus';
-import { MessageType } from '@shared/messages/types';
-
-describe('UI Integration Flow', () => {
-  const mockStorageManager = {
+// Why: source code uses the singleton default import directly — mock the default object's methods.
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  StorageManager: jest.fn(),
+  default: {
     get: jest.fn(),
     set: jest.fn(),
     getApiKey: jest.fn(),
     setApiKey: jest.fn(),
     getTargetLanguage: jest.fn(),
     setTargetLanguage: jest.fn(),
-  };
+  },
+}));
+jest.mock('@shared/messages/MessageBus');
+
+import storageManager, { StorageManager } from '@shared/storage/StorageManager';
+import MessageBus from '@shared/messages/MessageBus';
+import { MessageType } from '@shared/messages/types';
+
+describe('UI Integration Flow', () => {
+  const mockStorageManager = storageManager as jest.Mocked<typeof storageManager>;
 
   const mockMessageBus = {
     send: jest.fn(),
@@ -30,7 +35,6 @@ describe('UI Integration Flow', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (StorageManager as jest.Mock).mockImplementation(() => mockStorageManager);
     (MessageBus.send as jest.Mock).mockImplementation(mockMessageBus.send);
 
     // Default storage data

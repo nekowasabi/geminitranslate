@@ -15,17 +15,19 @@ jest.mock('@shared/messages/MessageBus', () => ({
   },
 }));
 
-// Mock StorageManager
-const mockGet = jest.fn();
-const mockGetTargetLanguage = jest.fn();
-
+// Why: default export is now a singleton instance, not a class — mock the object directly.
+// jest.fn() must be inline in the factory because jest.mock is hoisted before variable declarations.
 jest.mock('@shared/storage/StorageManager', () => ({
   __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    get: mockGet,
-    getTargetLanguage: mockGetTargetLanguage,
-  })),
+  default: {
+    get: jest.fn(),
+    getTargetLanguage: jest.fn(),
+  },
 }));
+
+import storageManager from '@shared/storage/StorageManager';
+const mockGet = storageManager.get as jest.MockedFunction<typeof storageManager.get>;
+const mockGetTargetLanguage = storageManager.getTargetLanguage as jest.MockedFunction<typeof storageManager.getTargetLanguage>;
 
 const mockSend = MessageBus.send as jest.MockedFunction<typeof MessageBus.send>;
 

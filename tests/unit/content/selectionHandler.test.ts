@@ -42,11 +42,13 @@ jest.mock('@content/iconBadge', () => {
 
 // Mock StorageManager
 const mockGetTargetLanguage = jest.fn();
-jest.mock('@shared/storage/StorageManager', () => {
-  return jest.fn().mockImplementation(() => ({
+// Why: default export is now a singleton instance, not a class — mock the object directly
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  default: {
     getTargetLanguage: mockGetTargetLanguage,
-  }));
-});
+  },
+}));
 
 import { SelectionHandler } from '@content/selectionHandler';
 import { MessageType } from '@shared/messages/types';

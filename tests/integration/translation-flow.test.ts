@@ -8,10 +8,17 @@
 import MessageBus from '@shared/messages/MessageBus';
 import { MessageType, TranslatePageRequest, TranslateSelectionRequest, TranslateClipboardRequest } from '@shared/messages/types';
 import { TranslationEngine } from '@background/translationEngine';
-import StorageManager from '@shared/storage/StorageManager';
+// Why: named import { StorageManager } class — default is the singleton instance;
+// tests use mockImplementation to control constructor behavior.
+import { StorageManager } from '@shared/storage/StorageManager';
 
 // Mock modules
-jest.mock('@shared/storage/StorageManager');
+// Why: explicit factory so { StorageManager } named export is a jest.fn() class mock
+jest.mock('@shared/storage/StorageManager', () => ({
+  __esModule: true,
+  StorageManager: jest.fn(),
+  default: {},
+}));
 jest.mock('@shared/messages/MessageBus');
 
 describe('Translation Flow Integration', () => {
