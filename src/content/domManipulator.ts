@@ -44,6 +44,10 @@ export class DOMManipulator {
     "PRE",
   ];
 
+  // Why: exclusion logic consolidated here — single source of truth instead of dual contentScript+domManipulator
+  private readonly EXCLUSION_SELECTOR_STRING: string =
+    EXCLUSION_SELECTORS.join(", ");
+
   /**
    * Set of normalized texts already extracted (for deduplication)
    * Reset on each extractTextNodes() call
@@ -52,6 +56,22 @@ export class DOMManipulator {
 
   constructor() {
     // Use default IGNORED_TAGS or extend from EXCLUSION_SELECTORS if needed
+  }
+
+  /**
+   * Check if an element matches any exclusion selector.
+   *
+   * Returns true if the element itself or any of its ancestors matches
+   * the combined EXCLUSION_SELECTORS CSS selector string.
+   *
+   * @param element - The element to check
+   * @returns true if excluded, false if translatable
+   */
+  isExcludedElement(element: Element): boolean {
+    return (
+      element.matches(this.EXCLUSION_SELECTOR_STRING) ||
+      !!element.closest(this.EXCLUSION_SELECTOR_STRING)
+    );
   }
 
   /**

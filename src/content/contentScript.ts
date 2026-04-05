@@ -19,10 +19,6 @@ import { MessageBus } from "@shared/messages/MessageBus";
 import { MessageType, Message, TranslationPhase } from "@shared/messages/types";
 import { logger } from "@shared/utils";
 import { filterBatchTexts } from "@shared/utils/textFilter";
-import { EXCLUSION_SELECTORS } from "@shared/constants";
-
-/** Combined CSS selector string for all exclusion rules */
-const EXCLUSION_SELECTOR_STRING = EXCLUSION_SELECTORS.join(", ");
 
 export class ContentScript {
   private domManipulator: DOMManipulator;
@@ -840,10 +836,7 @@ export class ContentScript {
     }
 
     const element = addedNode as Element;
-    if (
-      element.matches(EXCLUSION_SELECTOR_STRING) ||
-      element.closest(EXCLUSION_SELECTOR_STRING)
-    ) {
+    if (this.domManipulator.isExcludedElement(element)) {
       return;
     }
 
@@ -854,10 +847,7 @@ export class ContentScript {
     root: Element,
     collector: Set<Node>,
   ): void {
-    if (
-      root.matches(EXCLUSION_SELECTOR_STRING) ||
-      root.closest(EXCLUSION_SELECTOR_STRING)
-    ) {
+    if (this.domManipulator.isExcludedElement(root)) {
       return;
     }
 
@@ -881,7 +871,7 @@ export class ContentScript {
     const parent = node.parentElement;
     if (!parent) return false;
 
-    if (parent.closest(EXCLUSION_SELECTOR_STRING)) return false;
+    if (this.domManipulator.isExcludedElement(parent)) return false;
     if (!this.isElementVisible(parent)) return false;
 
     return true;
