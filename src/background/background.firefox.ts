@@ -54,7 +54,7 @@ class BackgroundService {
       await this.engine.initialize();
 
       // Get client from engine for MessageHandler
-      this.client = (this.engine as any).apiClient;
+      this.client = this.engine.apiClient;
 
       if (!this.client) {
         throw new Error('Failed to initialize OpenRouterClient');

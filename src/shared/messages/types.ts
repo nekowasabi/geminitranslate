@@ -432,6 +432,49 @@ export interface SelectionTranslatedMessage extends BaseMessage {
 }
 
 /**
+ * Clear Cache Payload
+ *
+ * Used by MessageHandler's clearCache action.
+ * Exported for use by callers that construct cache-clear messages.
+ */
+export interface ClearCachePayload {
+  /**
+   * Cache layer to clear.
+   * Defaults to "all" when omitted.
+   */
+  layer?: 'memory' | 'session' | 'local' | 'all';
+}
+
+/**
+ * Get Cache Stats Payload
+ *
+ * No parameters required; defined as an empty object for consistency
+ * with the ActionHandler signature pattern.
+ */
+export type GetCacheStatsPayload = Record<string, never>;
+
+/**
+ * Reload Config Payload
+ *
+ * No parameters required; defined as an empty object for consistency
+ * with the ActionHandler signature pattern.
+ */
+export type ReloadConfigPayload = Record<string, never>;
+
+/**
+ * Union of all inbound action payloads (Content/Options → Background).
+ *
+ * Why: union type instead of `any` — each handler receives one of these
+ * concrete shapes, allowing callers to stay type-safe without widening to any.
+ */
+export type ActionPayload =
+  | TranslationRequestMessage['payload']
+  | NonNullable<TestConnectionMessage['payload']>
+  | ClearCachePayload
+  | GetCacheStatsPayload
+  | ReloadConfigPayload;
+
+/**
  * Union Type for All Messages
  */
 export type Message =

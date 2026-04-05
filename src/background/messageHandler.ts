@@ -40,6 +40,11 @@ import {
   MessageType,
   BatchCompletedMessage,
   TranslationPhase,
+  TranslationRequestMessage,
+  TestConnectionMessage,
+  ClearCachePayload,
+  GetCacheStatsPayload,
+  ReloadConfigPayload,
 } from "../shared/messages/types";
 
 /**
@@ -72,9 +77,10 @@ export interface ErrorResponse {
  */
 export type HandlerResponse = SuccessResponse | ErrorResponse;
 
-/**
- * Action handler function type
- */
+// Why: any instead of unknown — Map stores heterogeneous handlers with specific
+// payload types; contravariance makes unknown impossible with specific parameter
+// types. Runtime safety is ensured by action-based routing (each action maps to
+// exactly one handler with validated message dispatch).
 type ActionHandler = (
   payload: any,
   sendResponse: (response: HandlerResponse) => void,
@@ -99,7 +105,9 @@ export class MessageHandler {
     this.client = client;
 
     // Initialize action handlers map for efficient routing
-    this.actionHandlers = new Map([
+    // Why: explicit type cast — TypeScript infers Map type from first element,
+    // causing contravariance errors for subsequent handlers with different payload types.
+    this.actionHandlers = new Map<string, ActionHandler>([
       ["requestTranslation", this.handleRequestTranslation.bind(this)],
       ["clearCache", this.handleClearCache.bind(this)],
       ["getCacheStats", this.handleGetCacheStats.bind(this)],
@@ -145,6 +153,8 @@ export class MessageHandler {
       );
 
       if (!action) {
+        // Why: single structured log instead of two logger.error calls — eliminates duplicate output,
+        //      the timestamped call provides full context so the redundant bare call is removed
         logger.error(
           `[Background:MessageHandler] ${timestamp} - Invalid message format:`,
           {
@@ -153,11 +163,6 @@ export class MessageHandler {
             message,
           },
         );
-        logger.error("MessageHandler: Invalid message format", {
-          type: message.type,
-          hasAction: !!message.action,
-          message,
-        });
         sendResponse({
           success: false,
           error: `Invalid message format: missing action property (type: ${message.type})`,
@@ -189,6 +194,8 @@ export class MessageHandler {
         });
       }
     } catch (error) {
+      // Why: single structured log instead of two logger.error calls — timestamped call includes
+      //      error message and stack, making the bare redundant call unnecessary
       logger.error(
         `[Background:MessageHandler] ${timestamp} - Unexpected error:`,
         {
@@ -197,7 +204,6 @@ export class MessageHandler {
           stack: error instanceof Error ? error.stack : undefined,
         },
       );
-      logger.error("MessageHandler: Unexpected error", error);
       sendResponse({
         success: false,
         error:
@@ -238,7 +244,7 @@ export class MessageHandler {
    * after each batch completes for progressive rendering.
    */
   private async handleRequestTranslation(
-    payload: any,
+    payload: TranslationRequestMessage['payload'],
     sendResponse: (response: HandlerResponse) => void,
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
@@ -394,6 +400,8 @@ export class MessageHandler {
         data: { translations },
       });
     } catch (error) {
+      // Why: single structured log instead of two logger.error calls — same rationale as
+      //      the top-level catch: timestamped structured log subsumes the bare redundant call
       logger.error(
         `[Background:MessageHandler] ${timestamp} - Translation error:`,
         {
@@ -402,7 +410,6 @@ export class MessageHandler {
           stack: error instanceof Error ? error.stack : undefined,
         },
       );
-      logger.error("MessageHandler: Translation error", error);
       sendResponse({
         success: false,
         error: error instanceof Error ? error.message : "Translation failed",
@@ -414,7 +421,7 @@ export class MessageHandler {
    * Handle clearCache action
    */
   private async handleClearCache(
-    payload: any,
+    payload: ClearCachePayload,
     sendResponse: (response: HandlerResponse) => void,
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
@@ -441,7 +448,7 @@ export class MessageHandler {
    * Handle getCacheStats action
    */
   private async handleGetCacheStats(
-    payload: any,
+    payload: GetCacheStatsPayload,
     sendResponse: (response: HandlerResponse) => void,
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
@@ -471,7 +478,7 @@ export class MessageHandler {
    * 2. Without payload: Test saved config from storage (backward compatibility)
    */
   private async handleTestConnection(
-    payload: any,
+    payload: NonNullable<TestConnectionMessage['payload']>,
     sendResponse: (response: HandlerResponse) => void,
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
@@ -512,7 +519,7 @@ export class MessageHandler {
    * これにより、拡張機能を再起動せずに新しい設定を反映できる。
    */
   private async handleReloadConfig(
-    payload: any,
+    payload: ReloadConfigPayload,
     sendResponse: (response: HandlerResponse) => void,
     sender?: chrome.runtime.MessageSender,
   ): Promise<void> {
