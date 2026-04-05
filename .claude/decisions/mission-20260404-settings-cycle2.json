@@ -1,0 +1,112 @@
+{
+  "contract": "CommandDecision",
+  "mission_id": "mission-20260404-settings",
+  "cycle": 2,
+  "phase": "orient",
+  "commander_assessment": {
+    "situation": "Cycle 1調査により、Firefox subdialogのbeforeunload信頼性問題とdebounce auto-saveの有効性が確認された。根本原因はsubdialog環境の制約であり、open_in_tab:trueによるsubdialog排除が最適解。",
+    "confidence": "high",
+    "risk_level": "low"
+  },
+  "victory_conditions": [
+    "manifest.v2.jsonに open_in_tab:true を追加し、Firefox MV2でフルタブ動作を実現",
+    "debounce auto-save (300ms) により全設定値の自動保存を実装",
+    "visibilitychangeをセカンダリflushとして実装（debounce未完了時の保険）",
+    "Firefox/Chrome両環境で同一のフルタブ動作を統一",
+    "schemaVersion 3→4へのマイグレーション対応"
+  ],
+  "scope_boundary": {
+    "in_scope": [
+      "useSettings.ts の debounce auto-save 実装",
+      "App.tsx の visibilitychange ハンドラ追加",
+      "manifest.v2.json の open_in_tab: true 追加",
+      "StorageManager.ts の schemaVersion 3→4 マイグレーション",
+      "debounce未完了時のpagehide/visibilitychangeセカンダリflush"
+    ],
+    "out_of_scope": [
+      "UIのredesign",
+      "React 19への移行",
+      "beforeunloadへの依存（Firefox subdialogでは信頼できないため排除）",
+      "popup.htmlの変更",
+      "content.js/background.jsの変更"
+    ]
+  },
+  "strategic_direction": {
+    "approach": "4フェーズ計画を維持（Cycle 1知見を反映）: Phase 1: debounce auto-save (300ms) で即座にデータ消失リスクを排除。Phase 2: visibilitychangeをセカンダリflushとして実装（beforeunloadではなくFirefox subdialog対応）。Phase 3: manifest.v2.jsonにopen_in_tab:trueを追加し、subdialog自体を排除してChrome MV3と同一動作にする。Phase 4: schemaVersion 3→4へ更新。",
+    "rationale": "debounce auto-saveが一次防御線として機能し、visibilitychangeが二次防御線、open_in_tab:trueが根本解決となる多層防御アプローチ。beforeunloadはFirefox subdialogで信頼できないため排除。",
+    "phase_plan": {
+      "phase_1": {
+        "objective": "debounce auto-save実装 (300ms)",
+        "files": ["src/options/hooks/useSettings.ts"],
+        "implementation": "useSettingsの各setterに300ms debounceを適用。debounce完了時に即座にbrowser.storage.localへ書き込み。leading edgeではなくtrailing edgeで保存（ユーザ入力完了後）。",
+        "verification": "設定変更→300ms後→storage.localに反映されることを確認"
+      },
+      "phase_2": {
+        "objective": "visibilitychangeセカンダリflush実装",
+        "files": ["src/options/App.tsx"],
+        "implementation": "document.visibilitychangeイベントリスナーを追加。hidden状態への遷移時に、debounce保留中のflushを実行。pagehideイベントもリッスン（Firefox subdialog考慮）。",
+        "verification": "debounce未完了状態でタブ切替→flushされることを確認"
+      },
+      "phase_3": {
+        "objective": "manifest open_in_tab: true 追加",
+        "files": ["manifest.v2.json"],
+        "implementation": "options_uiにopen_in_tab:trueを追加。これによりbrowser.runtime.openOptionsPage()がsubdialogではなく新タブで開くようになる。Chrome MV3のoptions_page動作と同一になる。",
+        "verification": "Firefoxでオプションページが新タブで開くことを確認"
+      },
+      "phase_4": {
+        "objective": "schemaVersion 3→4 マイグレーション",
+        "files": ["src/shared/StorageManager.ts"],
+        "implementation": "schemaVersionを3→4に更新。open_in_tab変更によるストレージレイアウト変更があれば対応（現状なしの場合はバージョン番号のみ更新）。",
+        "verification": "既存設定がマイグレーション後も保持されることを確認"
+      }
+    }
+  },
+  "file_ownership": {
+    "src/options/hooks/useSettings.ts": "phase 1 (debounce auto-save実装)",
+    "src/options/App.tsx": "phase 2 (visibilitychangeハンドラ)",
+    "manifest.v2.json": "phase 3 (open_in_tab: true)",
+    "src/shared/StorageManager.ts": "phase 4 (schemaVersion更新)"
+  },
+  "key_decisions": [
+    {
+      "decision": "debounce間隔: 300ms",
+      "rationale": "Cycle 1の500ms推奨から最適化。ユーザ入力の自然な間隔（typing speed）を考慮し、十分な応答性とAPI呼び出し削減のバランスを取る。storage.localへの書き込みは同期APIではないため300msで十分",
+      "alternatives_rejected": ["500ms（遅すぎる）", "100ms（頻繁すぎる、書き込み負荷増）"]
+    },
+    {
+      "decision": "beforeunloadを排除しvisibilitychange + pagehideを使用",
+      "rationale": "Firefox subdialogではbeforeunloadが発火しない場合がある。visibilitychangeはsubdialog閉じる際にも発火する可能性が高い。pagehideはより信頼性の高い替代（Firefox推奨）",
+      "alternatives_rejected": ["beforeunload（Firefox subdialogで信頼不可）"]
+    },
+    {
+      "decision": "open_in_tab: trueでsubdialog排除",
+      "rationale": "subdialog環境の制約（beforeunload信頼性、コンテキスト分離）を根本的に排除。Chrome MV3のoptions_pageは既にフルタブ動作であるため、クロスブラウザ統一にも貢献",
+      "alternatives_rejected": ["subdialog環境でのworkaround継続（根本解決にならない）"]
+    },
+    {
+      "decision": "多層防御アプローチ（debounce + visibilitychange + open_in_tab）",
+      "rationale": "単一対策への依存を避ける。debounceが一次防御、visibilitychangeが二次防御、open_in_tabが根本解決。各層が独立して機能する",
+      "alternatives_rejected": ["debounce単体（open_in_tabなしの環境では不十分な可能性）"]
+    }
+  ],
+  "risk_assessment": {
+    "risks": [
+      {
+        "risk": "open_in_tab: trueによるUI体験の変化",
+        "severity": "low",
+        "mitigation": "フルタブの方が設定画面として使いやすい（レスポンシブレイアウトが活きる）。ユーザへの影響はほぼなし"
+      },
+      {
+        "risk": "debounce中にブラウザクラッシュ",
+        "severity": "very_low",
+        "mitigation": "300msという短い間隔のため、実質的にデータ消失のウィンドウは極小。visibilitychangeもセカンダリとして機能"
+      }
+    ]
+  },
+  "next_cycle_guidance": {
+    "cycle_3_focus": "Phase 1実装（debounce auto-save）",
+    "expected_output": "useSettings.tsのdebounce実装コード",
+    "verification_criteria": "設定変更→300ms→storage.local反映の動作確認"
+  },
+  "rfi": null
+}
