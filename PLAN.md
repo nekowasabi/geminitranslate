@@ -1,62 +1,68 @@
----
-title: "設定画面の設定値自動保存機能と設定消失問題の解決"
-status: planning
-created: "2026-04-04"
----
+# 翻訳速度・精度・表示安定性改善計画
 
-# Commander's Intent
+## Summary
 
-## Purpose
-Firefox拡張機能の設定画面（Options UI）で、ユーザが設定変更後に保存ボタンを押さずに画面を閉じると設定値が消失する問題を解決する。自動保存機構の追加により、ユーザ操作なしに設定が永続化される状態を実現する。
+開いているタブのページ翻訳について、インライン翻訳を維持したままデザイン崩れを最優先で改善する。あわせて、翻訳精度を上げ、MutationObserver や fallback による無限・過剰な API 呼び出しを構造的に防ぐ。
 
-## End State
-設定フィールド変更後300msで自動保存され、ブラウザ/ダイアログ閉じてもdebounce未保留中の変更が保存され、React closure stale参照が解消され、全既存テストがグリーンである状態。
+既存コードでは、ストレージ一括キャッシュ、retry 一元化、Phase 別 node 管理、MutationObserver debounce は実装済み。主な残課題は、text node の `trim()` と `textContent` 直接置換による空白・inline 表示崩れ、区切り文字ベースの応答パース、無制限並列、翻訳適用後の MutationObserver 再発火である。
 
-## Key Tasks
-- Process 6+7: closure fix + debounce自動保存（300ms）による設定消失の根本解決
-- Process 8: visibilitychange + pagehide + open_in_tab による多層防御
-- Process 9: StorageManager migration副作用分離 + schemaVersion 3→4
+## Key Changes
 
-## Constraints
-- Firefox MV2 + Chrome MV3 両対応
-- 既存のSave Settingsボタンは維持（即時保存手段）
-- testConnectionはUI stateを直接参照（自動保存と非競合）
-- 外部状態管理ライブラリ不導入
-- TDD: Red→Green→Refactor
+- DOM 置換を安全化する。
+  - `DOMManipulator` の抽出時に、元 text node の前後空白を保持する metadata を `TextNode` に追加する。
+  - 翻訳適用時は翻訳本文だけを差し替え、保持した前後空白を復元する。
+  - DOM 要素の追加・削除は行わず、既存 text node の値だけを更新する。
+  - `reset()` は WeakMap に保存した元テキストへ戻す現行仕様を維持する。
 
----
+- 翻訳応答を JSON 配列優先にする。
+  - `OpenRouterClient.buildPrompt()` を、入力順と同じ長さの JSON string 配列だけを返す指示へ変更する。
+  - `parseResponse()` は JSON 配列の抽出と件数一致を最優先にする。
+  - JSON 解析に失敗した場合のみ、既存の `---NEXT-TEXT---` separator / 行分割 fallback を使う。
 
-# Progress Map
+- API 呼び出しが増え続けない構造にする。
+  - `TranslationEngine` の `RequestBudgetContext` を維持し、retry / fallback 込みでも `maxApiCalls` 超過時は停止する。
+  - dynamic translation 用に、同一 node の「翻訳中」「翻訳済み」「直近失敗」状態を WeakMap で管理する。
+  - 翻訳適用による `characterData` mutation は、翻訳済みテキストとして記録済みなら再翻訳しない。
+  - 失敗した node は cooldown を置き、同じテキストでは即時再試行しない。
+  - 同一 debounce 窓内の同一テキストは 1 回だけ API に送り、結果を複数 node へ適用する。
 
-| Process | Title | Status | File |
-|---------|-------|--------|------|
-| 6 | closure fix + dirty tracking | ☐ planning | [→ plan/process-06.md](plan/process-06.md) |
-| 7 | debounce auto-save (300ms) | ☐ planning | [→ plan/process-07.md](plan/process-07.md) |
-| 8 | UX safety net (visibilitychange + pagehide + open_in_tab) | ☐ planning | [→ plan/process-08.md](plan/process-08.md) |
-| 9 | StorageManager migration分離 + schemaVersion 3→4 | ☐ planning | [→ plan/process-09.md](plan/process-09.md) |
-| 11 | 回帰テスト確認 | ☐ planning | [→ plan/process-11.md](plan/process-11.md) |
-| 301 | OODA振り返り | ☐ planning | [→ plan/process-301.md](plan/process-301.md) |
+- 体感速度を維持する。
+  - Phase 1 の viewport 優先翻訳は維持する。
+  - BATCH_COMPLETED で適用済みの node index を記録し、Phase 完了時は未適用分だけを適用する。
+  - remaining batch の `Promise.all` は `BATCH_CONFIG.CONCURRENCY_LIMIT` に従う制限付き並列へ変更する。
 
-**Overall**: ☐ 0/6 completed
+## Public Interfaces
 
----
+- `TextNode` に空白復元用 metadata を追加する。
+- 必要な場合のみ、DOM 翻訳単位を表す内部型 `TranslationUnit` を追加する。
+- extension messaging の外部 wire format は変更しない。
+- 既存の `BATCH_CONFIG.CONCURRENCY_LIMIT` を実際の翻訳並列制御に使用する。
 
-# References
+## Test Plan
 
-| @ref | @target | @test |
-|------|---------|-------|
-| `src/options/hooks/useSettings.ts` | L68-76 (updateSettings), L81-120 (saveSettings), L128-171 (testConnection) | `tests/unit/options/hooks/useSettings.test.ts` |
-| `src/options/App.tsx` | L16-25 (useSettings destructuring), L220-237 (Save button) | `tests/unit/options/App.test.tsx` |
-| `src/shared/storage/StorageManager.ts` | L28-32 (get migration), L52-59 (set) | `tests/unit/shared/StorageManager.test.ts` |
-| `src/shared/types/index.ts` | DEFAULT_STORAGE, StorageData type | - |
-| `public/manifest.v2.json` | L70-73 (options_ui) | - |
+- `tests/unit/content/domManipulator.test.ts`
+  - 前後空白、改行、inline 要素、reset 復元、DOM 構造が増減しないことを追加する。
+- `tests/unit/background/apiClient.test.ts`
+  - JSON 配列応答、コードフェンス付き JSON、余分な説明文混入、件数不一致、旧 fallback を追加する。
+- `tests/unit/background/translationEngine.test.ts`
+  - 並列数が上限を超えないこと、API budget 超過時に停止すること、fallback 後も順序が保たれることを追加する。
+- `tests/unit/content/contentScript.test.ts`
+  - 翻訳適用による MutationObserver 再発火で再翻訳しないこと。
+  - 同一 node の翻訳中再入を防ぐこと。
+  - 同一テキストを重複 API 送信しないこと。
+  - BATCH_COMPLETED 適用済み node を Phase 完了時に二重適用しないこと。
 
----
+検証コマンド:
 
-# Risks
+```bash
+npm test -- --runInBand tests/unit/content/domManipulator.test.ts tests/unit/background/apiClient.test.ts tests/unit/background/translationEngine.test.ts tests/unit/content/contentScript.test.ts
+npm run build:chrome
+npm run build:firefox
+```
 
-| リスク | 対策 |
-|--------|------|
-| Firefox MV2 subdialogでbeforeunload非発火 | visibilitychange + pagehide + open_in_tab: true で多重防御 |
-| React closure stale参照で古い設定を保存 | useRef pattern で常に最新state参照 |
-| debounce未完了時にタブ閉じで最終編集消失 | pagehide で secondary flush + visibilitychange で flush |
+## Assumptions
+
+- ページ翻訳はサイドパネル中心ではなく、ページ内インライン反映を維持する。
+- 翻訳後の文章長差による自然な折り返し変化は許容する。
+- 成功条件は、DOM 構造破壊、空白消失、二重翻訳、無限 API 呼び出しを防ぐこと。
+- API の完全停止ではなく、明示的な上限、再入防止、cooldown、重複排除で過剰呼び出しを防ぐ。
