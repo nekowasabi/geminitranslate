@@ -14,6 +14,8 @@ export interface TextNode {
   node: Node;
   text: string;
   index: number;
+  leadingWhitespace?: string;
+  trailingWhitespace?: string;
 }
 
 /**
@@ -120,18 +122,19 @@ export class DOMManipulator {
 
     while ((node = walker.nextNode())) {
       const rawText = node.textContent || "";
-      // Normalize text by trimming whitespace
-      const text = rawText.trim();
+      const whitespace = this.extractWhitespaceMetadata(rawText);
 
       this.saveOriginalText(node);
       textNodes.push({
         node,
-        text,
+        text: whitespace.body,
         index,
+        leadingWhitespace: whitespace.leading,
+        trailingWhitespace: whitespace.trailing,
       });
 
       // Track normalized text for potential duplicate detection
-      this.extractedTextsSet.add(text);
+      this.extractedTextsSet.add(whitespace.body);
       index++;
     }
 
@@ -146,7 +149,17 @@ export class DOMManipulator {
   applyTranslations(nodes: TextNode[], translations: string[]): void {
     nodes.forEach((textNode, index) => {
       if (translations[index] && translations[index].trim()) {
-        textNode.node.textContent = translations[index];
+        const currentText = textNode.node.textContent || "";
+        const whitespace =
+          textNode.leadingWhitespace !== undefined ||
+          textNode.trailingWhitespace !== undefined
+            ? {
+                leading: textNode.leadingWhitespace || "",
+                trailing: textNode.trailingWhitespace || "",
+              }
+            : this.extractWhitespaceMetadata(currentText);
+
+        textNode.node.textContent = `${whitespace.leading}${translations[index].trim()}${whitespace.trailing}`;
       }
     });
   }
@@ -177,6 +190,33 @@ export class DOMManipulator {
     if (!this.originalTextMap.has(node)) {
       this.originalTextMap.set(node, node.textContent || "");
     }
+  }
+
+  createTextNode(node: Node, index: number): TextNode {
+    const rawText = node.textContent || "";
+    const whitespace = this.extractWhitespaceMetadata(rawText);
+    this.saveOriginalText(node);
+    return {
+      node,
+      text: whitespace.body,
+      index,
+      leadingWhitespace: whitespace.leading,
+      trailingWhitespace: whitespace.trailing,
+    };
+  }
+
+  private extractWhitespaceMetadata(text: string): {
+    leading: string;
+    body: string;
+    trailing: string;
+  } {
+    const leading = text.match(/^\s*/)?.[0] || "";
+    const trailing = text.match(/\s*$/)?.[0] || "";
+    return {
+      leading,
+      body: text.slice(leading.length, text.length - trailing.length),
+      trailing,
+    };
   }
 
   /**

@@ -41,6 +41,15 @@ export class ContentScript {
    */
   private pendingDynamicNodes: Set<Node> = new Set();
   private dynamicTranslationTimer: ReturnType<typeof setTimeout> | null = null;
+  private translatingDynamicNodes: WeakSet<Node> = new WeakSet();
+  private translatedNodeText: WeakMap<Node, string> = new WeakMap();
+  private failedDynamicNodeText: WeakMap<
+    Node,
+    { text: string; retryAfter: number }
+  > = new WeakMap();
+  private readonly DYNAMIC_FAILURE_COOLDOWN_MS = 30000;
+  private phaseAppliedNodeIndices: Map<TranslationPhase, Set<number>> =
+    new Map();
 
   constructor() {
     this.domManipulator = new DOMManipulator();
@@ -340,7 +349,8 @@ export class ContentScript {
             );
             // Apply all translations including cache hits (same pattern as Phase 2)
             const nodesToTranslate = originalIndices.map((i) => viewport[i]);
-            this.applyTranslationsAndTrack(
+            this.applyPhaseTranslationsAndTrack(
+              1,
               nodesToTranslate,
               response1.data.translations,
             );
@@ -425,7 +435,8 @@ export class ContentScript {
                 `[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`,
               );
               const nodesToTranslate = oovIndices.map((i) => outOfViewport[i]);
-              this.applyTranslationsAndTrack(
+              this.applyPhaseTranslationsAndTrack(
+                2,
                 nodesToTranslate,
                 response2.data.translations,
               );
@@ -562,7 +573,11 @@ export class ContentScript {
         this.dynamicTranslationTimer = null;
       }
       this.lastObservedNodeText = new WeakMap();
+      this.translatingDynamicNodes = new WeakSet();
+      this.translatedNodeText = new WeakMap();
+      this.failedDynamicNodeText = new WeakMap();
       this.phaseNodes.clear();
+      this.phaseAppliedNodeIndices.clear();
 
       logger.log("Page reset to original state");
     } catch (error) {
@@ -590,7 +605,8 @@ export class ContentScript {
           const target = mutation.target;
           if (
             target.nodeType === Node.TEXT_NODE &&
-            this.isTextNodeTranslatable(target)
+            this.isTextNodeTranslatable(target) &&
+            !this.isKnownTranslatedMutation(target)
           ) {
             detectedTextNodes.add(target);
           }
@@ -663,14 +679,28 @@ export class ContentScript {
         return;
       }
 
-      // Extract corresponding nodes using nodeIndices
-      const nodes = nodeIndices
-        .filter((i: number) => i < phaseNodeList.length)
-        .map((i: number) => phaseNodeList[i]);
+      const appliedIndices = this.getAppliedNodeIndicesForPhase(phase);
+      const pendingPairs = nodeIndices
+        .map((nodeIndex: number, translationIndex: number) => ({
+          nodeIndex,
+          translation: translations[translationIndex],
+        }))
+        .filter(
+          (pair) =>
+            pair.nodeIndex < phaseNodeList.length &&
+            !appliedIndices.has(pair.nodeIndex),
+        );
+      const nodes = pendingPairs.map((pair) => phaseNodeList[pair.nodeIndex]);
+      const pendingTranslations = pendingPairs.map((pair) => pair.translation);
+      const translationsForApply = pendingTranslations.every(
+        (translation, index) => translation === translations[index],
+      )
+        ? translations
+        : pendingTranslations;
 
-      if (nodes.length !== translations.length) {
+      if (nodes.length !== translationsForApply.length) {
         logger.warn(
-          `[Content:ContentScript] ${timestamp} - Mismatch: nodes(${nodes.length}) vs translations(${translations.length})`,
+          `[Content:ContentScript] ${timestamp} - Mismatch: nodes(${nodes.length}) vs translations(${translationsForApply.length})`,
         );
       }
 
@@ -678,14 +708,15 @@ export class ContentScript {
         `[Content:ContentScript] ${timestamp} - Applying batch translations:`,
         {
           nodesCount: nodes.length,
-          translationsCount: translations.length,
+          translationsCount: translationsForApply.length,
           phase,
           progress,
         },
       );
 
       // Apply translations immediately to DOM
-      this.applyTranslationsAndTrack(nodes, translations);
+      this.applyTranslationsAndTrack(nodes, translationsForApply);
+      pendingPairs.forEach((pair) => appliedIndices.add(pair.nodeIndex));
 
       // Update progress notification
       if (typeof progress?.percentage === "number") {
@@ -724,20 +755,29 @@ export class ContentScript {
       const uniqueNodes = Array.from(new Set(nodes));
       const changedNodes = uniqueNodes.filter((node) => {
         if (!this.isTextNodeTranslatable(node)) return false;
+        if (this.translatingDynamicNodes.has(node)) return false;
+        if (this.isKnownTranslatedMutation(node)) return false;
 
         const currentText = node.textContent?.trim() || "";
         const previousText = this.lastObservedNodeText.get(node);
+        const recentFailure = this.failedDynamicNodeText.get(node);
+
+        if (
+          recentFailure &&
+          recentFailure.text === currentText &&
+          recentFailure.retryAfter > Date.now()
+        ) {
+          return false;
+        }
 
         return previousText !== currentText;
       });
 
       if (changedNodes.length === 0) return;
 
-      const textNodes: TextNode[] = changedNodes.map((node, index) => ({
-        node,
-        text: node.textContent?.trim() || "",
-        index,
-      }));
+      const textNodes: TextNode[] = changedNodes.map((node, index) =>
+        this.domManipulator.createTextNode(node, index),
+      );
 
       const texts = textNodes.map((n) => n.text);
       const { textsToTranslate, originalIndices } = filterBatchTexts(texts);
@@ -747,22 +787,56 @@ export class ContentScript {
         return;
       }
 
+      const translationGroups = new Map<
+        string,
+        { representativeText: string; items: TextNode[] }
+      >();
+
+      for (const originalIndex of originalIndices) {
+        const textNode = textNodes[originalIndex];
+        const key = textNode.text;
+        const group = translationGroups.get(key);
+        if (group) {
+          group.items.push(textNode);
+        } else {
+          translationGroups.set(key, {
+            representativeText: key,
+            items: [textNode],
+          });
+        }
+      }
+
+      const uniqueTextsToTranslate = Array.from(translationGroups.values()).map(
+        (group) => group.representativeText,
+      );
+      const nodesInFlight = Array.from(translationGroups.values()).flatMap(
+        (group) => group.items.map((item) => item.node),
+      );
+      nodesInFlight.forEach((node) => this.translatingDynamicNodes.add(node));
+
       const response = await this.messageBus.send({
         type: MessageType.REQUEST_TRANSLATION,
         action: "requestTranslation",
         payload: {
-          texts: textsToTranslate,
+          texts: uniqueTextsToTranslate,
           targetLanguage,
           semiParallel: false,
         },
       });
 
       if (response?.success && response?.data?.translations) {
-        const nodesToTranslate = originalIndices.map((i) => textNodes[i]);
-        this.applyTranslationsAndTrack(
-          nodesToTranslate,
-          response.data.translations,
-        );
+        const nodesToApply: TextNode[] = [];
+        const translationsToApply: string[] = [];
+
+        Array.from(translationGroups.values()).forEach((group, index) => {
+          const translation = response.data.translations[index];
+          group.items.forEach((textNode) => {
+            nodesToApply.push(textNode);
+            translationsToApply.push(translation);
+          });
+        });
+
+        this.applyTranslationsAndTrack(nodesToApply, translationsToApply);
 
         const translatedIndexSet = new Set(originalIndices);
         textNodes.forEach((textNode, index) => {
@@ -770,10 +844,38 @@ export class ContentScript {
             this.trackNodeText(textNode.node);
           }
         });
+      } else {
+        nodesInFlight.forEach((node) =>
+          this.markDynamicTranslationFailure(node),
+        );
       }
     } catch (error) {
+      nodes.forEach((node) => this.markDynamicTranslationFailure(node));
       logger.error("Failed to translate new nodes:", error);
+    } finally {
+      nodes.forEach((node) => this.translatingDynamicNodes.delete(node));
     }
+  }
+
+  private applyPhaseTranslationsAndTrack(
+    phase: TranslationPhase,
+    nodes: TextNode[],
+    translations: string[],
+  ): void {
+    const appliedIndices = this.getAppliedNodeIndicesForPhase(phase);
+    const pendingNodes: TextNode[] = [];
+    const pendingTranslations: string[] = [];
+
+    nodes.forEach((node, index) => {
+      if (appliedIndices.has(index)) {
+        return;
+      }
+      pendingNodes.push(node);
+      pendingTranslations.push(translations[index]);
+      appliedIndices.add(index);
+    });
+
+    this.applyTranslationsAndTrack(pendingNodes, pendingTranslations);
   }
 
   private applyTranslationsAndTrack(
@@ -785,6 +887,10 @@ export class ContentScript {
     nodes.forEach((textNode, index) => {
       if (translations[index] && translations[index].trim()) {
         this.trackNodeText(textNode.node);
+        this.translatedNodeText.set(
+          textNode.node,
+          textNode.node.textContent?.trim() || "",
+        );
       }
     });
   }
@@ -794,6 +900,30 @@ export class ContentScript {
     if (text) {
       this.lastObservedNodeText.set(node, text);
     }
+  }
+
+  private markDynamicTranslationFailure(node: Node): void {
+    const text = node.textContent?.trim();
+    if (!text) return;
+    this.failedDynamicNodeText.set(node, {
+      text,
+      retryAfter: Date.now() + this.DYNAMIC_FAILURE_COOLDOWN_MS,
+    });
+  }
+
+  private isKnownTranslatedMutation(node: Node): boolean {
+    const currentText = node.textContent?.trim();
+    const translatedText = this.translatedNodeText.get(node);
+    return !!currentText && translatedText === currentText;
+  }
+
+  private getAppliedNodeIndicesForPhase(phase: TranslationPhase): Set<number> {
+    let indices = this.phaseAppliedNodeIndices.get(phase);
+    if (!indices) {
+      indices = new Set();
+      this.phaseAppliedNodeIndices.set(phase, indices);
+    }
+    return indices;
   }
 
   private queueDynamicTranslation(

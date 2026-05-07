@@ -224,7 +224,7 @@ export class SelectionHandler {
     }
 
     // Use provided text or get current selection
-    const selectedText = text || this.getSelectedText();
+    const selectedText = this.normalizeTranslatedText(text || this.getSelectedText() || '');
 
     if (!selectedText) {
       logger.log('No text selected for translation');
@@ -246,7 +246,9 @@ export class SelectionHandler {
       });
 
       if (response?.success && response?.data?.translations && response.data.translations.length > 0) {
-        const translation = response.data.translations[0];
+        const translation = this.normalizeTranslatedText(
+          response.data.translations[0],
+        );
 
         logger.log('Translation successful, sending SELECTION_TRANSLATED message:', {
           originalText: selectedText.substring(0, 50),
@@ -304,13 +306,10 @@ export class SelectionHandler {
         if (selection && selection.rangeCount > 0) {
           const range = selection.getRangeAt(0);
           const rect = range.getBoundingClientRect();
+          const badgePosition = this.getBadgePosition(rect, event);
 
-          // Show IconBadge at fixed position: right edge, vertical center
           this.iconBadge.show(
-            {
-              x: window.innerWidth - 40,  // Right edge minus icon width (32px) and margin (8px)
-              y: window.innerHeight / 2,  // Vertical center
-            },
+            badgePosition,
             async () => {
               // IconBadge clicked - trigger translation
               // Use captured selectedText from mouseup event to ensure full text is translated
@@ -379,5 +378,33 @@ export class SelectionHandler {
         }
       }
     }, 10);
+  }
+
+  private getBadgePosition(rect: DOMRect, event: MouseEvent): { x: number; y: number } {
+    const hasUsableRect =
+      Number.isFinite(rect.right) &&
+      Number.isFinite(rect.bottom) &&
+      (rect.width > 0 || rect.height > 0);
+
+    if (hasUsableRect) {
+      return {
+        x: rect.right,
+        y: rect.bottom,
+      };
+    }
+
+    return {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  private normalizeTranslatedText(text: string): string {
+    return text
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\r/g, '\n')
+      .replace(/\\n/g, '\n');
   }
 }

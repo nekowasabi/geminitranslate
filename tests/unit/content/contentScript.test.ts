@@ -2774,6 +2774,96 @@ describe("ContentScript", () => {
       );
     });
 
+    it("should not re-translate characterData mutations caused by applying a translation", async () => {
+      (contentScript as any).isTranslated = true;
+      contentScript.enableDynamicTranslation("ja");
+
+      mockSend.mockResolvedValue({
+        success: true,
+        data: { translations: ["翻訳済みテキスト"] },
+      });
+
+      const p = document.createElement("p");
+      const textNode = document.createTextNode("Original dynamic text");
+      p.appendChild(textNode);
+      testContainer.appendChild(p);
+
+      const mockMutation = {
+        type: "characterData",
+        target: textNode,
+        addedNodes: [] as unknown as NodeList,
+        removedNodes: [] as unknown as NodeList,
+        attributeName: null,
+        attributeNamespace: null,
+        nextSibling: null,
+        previousSibling: null,
+        oldValue: null,
+      } as MutationRecord;
+
+      if (mutationCallback) {
+        mutationCallback([mockMutation]);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
+      }
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(textNode.textContent).toBe("翻訳済みテキスト");
+
+      mockSend.mockClear();
+
+      if (mutationCallback) {
+        mutationCallback([mockMutation]);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
+      }
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("should send duplicate dynamic text only once per debounce batch", async () => {
+      (contentScript as any).isTranslated = true;
+      contentScript.enableDynamicTranslation("ja");
+
+      mockSend.mockResolvedValue({
+        success: true,
+        data: { translations: ["同じテキスト"] },
+      });
+
+      const first = document.createElement("p");
+      first.textContent = "Same dynamic text";
+      const second = document.createElement("p");
+      second.textContent = "Same dynamic text";
+      const container = document.createElement("div");
+      container.appendChild(first);
+      container.appendChild(second);
+
+      const mockMutation = {
+        type: "childList",
+        addedNodes: [container] as unknown as NodeList,
+        removedNodes: [] as unknown as NodeList,
+        target: testContainer,
+        attributeName: null,
+        attributeNamespace: null,
+        nextSibling: null,
+        previousSibling: null,
+        oldValue: null,
+      } as MutationRecord;
+
+      if (mutationCallback) {
+        mutationCallback([mockMutation]);
+        jest.advanceTimersByTime(50);
+        await Promise.resolve();
+      }
+
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            texts: ["Same dynamic text"],
+          }),
+        }),
+      );
+    });
+
     it("should translate text when attributes reveal existing hidden content", async () => {
       (contentScript as any).isTranslated = true;
       contentScript.enableDynamicTranslation("ja");

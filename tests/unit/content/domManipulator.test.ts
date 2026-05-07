@@ -144,6 +144,46 @@ describe("DOMManipulator", () => {
       expect(textNodes[1].node.textContent).toBe("世界");
     });
 
+    it("should preserve leading and trailing whitespace when applying translations", () => {
+      testContainer.innerHTML = "<p>  Hello World\n</p>";
+
+      const textNodes = domManipulator.extractTextNodes();
+
+      expect(textNodes[0].text).toBe("Hello World");
+      expect(textNodes[0].leadingWhitespace).toBe("  ");
+      expect(textNodes[0].trailingWhitespace).toBe("\n");
+
+      domManipulator.applyTranslations(textNodes, ["こんにちは世界"]);
+
+      expect(textNodes[0].node.textContent).toBe("  こんにちは世界\n");
+    });
+
+    it("should not add or remove DOM nodes when applying translations", () => {
+      testContainer.innerHTML = "<p>Hello <span>inline</span> world</p>";
+
+      const beforeElementCount = testContainer.querySelectorAll("*").length;
+      const beforeTextNodeCount = document.createTreeWalker(
+        testContainer,
+        NodeFilter.SHOW_TEXT,
+      );
+      let beforeTextNodes = 0;
+      while (beforeTextNodeCount.nextNode()) beforeTextNodes++;
+
+      const textNodes = domManipulator.extractTextNodes();
+      domManipulator.applyTranslations(textNodes, ["こんにちは", "インライン", "世界"]);
+
+      const afterElementCount = testContainer.querySelectorAll("*").length;
+      const afterTextNodeCount = document.createTreeWalker(
+        testContainer,
+        NodeFilter.SHOW_TEXT,
+      );
+      let afterTextNodes = 0;
+      while (afterTextNodeCount.nextNode()) afterTextNodes++;
+
+      expect(afterElementCount).toBe(beforeElementCount);
+      expect(afterTextNodes).toBe(beforeTextNodes);
+    });
+
     it("should handle mismatched array lengths gracefully", () => {
       testContainer.innerHTML = `
         <div>

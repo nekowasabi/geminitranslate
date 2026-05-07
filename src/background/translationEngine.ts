@@ -273,19 +273,23 @@ export class TranslationEngine {
         };
       });
 
-      const parallelPromises = batchMeta.map((meta) =>
-        this.translateWithRetry(meta.batch, targetLanguage, requestBudget, {
-          onItemTranslated: onBatchComplete
-            ? (translation: string, itemIndex: number) => {
-                const nodeIndex = meta.nodeIndices[itemIndex];
-                if (typeof nodeIndex === "number") {
-                  onBatchComplete(meta.batchIndex, [translation], [nodeIndex]);
+      const parallelResults = await this.mapWithConcurrencyLimit(
+        batchMeta,
+        BATCH_CONFIG.CONCURRENCY_LIMIT,
+        (meta) =>
+          this.translateWithRetry(meta.batch, targetLanguage, requestBudget, {
+            onItemTranslated: onBatchComplete
+              ? (translation: string, itemIndex: number) => {
+                  const nodeIndex = meta.nodeIndices[itemIndex];
+                  if (typeof nodeIndex === "number") {
+                    onBatchComplete(meta.batchIndex, [translation], [
+                      nodeIndex,
+                    ]);
+                  }
                 }
-              }
-            : undefined,
-        }),
+              : undefined,
+          }),
       );
-      const parallelResults = await Promise.all(parallelPromises);
 
       parallelResults.forEach((batchResult, idx) => {
         translatedTexts.push(...batchResult.translations);
@@ -431,9 +435,11 @@ export class TranslationEngine {
         `[Background:TranslationEngine] ${timestamp} - Translating ${uncachedIndices.length} uncached texts in ${batches.length} batches`,
       );
 
-      // Process batches in parallel
-      const batchResults = await Promise.all(
-        batches.map((batch, index) => {
+      // Process batches with bounded concurrency
+      const batchResults = await this.mapWithConcurrencyLimit(
+        batches,
+        BATCH_CONFIG.CONCURRENCY_LIMIT,
+        (batch, index) => {
           logger.log(
             `[Background:TranslationEngine] ${timestamp} - Processing batch ${index + 1}/${batches.length}:`,
             {
@@ -441,7 +447,7 @@ export class TranslationEngine {
             },
           );
           return this.translateWithRetry(batch, targetLanguage, requestBudget);
-        }),
+        },
       );
 
       logger.log(
@@ -680,10 +686,15 @@ export class TranslationEngine {
       }
     };
 
-    const [leftTranslations, rightTranslations] = await Promise.all([
-      translateChunk(leftTexts, offset),
-      translateChunk(rightTexts, offset + splitIndex),
-    ]);
+    const [leftTranslations, rightTranslations] =
+      await this.mapWithConcurrencyLimit(
+        [
+          { texts: leftTexts, offset },
+          { texts: rightTexts, offset: offset + splitIndex },
+        ],
+        BATCH_CONFIG.CONCURRENCY_LIMIT,
+        (chunk) => translateChunk(chunk.texts, chunk.offset),
+      );
 
     return [...leftTranslations, ...rightTranslations];
   }
@@ -855,5 +866,30 @@ export class TranslationEngine {
     }
 
     return chunks;
+  }
+
+  private async mapWithConcurrencyLimit<T, R>(
+    items: T[],
+    limit: number,
+    mapper: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const concurrency = Math.max(1, Math.min(limit, items.length));
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
   }
 }

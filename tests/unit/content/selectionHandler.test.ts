@@ -290,6 +290,40 @@ describe('SelectionHandler', () => {
       // Cleanup
       document.body.removeChild(div);
     });
+
+    it('should normalize Windows CRLF and literal newline escape sequences in selection translations', async () => {
+      mockSend.mockResolvedValueOnce({
+        success: true,
+        data: {
+          translations: ['1行目\\r\\n2行目\r\n3行目'],
+        },
+      }).mockResolvedValueOnce({
+        success: true,
+        data: {},
+      });
+
+      const result = await selectionHandler.translateSelection(
+        'ja',
+        'Line 1\r\nLine 2',
+      );
+
+      expect(mockSend).toHaveBeenNthCalledWith(1, {
+        type: MessageType.REQUEST_TRANSLATION,
+        action: 'requestTranslation',
+        payload: {
+          texts: ['Line 1\nLine 2'],
+          targetLanguage: 'ja',
+        },
+      });
+      expect(mockSend).toHaveBeenNthCalledWith(2, {
+        type: MessageType.SELECTION_TRANSLATED,
+        payload: expect.objectContaining({
+          originalText: 'Line 1\nLine 2',
+          translatedText: '1行目\n2行目\n3行目',
+        }),
+      });
+      expect(result).toBe('1行目\n2行目\n3行目');
+    });
   });
 
   describe('mouseup event handling', () => {

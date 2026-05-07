@@ -279,6 +279,37 @@ describe("TranslationEngine", () => {
       expect(mockApiClient.translate).toHaveBeenCalledTimes(2);
     });
 
+    it("should not exceed CONCURRENCY_LIMIT when processing many batches", async () => {
+      await engine.initialize();
+
+      const batchSize = BATCH_CONFIG.BATCH_SIZE;
+      const batchCount = BATCH_CONFIG.CONCURRENCY_LIMIT + 3;
+      const texts = Array.from(
+        { length: batchSize * batchCount },
+        (_, i) => `Text ${i}`,
+      );
+      const translations = texts.map((_, i) => `Translation ${i}`);
+      let activeRequests = 0;
+      let maxActiveRequests = 0;
+
+      mockApiClient.translate.mockImplementation(async (batch: string[]) => {
+        activeRequests += 1;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        activeRequests -= 1;
+
+        const startIndex = texts.indexOf(batch[0]);
+        return translations.slice(startIndex, startIndex + batch.length);
+      });
+
+      await engine.translateBatch(texts, "Japanese");
+
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(batchCount);
+      expect(maxActiveRequests).toBeLessThanOrEqual(
+        BATCH_CONFIG.CONCURRENCY_LIMIT,
+      );
+    });
+
     it("should split batches by MAX_BATCH_LENGTH even when batch count is small", async () => {
       await engine.initialize();
 

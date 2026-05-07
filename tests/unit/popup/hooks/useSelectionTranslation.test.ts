@@ -103,6 +103,27 @@ describe('useSelectionTranslation Hook', () => {
       });
     });
 
+    it('should normalize Windows CRLF and literal newline escape sequences from messages', async () => {
+      const { result } = renderHook(() => useSelectionTranslation());
+
+      act(() => {
+        messageListener({
+          type: MessageType.SELECTION_TRANSLATED,
+          payload: {
+            originalText: 'Hello\r\nWorld',
+            translatedText: 'こんにちは\\r\\n世界\r\n!',
+            targetLanguage: 'Japanese',
+            timestamp: Date.now(),
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.data?.originalText).toBe('Hello\nWorld');
+        expect(result.current.data?.translatedText).toBe('こんにちは\n世界\n!');
+      });
+    });
+
     it('should ignore non-SELECTION_TRANSLATED messages', async () => {
       const { result } = renderHook(() => useSelectionTranslation());
 

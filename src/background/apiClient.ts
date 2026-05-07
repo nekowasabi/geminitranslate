@@ -361,22 +361,26 @@ export class OpenRouterClient {
     // e.g., 'ja' → 'Japanese', 'tr' → 'Turkish', 'en' → 'English'
     const languageName = getLanguageName(targetLanguage, false);
 
-    // Use special separator to distinguish multi-paragraph texts
-    const combined = texts.join(`\n${this.TEXT_SEPARATOR}\n`);
+    const inputJson = JSON.stringify(texts);
 
     return `Translate the following texts to ${languageName}.
+The texts are provided as a JSON array of strings.
 
 IMPORTANT INSTRUCTIONS:
-- Return ONLY the translation, NOT the original text
+- Return ONLY a valid JSON string array
+- The output array length MUST be exactly ${texts.length}
+- Keep the same order as the input array
+- Each output array item must contain only the translated text for the corresponding input item
+- Do NOT include markdown, code fences, explanations, keys, objects, or the original text
 - Do NOT include both original and translation (no side-by-side format)
 - Translate the COMPLETE text, do NOT summarize or shorten
 - Preserve ALL information, sentences, and paragraphs
 - Maintain the original length and detail level
 - Each text is independent - translate them separately
-- Texts are separated by "${this.TEXT_SEPARATOR}"
-- Return translations in the same format, separated by "${this.TEXT_SEPARATOR}"
+- Legacy fallback only: texts are separated by "${this.TEXT_SEPARATOR}" if JSON parsing is unavailable
 
-${combined}`;
+Input JSON:
+${inputJson}`;
   }
 
   /**
@@ -495,6 +499,93 @@ ${combined}`;
     return [content.trim()];
   }
 
+  private parseJsonArrayResponse(
+    content: string,
+    expectedCount: number,
+  ): string[] | null {
+    const candidates = this.getJsonArrayCandidates(content);
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (
+          Array.isArray(parsed) &&
+          parsed.every((item) => typeof item === "string")
+        ) {
+          if (parsed.length !== expectedCount) {
+            throw new ParseCountMismatchError(expectedCount, parsed.length);
+          }
+          return parsed.map((item) => item.trim());
+        }
+      } catch (error) {
+        if (error instanceof ParseCountMismatchError) {
+          throw error;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private getJsonArrayCandidates(content: string): string[] {
+    const candidates: string[] = [];
+    const trimmed = content.trim();
+
+    candidates.push(trimmed);
+
+    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fencedJson?.[1]) {
+      candidates.push(fencedJson[1].trim());
+    }
+
+    const arrayText = this.extractBalancedJsonArray(trimmed);
+    if (arrayText) {
+      candidates.push(arrayText);
+    }
+
+    return Array.from(new Set(candidates));
+  }
+
+  private extractBalancedJsonArray(content: string): string | null {
+    const start = content.indexOf("[");
+    if (start === -1) return null;
+
+    let inString = false;
+    let escaped = false;
+    let depth = 0;
+
+    for (let i = start; i < content.length; i++) {
+      const char = content[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (char === "[") {
+        depth += 1;
+      } else if (char === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          return content.slice(start, i + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Parse API response content
    *
@@ -510,6 +601,14 @@ ${combined}`;
   private parseResponse(content: string, expectedCount: number): string[] {
     // Step 1: Remove any prompt artifacts from response
     const cleanedContent = this.removePromptArtifacts(content);
+
+    const jsonTranslations = this.parseJsonArrayResponse(
+      cleanedContent,
+      expectedCount,
+    );
+    if (jsonTranslations) {
+      return jsonTranslations;
+    }
 
     // Why: expectedCount===1 ではセパレータ分割不要。
     // LLMが翻訳文中にセパレータを含めることがあり、分割すると expected=1/got=2 の

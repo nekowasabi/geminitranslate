@@ -164,26 +164,31 @@ export class IconBadge {
   }
 
   /**
-   * Position badge element at fixed position: right edge, vertically centered on browser window
-   * @param position - Position coordinates (unused, kept for API compatibility)
+   * Position badge element near the selection while keeping it inside the viewport.
+   * @param position - Viewport coordinates for the selection edge or mouse fallback
    */
   private positionElement(position: Position): void {
     if (!this.badgeElement) {
       return;
     }
 
-    // Fixed positioning: right edge, vertically centered on browser window
-    const rightMargin = 8;
+    const margin = 8;
+    const offset = UI_CONFIG.FLOATING_UI_OFFSET;
     const rect = this.badgeElement.getBoundingClientRect();
     const iconWidth = rect.width || 32;
     const iconHeight = rect.height || 32;
 
-    // Position at right edge of browser window
-    const x = window.innerWidth - iconWidth - rightMargin;
-    // Center vertically in browser window (not based on selection position)
-    const y = (window.innerHeight - iconHeight) / 2;
+    const maxX = Math.max(margin, window.innerWidth - iconWidth - margin);
+    const maxY = Math.max(margin, window.innerHeight - iconHeight - margin);
+    const x = Math.min(
+      Math.max(position.x + offset, margin),
+      maxX,
+    );
+    const y = Math.min(
+      Math.max(position.y + offset, margin),
+      maxY,
+    );
 
-    // Apply position
     this.badgeElement.style.left = `${x}px`;
     this.badgeElement.style.top = `${y}px`;
   }

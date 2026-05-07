@@ -486,6 +486,80 @@ describe("OpenRouterClient", () => {
       await client.initialize();
     });
 
+    it("should parse JSON array responses before separator fallback", async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify(["こんにちは", "さようなら"]),
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate(["Hello", "Goodbye"], "Japanese");
+
+      expect(result).toEqual(["こんにちは", "さようなら"]);
+    });
+
+    it("should parse JSON array inside markdown fences", async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: '```json\n["こんにちは","さようなら"]\n```',
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate(["Hello", "Goodbye"], "Japanese");
+
+      expect(result).toEqual(["こんにちは", "さようなら"]);
+    });
+
+    it("should parse JSON array embedded in explanatory text", async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: 'Here is the result:\n["こんにちは","さようなら"]',
+              },
+            },
+          ],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await client.translate(["Hello", "Goodbye"], "Japanese");
+
+      expect(result).toEqual(["こんにちは", "さようなら"]);
+    });
+
+    it("should throw on JSON array count mismatch", async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: '["こんにちは"]' } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      await expect(
+        client.translate(["Hello", "Goodbye"], "Japanese"),
+      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+    });
+
     it("should parse separator-separated translations", async () => {
       const mockResponse = {
         ok: true,

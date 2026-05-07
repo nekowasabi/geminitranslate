@@ -48,6 +48,25 @@ export interface UseSelectionTranslationReturn {
   clear: () => void;
 }
 
+function normalizeSelectionText(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    .replace(/\\n/g, '\n');
+}
+
+function normalizeSelectionData(payload: Partial<SelectionData>): SelectionData {
+  return {
+    targetLanguage: payload.targetLanguage,
+    timestamp: payload.timestamp,
+    originalText: normalizeSelectionText(payload.originalText),
+    translatedText: normalizeSelectionText(payload.translatedText),
+  } as SelectionData;
+}
+
 /**
  * Custom hook for managing selection translation state
  *
@@ -75,12 +94,13 @@ export function useSelectionTranslation(): UseSelectionTranslationReturn {
       try {
         const result = await browser.storage.session.get('lastSelectionTranslation');
         if (result.lastSelectionTranslation) {
+          const normalized = normalizeSelectionData(result.lastSelectionTranslation);
           console.log('[useSelectionTranslation] Loaded from session storage:', {
-            originalText: result.lastSelectionTranslation.originalText?.substring(0, 50),
-            translatedText: result.lastSelectionTranslation.translatedText?.substring(0, 50),
-            targetLanguage: result.lastSelectionTranslation.targetLanguage,
+            originalText: normalized.originalText?.substring(0, 50),
+            translatedText: normalized.translatedText?.substring(0, 50),
+            targetLanguage: normalized.targetLanguage,
           });
-          setData(result.lastSelectionTranslation);
+          setData(normalized);
         } else {
           console.log('[useSelectionTranslation] No saved translation in session storage');
         }
@@ -107,17 +127,19 @@ export function useSelectionTranslation(): UseSelectionTranslationReturn {
           targetLanguage: payload.targetLanguage,
         });
 
-        // Update state with new translation data
-        setData({
+        const normalizedPayload = normalizeSelectionData({
           originalText: payload.originalText,
           translatedText: payload.translatedText,
           targetLanguage: payload.targetLanguage,
           timestamp: payload.timestamp,
         });
 
+        // Update state with new translation data
+        setData(normalizedPayload);
+
         // Also save to session storage for persistence
         browser.storage.session.set({
-          lastSelectionTranslation: payload
+          lastSelectionTranslation: normalizedPayload
         }).catch(err => console.error('[useSelectionTranslation] Failed to save to session:', err));
       }
     };
