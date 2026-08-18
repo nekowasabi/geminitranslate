@@ -31,9 +31,11 @@ import { logger } from "../shared/utils/logger";
 import {
   BATCH_CONFIG,
   FEATURE_FLAGS,
+  RATE_LIMIT_CONFIG,
   RETRY_CONFIG,
 } from "../shared/constants/config";
 import { retry } from "../shared/utils/retry";
+import { RateLimiter, RequestGate } from "../shared/utils/requestGate";
 import { TranslationCache } from "./translationCache";
 
 // Re-export cache types for backward compatibility
@@ -95,15 +97,25 @@ export class TranslationEngine {
    */
   private readonly BATCH_SIZE = BATCH_CONFIG.BATCH_SIZE;
   private readonly INDIVIDUAL_FALLBACK_THRESHOLD = 6;
+  private readonly requestGate: RequestGate;
 
   /**
    * Initialization flag
    */
   private initialized = false;
 
-  constructor() {
+  constructor(options?: { requestGate?: RequestGate }) {
     this._apiClient = new OpenRouterClient();
     this.cache = new TranslationCache();
+    this.requestGate =
+      options?.requestGate ??
+      new RequestGate(
+        BATCH_CONFIG.CONCURRENCY_LIMIT,
+        new RateLimiter(
+          RATE_LIMIT_CONFIG.MAX_REQUESTS_PER_MINUTE,
+          RATE_LIMIT_CONFIG.WINDOW_SIZE,
+        ),
+      );
   }
 
   /**
@@ -276,41 +288,48 @@ export class TranslationEngine {
       const parallelResults = await this.mapWithConcurrencyLimit(
         batchMeta,
         BATCH_CONFIG.CONCURRENCY_LIMIT,
-        (meta) =>
-          this.translateWithRetry(meta.batch, targetLanguage, requestBudget, {
-            onItemTranslated: onBatchComplete
-              ? (translation: string, itemIndex: number) => {
-                  const nodeIndex = meta.nodeIndices[itemIndex];
-                  if (typeof nodeIndex === "number") {
-                    onBatchComplete(meta.batchIndex, [translation], [
-                      nodeIndex,
-                    ]);
+        async (meta) => {
+          const batchResult = await this.translateWithRetry(
+            meta.batch,
+            targetLanguage,
+            requestBudget,
+            {
+              onItemTranslated: onBatchComplete
+                ? (translation: string, itemIndex: number) => {
+                    const nodeIndex = meta.nodeIndices[itemIndex];
+                    if (typeof nodeIndex === "number") {
+                      onBatchComplete(meta.batchIndex, [translation], [
+                        nodeIndex,
+                      ]);
+                    }
                   }
-                }
-              : undefined,
-          }),
+                : undefined,
+            },
+          );
+
+          // Why: notify inside the mapper instead of after all remaining batches
+          // finish so later batches can still be in flight.
+          if (onBatchComplete && !batchResult.fallbackUsed) {
+            try {
+              onBatchComplete(
+                meta.batchIndex,
+                batchResult.translations,
+                meta.nodeIndices,
+              );
+            } catch (error) {
+              logger.warn(
+                `Batch complete callback error (batch ${meta.batchIndex}):`,
+                error,
+              );
+            }
+          }
+
+          return batchResult;
+        },
       );
 
-      parallelResults.forEach((batchResult, idx) => {
+      parallelResults.forEach((batchResult) => {
         translatedTexts.push(...batchResult.translations);
-
-        // Invoke callback for this batch
-        if (onBatchComplete && !batchResult.fallbackUsed) {
-          try {
-            const meta = batchMeta[idx];
-            onBatchComplete(
-              meta.batchIndex,
-              batchResult.translations,
-              meta.nodeIndices,
-            );
-          } catch (error) {
-            logger.warn(
-              `Batch complete callback error (batch ${batchMeta[idx].batchIndex}):`,
-              error,
-            );
-          }
-        }
-
         processedCount += batchResult.translations.length;
       });
     }
@@ -621,33 +640,33 @@ export class TranslationEngine {
       onItemTranslated?: (translation: string, itemIndex: number) => void;
     },
   ): Promise<string[]> {
-    const results: string[] = [];
-
-    for (let i = 0; i < texts.length; i++) {
-      const text = texts[i];
-      try {
-        const translated = await this.executeTranslationWithRetry(
-          () => this._apiClient.translate([text], targetLanguage),
-          1,
-          "Single-text translation",
-          requestBudget,
-        );
-        const translatedText = translated[0];
-
-        results.push(translatedText);
-        if (options?.onItemTranslated) {
-          options.onItemTranslated(translatedText, i);
+    // Why: concurrent leftover calls under the shared gate instead of a sequential
+    // await chain — sequential 1-text RTTs were the inter-item gap on fallback.
+    return this.mapWithConcurrencyLimit(
+      texts,
+      BATCH_CONFIG.CONCURRENCY_LIMIT,
+      async (text, i) => {
+        try {
+          const translated = await this.executeTranslationWithRetry(
+            () => this._apiClient.translate([text], targetLanguage),
+            1,
+            "Single-text translation",
+            requestBudget,
+          );
+          const translatedText = translated[0];
+          if (options?.onItemTranslated) {
+            options.onItemTranslated(translatedText, i);
+          }
+          return translatedText;
+        } catch (error) {
+          logger.warn(
+            `Single-text translation failed at index ${i}, keeping original:`,
+            error,
+          );
+          return text;
         }
-      } catch (error) {
-        logger.warn(
-          `Single-text translation failed at index ${i}, keeping original:`,
-          error,
-        );
-        results.push(text);
-      }
-    }
-
-    return results;
+      },
+    );
   }
 
   private async translateByBinarySplit(
@@ -748,7 +767,7 @@ export class TranslationEngine {
     return retry(
       async () => {
         this.consumeApiCallBudget(requestBudget);
-        const translated = await operation();
+        const translated = await this.requestGate.run(() => operation());
 
         if (translated.length !== expectedCount) {
           throw new ParseCountMismatchError(expectedCount, translated.length);

@@ -20,9 +20,12 @@ export const API_CONFIG = {
 
   /**
    * Timeout for page-translation MessageBus.send calls (milliseconds).
+   * 0 = wait until the background job settles (MessageBus skips the race).
+   * Why: 120000 aborted the content await while remaining batches were still
+   * in flight or rate-waiting, which froze the bar around first-batch 69% (20/29).
    * Selection/clipboard keep MessageBus.DEFAULT_TIMEOUT_MS.
    */
-  TRANSLATION_MESSAGE_TIMEOUT_MS: 120000,
+  TRANSLATION_MESSAGE_TIMEOUT_MS: 0,
 
   /**
    * HTTP Referer for OpenRouter API
@@ -81,6 +84,12 @@ export const BATCH_CONFIG = {
    * Changed from 3 → 1 for progressive rendering improvement
    */
   VIEWPORT_PRIORITY_BATCHES: 1,
+
+  /**
+   * Screens above/below the viewport treated as "near" (enqueued with the first job).
+   * Farther nodes wait for an approaching visibility signal.
+   */
+  NEAR_VIEWPORT_SCREENS: 2,
 } as const;
 
 /**

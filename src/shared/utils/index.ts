@@ -12,5 +12,12 @@ export { logger } from './logger';
 // Retry utility
 export { retry, type RetryOptions } from './retry';
 
+export {
+  RateLimiter,
+  RequestGate,
+  systemClock,
+  type Clock,
+} from './requestGate';
+
 // Language detection
 export { detectLanguage, getBrowserLanguage } from './languageDetector';

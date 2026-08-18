@@ -508,7 +508,8 @@ describe("ContentScript", () => {
       );
 
       expect(sendResponse).toHaveBeenCalledWith({ success: true });
-      expect(mockProgressNotification.complete).toHaveBeenCalled();
+      expect(mockProgressNotification.complete).not.toHaveBeenCalled();
+      expect(mockProgressNotification.error).toHaveBeenCalled();
     });
   });
 
@@ -537,9 +538,11 @@ describe("ContentScript", () => {
         ],
       }));
 
-      // Apply mock to contentScript's domManipulator instance
       contentScript["domManipulator"].detectViewportNodes =
         mockDetectViewportNodes;
+      contentScript["domManipulator"].classifyOutOfViewport = jest.fn(
+        (nodes) => ({ near: nodes, far: [] }),
+      );
     });
 
     it("should separate viewport and out-of-viewport nodes", async () => {
@@ -590,13 +593,12 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // Phase 1 should use semiParallel: true with priorityCount: 1
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           type: MessageType.REQUEST_TRANSLATION,
           action: "requestTranslation",
           payload: expect.objectContaining({
-            texts: ["Hello World"],
+            texts: ["Hello World", "Test content"],
             targetLanguage: "ja",
             semiParallel: true,
             priorityCount: 1,
@@ -607,27 +609,24 @@ describe("ContentScript", () => {
       );
     });
 
-    it("should translate out-of-viewport nodes after viewport with semiParallel=true and phase=2 (Phase 2)", async () => {
-      mockSend
-        .mockResolvedValueOnce({
+    it("submits viewport-first remainder in one job without a second phase RPC", async () => {
+      let sendsWhileFirstInFlight = 0;
+      mockSend.mockImplementation(async (message: { payload: { texts: string[] } }) => {
+        sendsWhileFirstInFlight = mockSend.mock.calls.length;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
           success: true,
           data: {
-            translations: ["こんにちは世界"],
+            translations: message.payload.texts.map((text) => `tr-${text}`),
           },
-        })
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            translations: ["テストコンテンツ"],
-          },
-        });
+        };
+      });
 
       contentScript.initialize();
 
       const messageHandler = mockListen.mock.calls[0][0];
       const sendResponse = jest.fn();
-
-      await messageHandler(
+      const done = messageHandler(
         {
           type: MessageType.TRANSLATE_PAGE,
           payload: { targetLanguage: "ja" },
@@ -636,43 +635,25 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // Phase 2 should use semiParallel: true for progressive rendering (P1 fix)
-      // Wait a bit for async operations to complete
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(sendsWhileFirstInFlight).toBe(1);
 
-      // Should have at least 2 calls: Phase 1 and Phase 2
-      if (mockSend.mock.calls.length >= 2) {
-        expect(mockSend).toHaveBeenNthCalledWith(
-          2,
-          expect.objectContaining({
-            type: MessageType.REQUEST_TRANSLATION,
-            action: "requestTranslation",
-            payload: expect.objectContaining({
-              texts: ["Test content"],
-              targetLanguage: "ja",
-              semiParallel: true,
-              phase: 2,
-            }),
+      await done;
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.REQUEST_TRANSLATION,
+          action: "requestTranslation",
+          payload: expect.objectContaining({
+            texts: ["Hello World", "Test content"],
+            targetLanguage: "ja",
+            semiParallel: true,
+            priorityCount: 1,
+            phase: 1,
           }),
-          API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
-        );
-      } else {
-        // If Phase 2 wasn't called, verify Phase 1 was at least called correctly
-        expect(mockSend).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: MessageType.REQUEST_TRANSLATION,
-            action: "requestTranslation",
-            payload: expect.objectContaining({
-              texts: ["Hello World"],
-              targetLanguage: "ja",
-              semiParallel: true,
-              priorityCount: 1,
-              phase: 1,
-            }),
-          }),
-          API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
-        );
-      }
+        }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+      );
     });
 
     it("should call showPhase(1) before Phase 1 translation", async () => {
@@ -697,8 +678,7 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // showPhase(1) should be called with viewport node count
-      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 2);
     });
 
     it("should call completePhase(1) after Phase 1 completes", async () => {
@@ -752,20 +732,13 @@ describe("ContentScript", () => {
       }
     });
 
-    it("should call showPhase(2) before Phase 2 translation", async () => {
-      mockSend
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            translations: ["こんにちは世界"],
-          },
-        })
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            translations: ["テストコンテンツ"],
-          },
-        });
+    it("does not open a separate Phase 2 notification on the happy path", async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ["こんにちは世界", "テストコンテンツ"],
+        },
+      });
 
       contentScript.initialize();
 
@@ -781,11 +754,15 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // showPhase(2) should be called with out-of-viewport node count
-      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(2, 1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledTimes(1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 2);
+      expect(mockProgressNotification.showPhase).not.toHaveBeenCalledWith(
+        2,
+        expect.anything(),
+      );
     });
 
-    it("should call completePhase(2) after Phase 2 completes", async () => {
+    it("should call completePhase(1) after the unified job completes", async () => {
       mockSend
         .mockResolvedValueOnce({
           success: true,
@@ -870,9 +847,8 @@ describe("ContentScript", () => {
     });
 
     it("should skip Phase 1 when viewport is empty", async () => {
-      // Override mock for this test
       mockDetectViewportNodes.mockReturnValueOnce({
-        viewport: [], // No viewport nodes
+        viewport: [],
         outOfViewport: [
           {
             node: testContainer.querySelector("span")?.firstChild as Node,
@@ -903,21 +879,16 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // Only Phase 2 should be executed
       expect(mockProgressNotification.showPhase).toHaveBeenCalledTimes(1);
-      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(2, 1);
+      expect(mockProgressNotification.showPhase).toHaveBeenCalledWith(1, 1);
       expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend.mock.calls[0][0].payload.texts).toEqual(["Test content"]);
     });
 
-    it("should continue Phase 2 when Phase 1 send rejects", async () => {
-      mockSend
-        .mockRejectedValueOnce(new Error("MessageBus timeout after 120000ms"))
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            translations: ["テストコンテンツ"],
-          },
-        });
+    it("does not show 100% complete when the unified send times out", async () => {
+      mockSend.mockRejectedValue(
+        new Error("MessageBus timeout after 120000ms"),
+      );
 
       contentScript.initialize();
 
@@ -933,40 +904,21 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      expect(mockSend).toHaveBeenCalledTimes(2);
-      expect(mockSend).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          type: MessageType.REQUEST_TRANSLATION,
-          payload: expect.objectContaining({
-            phase: 2,
-          }),
-        }),
-        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
-      );
-      const completePhaseCalls =
-        mockProgressNotification.completePhase.mock.calls;
-      expect(completePhaseCalls.some((call) => call[0] === 1)).toBe(true);
-      expect(mockProgressNotification.complete).toHaveBeenCalled();
+      expect(mockSend).toHaveBeenCalledTimes(1);
       expect(mockSend.mock.calls[0][1]).toBe(
         API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
       );
+      expect(mockProgressNotification.complete).not.toHaveBeenCalled();
+      expect(mockProgressNotification.error).toHaveBeenCalledWith(
+        "MessageBus timeout after 120000ms",
+      );
     });
 
-    it("should call completePhase(2) even when Phase 2 fails (success: false)", async () => {
-      // Phase 1 succeeds, Phase 2 returns failure response
-      mockSend
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            translations: ["こんにちは世界"],
-          },
-        })
-        .mockResolvedValueOnce({
-          // Phase 2 failure: success=false, no translations
-          success: false,
-          error: "Translation failed",
-        });
+    it("does not show 100% complete when the unified job returns success: false", async () => {
+      mockSend.mockResolvedValue({
+        success: false,
+        error: "Translation failed",
+      });
 
       contentScript.initialize();
 
@@ -982,12 +934,10 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // completePhase(2) must be called even when Phase 2 fails
-      // Without this, the progress bar freezes and users think the extension is stuck
-      const completePhaseCalls =
-        mockProgressNotification.completePhase.mock.calls;
-      const phaseTwoCalled = completePhaseCalls.some((call) => call[0] === 2);
-      expect(phaseTwoCalled).toBe(true);
+      expect(mockProgressNotification.complete).not.toHaveBeenCalled();
+      expect(mockProgressNotification.error).toHaveBeenCalledWith(
+        "Translation failed",
+      );
     });
   });
 
@@ -1148,7 +1098,7 @@ describe("ContentScript", () => {
         expect(mockProgressNotification.complete).toHaveBeenCalled();
       });
 
-      it("should complete phases instead of erroring when send rejects", async () => {
+      it("does not claim 100% complete when send rejects", async () => {
         mockSend.mockRejectedValue(new Error("API rate limit exceeded"));
 
         contentScript.initialize();
@@ -1165,8 +1115,10 @@ describe("ContentScript", () => {
           sendResponse,
         );
 
-        expect(mockProgressNotification.error).not.toHaveBeenCalled();
-        expect(mockProgressNotification.complete).toHaveBeenCalled();
+        expect(mockProgressNotification.complete).not.toHaveBeenCalled();
+        expect(mockProgressNotification.error).toHaveBeenCalledWith(
+          "API rate limit exceeded",
+        );
       });
 
       it("should not call show() when extractedNodes is empty", async () => {
@@ -1348,7 +1300,8 @@ describe("ContentScript", () => {
         );
         expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
           1,
-          50,
+          1,
+          2,
         );
         expect(sendResponse).toHaveBeenCalledWith({ success: true });
       });
@@ -1391,7 +1344,8 @@ describe("ContentScript", () => {
         expect(mockApplyTranslations).toHaveBeenCalled();
         expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
           2,
-          100,
+          1,
+          1,
         );
       });
 
@@ -1424,6 +1378,11 @@ describe("ContentScript", () => {
         );
 
         expect(mockApplyTranslations).not.toHaveBeenCalled();
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
+          1,
+          1,
+          1,
+        );
         expect(sendResponse).toHaveBeenCalledWith({ success: true });
       });
 
@@ -1508,7 +1467,7 @@ describe("ContentScript", () => {
         );
 
         expect(mockApplyTranslations).toHaveBeenCalledWith([], []);
-        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 0);
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 0, 1);
       });
 
       it("should handle errors in applyTranslations gracefully", async () => {
@@ -1593,7 +1552,8 @@ describe("ContentScript", () => {
 
         expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
           1,
-          25,
+          1,
+          4,
         );
 
         await messageHandler(
@@ -1617,7 +1577,8 @@ describe("ContentScript", () => {
 
         expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
           1,
-          75,
+          3,
+          4,
         );
       });
 
@@ -2158,20 +2119,12 @@ describe("ContentScript", () => {
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
 
-        // Mock both Phase 1 and Phase 2 responses
-        mockSend
-          .mockResolvedValueOnce({
-            success: true,
-            data: {
-              translations: ["ビューポート1", "ビューポート2"],
-            },
-          })
-          .mockResolvedValueOnce({
-            success: true,
-            data: {
-              translations: ["ビューの外1"],
-            },
-          });
+        mockSend.mockResolvedValue({
+          success: true,
+          data: {
+            translations: ["ビューポート1", "ビューポート2", "ビューの外1"],
+          },
+        });
 
         await messageHandler(
           {
@@ -2246,6 +2199,9 @@ describe("ContentScript", () => {
 
       contentScript["domManipulator"].detectViewportNodes =
         mockDetectViewportNodes;
+      contentScript["domManipulator"].classifyOutOfViewport = jest.fn(
+        (nodes) => ({ near: nodes, far: [] }),
+      );
     });
 
     it("should call filterBatchTexts for Phase 1 viewport texts", async () => {
@@ -2274,26 +2230,21 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // filterBatchTexts should be called with viewport texts
       expect(mockFilterBatchTexts).toHaveBeenCalledWith([
         "Hello World",
         "123",
         "Goodbye",
+        "Footer text",
+        "https://example.com",
       ]);
     });
 
     it("should send only filtered texts to background in Phase 1", async () => {
-      mockFilterBatchTexts
-        .mockReturnValueOnce({
-          textsToTranslate: ["Hello World", "Goodbye"],
-          skippedIndices: new Map([[1, "123"]]),
-          originalIndices: [0, 2],
-        })
-        .mockReturnValueOnce({
-          textsToTranslate: ["Footer text"],
-          skippedIndices: new Map([[1, "https://example.com"]]),
-          originalIndices: [0],
-        });
+      mockFilterBatchTexts.mockReturnValue({
+        textsToTranslate: ["Hello World", "Goodbye"],
+        skippedIndices: new Map([[1, "123"]]),
+        originalIndices: [0, 2],
+      });
 
       mockSend.mockResolvedValue({
         success: true,
@@ -2375,22 +2326,19 @@ describe("ContentScript", () => {
       expect(currentNodes[1].text).toBe("Goodbye");
     });
 
-    it("should call filterBatchTexts for Phase 2 out-of-viewport texts", async () => {
-      mockFilterBatchTexts
-        .mockReturnValueOnce({
-          textsToTranslate: ["Hello World", "Goodbye"],
-          skippedIndices: new Map([[1, "123"]]),
-          originalIndices: [0, 2],
-        })
-        .mockReturnValueOnce({
-          textsToTranslate: ["Footer text"],
-          skippedIndices: new Map([[1, "https://example.com"]]),
-          originalIndices: [0],
-        });
+    it("should call filterBatchTexts once for viewport and near remainder together", async () => {
+      mockFilterBatchTexts.mockReturnValue({
+        textsToTranslate: ["Hello World", "Goodbye", "Footer text"],
+        skippedIndices: new Map([
+          [1, "123"],
+          [4, "https://example.com"],
+        ]),
+        originalIndices: [0, 2, 3],
+      });
 
       mockSend.mockResolvedValue({
         success: true,
-        data: { translations: ["翻訳済み"] },
+        data: { translations: ["翻訳済み", "さようなら", "フッター"] },
       });
 
       contentScript.initialize();
@@ -2407,36 +2355,32 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // filterBatchTexts should be called twice: Phase 1 and Phase 2
-      expect(mockFilterBatchTexts).toHaveBeenCalledTimes(2);
-      expect(mockFilterBatchTexts).toHaveBeenNthCalledWith(2, [
+      expect(mockFilterBatchTexts).toHaveBeenCalledTimes(1);
+      expect(mockFilterBatchTexts).toHaveBeenCalledWith([
+        "Hello World",
+        "123",
+        "Goodbye",
         "Footer text",
         "https://example.com",
       ]);
     });
 
-    it("should send only filtered texts to background in Phase 2", async () => {
-      mockFilterBatchTexts
-        .mockReturnValueOnce({
-          textsToTranslate: ["Hello World", "Goodbye"],
-          skippedIndices: new Map([[1, "123"]]),
-          originalIndices: [0, 2],
-        })
-        .mockReturnValueOnce({
-          textsToTranslate: ["Footer text"],
-          skippedIndices: new Map([[1, "https://example.com"]]),
-          originalIndices: [0],
-        });
+    it("should send only filtered immediate texts in the unified job", async () => {
+      mockFilterBatchTexts.mockReturnValue({
+        textsToTranslate: ["Hello World", "Goodbye", "Footer text"],
+        skippedIndices: new Map([
+          [1, "123"],
+          [4, "https://example.com"],
+        ]),
+        originalIndices: [0, 2, 3],
+      });
 
-      mockSend
-        .mockResolvedValueOnce({
-          success: true,
-          data: { translations: ["こんにちは世界", "さようなら"] },
-        })
-        .mockResolvedValueOnce({
-          success: true,
-          data: { translations: ["フッターテキスト"] },
-        });
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ["こんにちは世界", "さようなら", "フッターテキスト"],
+        },
+      });
 
       contentScript.initialize();
 
@@ -2452,15 +2396,14 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      // Phase 2 should send only filtered texts (without 'https://example.com')
-      expect(mockSend).toHaveBeenNthCalledWith(
-        2,
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           type: MessageType.REQUEST_TRANSLATION,
           payload: expect.objectContaining({
-            texts: ["Footer text"],
+            texts: ["Hello World", "Goodbye", "Footer text"],
             semiParallel: true,
-            priorityCount: 0,
+            priorityCount: 1,
           }),
         }),
         API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
@@ -2599,8 +2542,82 @@ describe("ContentScript", () => {
 
       // No translation request should be sent
       expect(mockSend).not.toHaveBeenCalled();
-      // Phase 2 should still be completed
-      expect(mockProgressNotification.completePhase).toHaveBeenCalledWith(2);
+      expect(mockProgressNotification.completePhase).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("near-first / far-on-approach enqueue", () => {
+    it("submits far remainder in the same job and does not complete until that send finishes", async () => {
+      const farHost = document.createElement("p");
+      const farNode = document.createTextNode("Far away copy");
+      farHost.appendChild(farNode);
+      document.body.appendChild(farHost);
+
+      const viewportNode = {
+        node: testContainer.querySelector("p")?.firstChild as Node,
+        text: "Hello World",
+        index: 0,
+      };
+      const farTextNode = {
+        node: farNode,
+        text: "Far away copy",
+        index: 1,
+      };
+
+      contentScript["domManipulator"].detectViewportNodes = jest.fn(() => ({
+        viewport: [viewportNode],
+        outOfViewport: [farTextNode],
+      }));
+      contentScript["domManipulator"].classifyOutOfViewport = jest.fn(() => ({
+        near: [],
+        far: [farTextNode],
+      }));
+
+      let completeDuringSend = false;
+      let resolveSend: ((value: {
+        success: boolean;
+        data: { translations: string[] };
+      }) => void) | undefined;
+      mockSend.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSend = resolve;
+          }),
+      );
+      mockProgressNotification.complete.mockImplementation(() => {
+        completeDuringSend = mockSend.mock.calls.length === 0;
+      });
+
+      contentScript.initialize();
+      const messageHandler = mockListen.mock.calls[0][0];
+      const done = messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        jest.fn(),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend.mock.calls[0][0].payload.texts).toEqual([
+        "Hello World",
+        "Far away copy",
+      ]);
+      expect(mockProgressNotification.complete).not.toHaveBeenCalled();
+
+      resolveSend?.({
+        success: true,
+        data: { translations: ["こんにちは世界", "遠い文章"] },
+      });
+      await done;
+
+      expect(mockProgressNotification.complete).toHaveBeenCalled();
+      expect(completeDuringSend).toBe(false);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+
+      farHost.remove();
     });
   });
 
@@ -3238,6 +3255,22 @@ describe("ContentScript", () => {
 
       jest.advanceTimersByTime(1);
       expect(translateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not enqueue dynamic work while a page translation job is in flight", async () => {
+      (contentScript as any).isTranslated = true;
+      (contentScript as any).pageTranslationInFlight = true;
+
+      const node = document.createTextNode("Scroll-loaded text");
+      document.body.appendChild(node);
+      const translateSpy = jest
+        .spyOn(contentScript as any, "translateNewNodes")
+        .mockResolvedValue(undefined);
+
+      (contentScript as any).queueDynamicTranslation([node], "ja");
+      jest.advanceTimersByTime(50);
+
+      expect(translateSpy).not.toHaveBeenCalled();
     });
   });
 });

@@ -10,6 +10,7 @@
  */
 
 import { DOMManipulator, TextNode } from "./domManipulator";
+import { ApproachingNodeObserver } from "./proximityClassifier";
 import { SelectionHandler } from "./selectionHandler";
 import { ClipboardHandler } from "./clipboardHandler";
 import { MutationObserverManager } from "./mutationObserver";
@@ -51,6 +52,8 @@ export class ContentScript {
   private readonly DYNAMIC_FAILURE_COOLDOWN_MS = 30000;
   private phaseAppliedNodeIndices: Map<TranslationPhase, Set<number>> =
     new Map();
+  private approachingObserver: ApproachingNodeObserver | null = null;
+  private pageTranslationInFlight = false;
 
   constructor() {
     this.domManipulator = new DOMManipulator();
@@ -253,10 +256,11 @@ export class ContentScript {
       { targetLanguage },
     );
 
+    this.disableDynamicTranslation();
+    this.pageTranslationInFlight = true;
     try {
       logger.log("Translating page to", targetLanguage);
 
-      // Extract text nodes
       logger.log(
         `[Content:ContentScript] ${timestamp} - Extracting text nodes from DOM...`,
       );
@@ -277,51 +281,56 @@ export class ContentScript {
         return;
       }
 
-      // Separate viewport and out-of-viewport nodes
       logger.log(
         `[Content:ContentScript] ${timestamp} - Detecting viewport nodes...`,
       );
       const { viewport, outOfViewport } =
         this.domManipulator.detectViewportNodes(this.extractedNodes);
+      const { near, far } =
+        this.domManipulator.classifyOutOfViewport(outOfViewport);
 
       logger.log(
         `[Content:ContentScript] ${timestamp} - Viewport detection completed:`,
         {
           viewportCount: viewport.length,
-          outOfViewportCount: outOfViewport.length,
+          nearCount: near.length,
+          farCount: far.length,
         },
       );
 
-      // Phase 1: Translate viewport nodes first
-      if (viewport.length > 0) {
-        logger.log(
-          `[Content:ContentScript] ${timestamp} - Starting Phase 1: Viewport translation`,
-        );
-        this.progressNotification.showPhase(1, viewport.length);
+      // Why: include far in the same job (last) instead of IO-only leftover.
+      // Holding far until intersection marked the page complete mid-article.
+      const immediateNodes = [...viewport, ...near, ...far];
+      let shouldAnnounceComplete = immediateNodes.length === 0;
 
-        const viewportTexts = viewport.map((node) => node.text);
+      if (immediateNodes.length > 0) {
+        this.progressNotification.showPhase(1, immediateNodes.length);
 
-        // Filter out non-translatable texts (numbers, URLs, symbols, etc.)
+        const immediateTexts = immediateNodes.map((node) => node.text);
         const { textsToTranslate, originalIndices } =
-          filterBatchTexts(viewportTexts);
+          filterBatchTexts(immediateTexts);
 
         if (textsToTranslate.length === 0) {
-          // All texts filtered out — skip Phase 1 API call
           logger.log(
-            `[Content:ContentScript] ${timestamp} - Phase 1 skipped: All texts filtered`,
+            `[Content:ContentScript] ${timestamp} - Immediate job skipped: All texts filtered`,
           );
           this.progressNotification.completePhase(1);
+          shouldAnnounceComplete = true;
         } else {
-          // Store only filtered nodes for batch-by-batch application via BATCH_COMPLETED
-          this.phaseNodes.set(1, originalIndices.map((i) => viewport[i]));
+          this.phaseNodes.set(
+            1,
+            originalIndices.map((i) => immediateNodes[i]),
+          );
 
           logger.log(
-            `[Content:ContentScript] ${timestamp} - Sending Phase 1 REQUEST_TRANSLATION:`,
+            `[Content:ContentScript] ${timestamp} - Sending unified REQUEST_TRANSLATION including far remainder:`,
             {
               type: MessageType.REQUEST_TRANSLATION,
               action: "requestTranslation",
               textsCount: textsToTranslate.length,
-              filteredFrom: viewportTexts.length,
+              filteredFrom: immediateTexts.length,
+              farCount: far.length,
+              farIncludedInFirstRequest: true,
               targetLanguage,
               semiParallel: true,
               priorityCount: 1,
@@ -329,9 +338,8 @@ export class ContentScript {
             },
           );
 
-          // Why: Phase 1 timeout/reject used to skip Phase 2. Catch and continue.
           try {
-            const response1 = await this.messageBus.send(
+            const response = await this.messageBus.send(
               {
                 type: MessageType.REQUEST_TRANSLATION,
                 action: "requestTranslation",
@@ -347,156 +355,56 @@ export class ContentScript {
             );
 
             logger.log(
-              `[Content:ContentScript] ${timestamp} - Phase 1 response received:`,
+              `[Content:ContentScript] ${timestamp} - Immediate job response received:`,
               {
-                success: response1?.success,
-                hasTranslations: !!response1?.data?.translations,
+                success: response?.success,
+                hasTranslations: !!response?.data?.translations,
               },
             );
 
-            if (response1?.success && response1?.data?.translations) {
-              logger.log(
-                `[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`,
+            if (response?.success && response?.data?.translations) {
+              const nodesToTranslate = originalIndices.map(
+                (i) => immediateNodes[i],
               );
-              const nodesToTranslate = originalIndices.map((i) => viewport[i]);
               this.applyPhaseTranslationsAndTrack(
                 1,
                 nodesToTranslate,
-                response1.data.translations,
+                response.data.translations,
               );
               this.progressNotification.completePhase(1);
-              logger.log(
-                `[Content:ContentScript] ${timestamp} - Phase 1 completed with all translations applied`,
-              );
+              shouldAnnounceComplete = true;
             } else {
               logger.warn(
-                `[Content:ContentScript] ${timestamp} - Phase 1 failed:`,
-                response1,
+                `[Content:ContentScript] ${timestamp} - Immediate job failed:`,
+                response,
               );
-              this.progressNotification.completePhase(1);
+              // Why: complete() would show 100% while unapplied remainder stays English.
+              this.progressNotification.error(
+                typeof response?.error === "string"
+                  ? response.error
+                  : "Translation failed",
+              );
             }
-
-            logger.log(
-              `[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`,
-            );
           } catch (error) {
             logger.error(
-              `[Content:ContentScript] ${timestamp} - Phase 1 translation error:`,
+              `[Content:ContentScript] ${timestamp} - Immediate job translation error:`,
               error,
             );
-            this.progressNotification.completePhase(1);
+            this.progressNotification.error(
+              error instanceof Error ? error.message : "Translation failed",
+            );
           }
         }
       } else {
         logger.log(
-          `[Content:ContentScript] ${timestamp} - Phase 1 skipped: No viewport nodes`,
-        );
-      }
-
-      // Phase 2: Translate out-of-viewport nodes
-      if (outOfViewport.length > 0) {
-        logger.log(
-          `[Content:ContentScript] ${timestamp} - Starting Phase 2: Full-page translation`,
-        );
-        this.progressNotification.showPhase(2, outOfViewport.length);
-
-        const outOfViewportTexts = outOfViewport.map((node) => node.text);
-
-        // Filter out non-translatable texts
-        const { textsToTranslate: oovTexts, originalIndices: oovIndices } =
-          filterBatchTexts(outOfViewportTexts);
-
-        if (oovTexts.length > 0) {
-          logger.log(
-            `[Content:ContentScript] ${timestamp} - Sending Phase 2 REQUEST_TRANSLATION:`,
-            {
-              type: MessageType.REQUEST_TRANSLATION,
-              action: "requestTranslation",
-              textsCount: oovTexts.length,
-              filteredFrom: outOfViewportTexts.length,
-              targetLanguage,
-              semiParallel: true,
-              priorityCount: 0,
-              phase: 2,
-            },
-          );
-
-          // P1 Fix: Use semiParallel=true for progressive rendering in Phase 2
-          // Store Phase 2 nodes for handleBatchCompleted
-          this.phaseNodes.set(2, oovIndices.map((i) => outOfViewport[i]));
-
-          // Why: try-catch を追加。BrowserAdapter.sendMessage が reject した場合（runtime.lastError 等）に
-          // Promise が永久 pending になるのを防ぐ。Phase 1 長時間処理後にメッセージチャネルが不安定化する場合に有効。
-          try {
-            const response2 = await this.messageBus.send(
-              {
-                type: MessageType.REQUEST_TRANSLATION,
-                action: "requestTranslation",
-                payload: {
-                  texts: oovTexts,
-                  targetLanguage,
-                  semiParallel: true,
-                  priorityCount: 0,
-                  phase: 2,
-                },
-              },
-              API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
-            );
-
-            logger.log(
-              `[Content:ContentScript] ${timestamp} - Phase 2 response received:`,
-              {
-                success: response2?.success,
-                hasTranslations: !!response2?.data?.translations,
-              },
-            );
-
-            if (response2?.success && response2?.data?.translations) {
-              logger.log(
-                `[Content:ContentScript] ${timestamp} - Applying Phase 2 translations`,
-              );
-              const nodesToTranslate = oovIndices.map((i) => outOfViewport[i]);
-              this.applyPhaseTranslationsAndTrack(
-                2,
-                nodesToTranslate,
-                response2.data.translations,
-              );
-              this.progressNotification.completePhase(2);
-              logger.log(
-                `[Content:ContentScript] ${timestamp} - Phase 2 completed`,
-              );
-            } else {
-              logger.warn(
-                `[Content:ContentScript] ${timestamp} - Phase 2 failed:`,
-                response2,
-              );
-              // Why: completePhase(2) を呼ばない選択肢を却下。呼ばないとプログレスバーが止まり、ユーザーがフリーズと誤認する。
-              this.progressNotification.completePhase(2);
-            }
-          } catch (error) {
-            logger.error(
-              `[Content:ContentScript] ${timestamp} - Phase 2 translation error:`,
-              error,
-            );
-            // Why: エラー時も completePhase(2) を呼ぶ。呼ばないとプログレスバーがフリーズしユーザーが操作不能になる。
-            this.progressNotification.completePhase(2);
-          }
-        } else {
-          logger.log(
-            `[Content:ContentScript] ${timestamp} - Phase 2 skipped: All texts filtered`,
-          );
-          this.progressNotification.completePhase(2);
-        }
-      } else {
-        logger.log(
-          `[Content:ContentScript] ${timestamp} - Phase 2 skipped: No out-of-viewport nodes`,
+          `[Content:ContentScript] ${timestamp} - Immediate job skipped: No viewport/near nodes`,
         );
       }
 
       this.isTranslated = true;
-      this.progressNotification.complete();
-
-      // P0 Fix: Enable MutationObserver for infinite scroll / dynamic content
+      if (shouldAnnounceComplete) {
+        this.progressNotification.complete();
+      }
       this.enableDynamicTranslation(targetLanguage);
 
       logger.log(
@@ -514,12 +422,13 @@ export class ContentScript {
       );
       logger.error("Failed to translate page:", error);
 
-      // Show error notification
       this.progressNotification.error(
         error instanceof Error ? error.message : "Translation failed",
       );
 
       throw error;
+    } finally {
+      this.pageTranslationInFlight = false;
     }
   }
 
@@ -627,7 +536,11 @@ export class ContentScript {
         }
       }
 
-      if (detectedTextNodes.size > 0 && this.isTranslated) {
+      if (
+        detectedTextNodes.size > 0 &&
+        this.isTranslated &&
+        !this.pageTranslationInFlight
+      ) {
         logger.log(
           `Dynamic content: ${detectedTextNodes.size} candidate text nodes detected`,
         );
@@ -679,6 +592,7 @@ export class ContentScript {
         logger.warn(
           `[Content:ContentScript] ${timestamp} - phaseNodes[${phase}] is empty, skipping batch application`,
         );
+        this.applyBatchProgress(phase, progress);
         return;
       }
 
@@ -721,10 +635,7 @@ export class ContentScript {
       this.applyTranslationsAndTrack(nodes, translationsForApply);
       pendingPairs.forEach((pair) => appliedIndices.add(pair.nodeIndex));
 
-      // Update progress notification
-      if (typeof progress?.percentage === "number") {
-        this.progressNotification.updatePhase(phase, progress.percentage);
-      }
+      this.applyBatchProgress(phase, progress);
 
       logger.log(
         `[Content:ContentScript] ${timestamp} - Batch applied successfully:`,
@@ -744,6 +655,32 @@ export class ContentScript {
         },
       );
       logger.error("Failed to handle batch completed:", error);
+      this.applyBatchProgress(payload?.phase, payload?.progress);
+    }
+  }
+
+  private applyBatchProgress(
+    phase: TranslationPhase | undefined,
+    progress:
+      | { current: number; total: number; percentage: number }
+      | undefined,
+  ): void {
+    if (phase !== 1 && phase !== 2) {
+      return;
+    }
+    if (
+      typeof progress?.current === "number" &&
+      typeof progress?.total === "number"
+    ) {
+      this.progressNotification.updatePhase(
+        phase,
+        progress.current,
+        progress.total,
+      );
+      return;
+    }
+    if (typeof progress?.percentage === "number") {
+      this.progressNotification.updatePhase(phase, progress.percentage);
     }
   }
 
@@ -933,6 +870,10 @@ export class ContentScript {
     nodes: Iterable<Node>,
     targetLanguage: string,
   ): void {
+    if (this.pageTranslationInFlight) {
+      return;
+    }
+
     for (const node of nodes) {
       this.pendingDynamicNodes.add(node);
     }
@@ -1035,9 +976,29 @@ export class ContentScript {
   /**
    * Cleanup resources
    */
+  private watchFarNodes(farNodes: TextNode[], targetLanguage: string): void {
+    this.approachingObserver?.disconnect();
+    this.approachingObserver = null;
+    if (farNodes.length === 0) {
+      return;
+    }
+
+    const pending = new Set(farNodes.map((textNode) => textNode.node));
+    this.approachingObserver = new ApproachingNodeObserver((nodes) => {
+      const approached = nodes.filter((node) => pending.has(node));
+      approached.forEach((node) => pending.delete(node));
+      if (approached.length > 0) {
+        void this.translateNewNodes(approached, targetLanguage);
+      }
+    });
+    this.approachingObserver.watch(farNodes.map((textNode) => textNode.node));
+  }
+
   cleanup(): void {
     this.selectionHandler.disable();
     this.mutationObserver.disconnect();
+    this.approachingObserver?.disconnect();
+    this.approachingObserver = null;
     this.pendingDynamicNodes.clear();
     if (this.dynamicTranslationTimer) {
       clearTimeout(this.dynamicTranslationTimer);

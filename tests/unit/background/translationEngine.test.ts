@@ -7,7 +7,15 @@
 
 import { TranslationEngine } from "../../../src/background/translationEngine";
 import { OpenRouterClient } from "../../../src/background/apiClient";
-import { BATCH_CONFIG } from "../../../src/shared/constants/config";
+import {
+  BATCH_CONFIG,
+  RATE_LIMIT_CONFIG,
+} from "../../../src/shared/constants/config";
+import {
+  RateLimiter,
+  RequestGate,
+  type Clock,
+} from "../../../src/shared/utils/requestGate";
 
 // Mock dependencies
 jest.mock("../../../src/background/apiClient");
@@ -1469,6 +1477,185 @@ describe("TranslationEngine", () => {
       // Should return cached value from browser.storage.local
       expect(result).toEqual(["こんにちは(キャッシュ)"]);
       expect(mockApiClient.translate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("remaining-batch notify-as-each-finishes",
+    () => {
+    it("invokes onBatchComplete for a faster remaining batch while a slower sibling is still pending",
+      async () => {
+      await engine.initialize();
+
+      const batchSize = BATCH_CONFIG.BATCH_SIZE;
+      const texts = Array.from(
+        { length: batchSize * 2 + 3 },
+        (_, i) => `T${i}`,
+      );
+
+      let releaseSlow: (value: string[]) => void = () => {};
+      const slowDone = new Promise<string[]>((resolve) => {
+        releaseSlow = resolve;
+      });
+      let slowStarted = false;
+      let slowFinished = false;
+      let fastRemainingNotifiedWhileSlowPending = false;
+
+      mockApiClient.translate.mockImplementation((batch: string[]) => {
+        const first = batch[0];
+        if (first === "T0") {
+          return Promise.resolve(batch.map((text) => `tr-${text}`));
+        }
+        if (first === `T${batchSize}`) {
+          return new Promise<string[]>((resolve) => {
+            setTimeout(() => {
+              resolve(batch.map((text) => `tr-${text}`));
+            }, 15);
+          });
+        }
+        slowStarted = true;
+        return slowDone.then((value) => {
+          slowFinished = true;
+          return value;
+        });
+      });
+
+      const onBatchComplete = jest.fn((batchIndex: number) => {
+        if (batchIndex === 1 && slowStarted && !slowFinished) {
+          fastRemainingNotifiedWhileSlowPending = true;
+        }
+      });
+
+      const job = engine.translateBatchSemiParallel(
+        texts,
+        "Japanese",
+        1,
+        onBatchComplete,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(slowStarted).toBe(true);
+      expect(
+        onBatchComplete.mock.calls.some((call) => call[0] === 1),
+      ).toBe(true);
+      expect(
+        onBatchComplete.mock.calls.some((call) => call[0] === 2),
+      ).toBe(false);
+      expect(fastRemainingNotifiedWhileSlowPending).toBe(true);
+
+      releaseSlow(texts.slice(batchSize * 2).map((text) => `tr-${text}`));
+      const results = await job;
+      expect(results).toHaveLength(texts.length);
+      expect(results[0]).toBe("tr-T0");
+    });
+  });
+
+  describe("shared request gate",
+    () => {
+    it("keeps in-flight API calls at or below CONCURRENCY_LIMIT",
+      async () => {
+      await engine.initialize();
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockApiClient.translate.mockImplementation(async (batch: string[]) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        inFlight -= 1;
+        return batch.map((text) => `tr-${text}`);
+      });
+
+      const texts = Array.from(
+        { length: BATCH_CONFIG.BATCH_SIZE * 4 },
+        (_, i) => `C${i}`,
+      );
+      await engine.translateBatch(texts, "Japanese");
+
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(maxInFlight).toBeLessThanOrEqual(BATCH_CONFIG.CONCURRENCY_LIMIT);
+    });
+
+    it("paces API starts using RATE_LIMIT_CONFIG via the injected gate",
+      async () => {
+      let now = 0;
+      const sleeps: Array<{ ms: number; resolve: () => void }> = [];
+      const clock: Clock = {
+        now: () => now,
+        sleep: (ms) =>
+          new Promise<void>((resolve) => {
+            sleeps.push({ ms, resolve });
+          }),
+      };
+      const gate = new RequestGate(
+        10,
+        new RateLimiter(
+          RATE_LIMIT_CONFIG.MAX_REQUESTS_PER_MINUTE,
+          RATE_LIMIT_CONFIG.WINDOW_SIZE,
+          clock,
+        ),
+      );
+      engine = new TranslationEngine({ requestGate: gate });
+      await engine.initialize();
+
+      mockApiClient.translate.mockImplementation(async (batch: string[]) =>
+        batch.map((text) => `tr-${text}`),
+      );
+
+      const oneTextJobs: Array<Promise<string[]>> = [];
+      for (let i = 0; i < RATE_LIMIT_CONFIG.MAX_REQUESTS_PER_MINUTE; i++) {
+        oneTextJobs.push(engine.translateBatch([`P${i}`], "Japanese"));
+      }
+      await Promise.all(oneTextJobs);
+
+      expect(mockApiClient.translate.mock.calls.length).toBe(
+        RATE_LIMIT_CONFIG.MAX_REQUESTS_PER_MINUTE,
+      );
+
+      let extraDone = false;
+      const extra = engine.translateBatch(["P-extra"], "Japanese").then((result) => {
+        extraDone = true;
+        return result;
+      });
+      const waitStart = Date.now();
+      while (sleeps.length === 0 && Date.now() - waitStart < 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(extraDone).toBe(false);
+      expect(sleeps.length).toBeGreaterThan(0);
+      expect(sleeps[0].ms).toBe(RATE_LIMIT_CONFIG.WINDOW_SIZE);
+
+      now += RATE_LIMIT_CONFIG.WINDOW_SIZE;
+      sleeps.forEach((sleep) => sleep.resolve());
+      const extraResult = await extra;
+      expect(extraResult[0]).toBe("tr-P-extra");
+    });
+
+    it("runs count-mismatch individual leftover texts with overlapping in-flight calls",
+      async () => {
+      await engine.initialize();
+      const { ParseCountMismatchError } = await import(
+        "../../../src/background/apiClient"
+      );
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockApiClient.translate.mockImplementation(async (batch: string[]) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        inFlight -= 1;
+        if (batch.length > 1) {
+          throw new ParseCountMismatchError(batch.length, 0);
+        }
+        return [`tr-${batch[0]}`];
+      });
+
+      const texts = ["A", "B", "C", "D"];
+      const result = await engine.translateBatch(texts, "Japanese");
+
+      expect(result).toEqual(["tr-A", "tr-B", "tr-C", "tr-D"]);
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(maxInFlight).toBeLessThanOrEqual(BATCH_CONFIG.CONCURRENCY_LIMIT);
     });
   });
 });

@@ -8,7 +8,8 @@
  * - Preserve original text using WeakMap
  */
 
-import { EXCLUSION_SELECTORS } from "@shared/constants";
+import { BATCH_CONFIG, EXCLUSION_SELECTORS } from "@shared/constants";
+import { classifyRect } from "./proximityClassifier";
 
 export interface TextNode {
   node: Node;
@@ -288,5 +289,42 @@ export class DOMManipulator {
     });
 
     return { viewport, outOfViewport };
+  }
+
+  /**
+   * Split already-detected out-of-viewport nodes into near (first job) and far (wait for approach).
+   */
+  classifyOutOfViewport(nodes: TextNode[]): {
+    near: TextNode[];
+    far: TextNode[];
+  } {
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+    const near: TextNode[] = [];
+    const far: TextNode[] = [];
+
+    for (const node of nodes) {
+      const range = document.createRange();
+      range.selectNodeContents(node.node);
+      const rect = range.getBoundingClientRect();
+      const measurable =
+        rect.width === 0 && rect.height === 0 && node.node.parentElement
+          ? node.node.parentElement.getBoundingClientRect()
+          : rect;
+      const band = classifyRect(
+        measurable,
+        viewport,
+        BATCH_CONFIG.NEAR_VIEWPORT_SCREENS,
+      );
+      if (band === "far") {
+        far.push(node);
+      } else {
+        near.push(node);
+      }
+    }
+
+    return { near, far };
   }
 }
