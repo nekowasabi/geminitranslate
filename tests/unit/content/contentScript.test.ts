@@ -46,6 +46,7 @@ jest.mock("@content/progressNotification", () => ({
 
 import { ContentScript } from "@content/contentScript";
 import { MessageType } from "@shared/messages/types";
+import { API_CONFIG } from "@shared/constants";
 
 describe("ContentScript", () => {
   let contentScript: ContentScript;
@@ -176,6 +177,78 @@ describe("ContentScript", () => {
     });
   });
 
+  describe("handleMessage - TRANSLATE_PAGE with selection", () => {
+    it("should run selection translation only when text is selected", async () => {
+      const getSelectedText = jest
+        .spyOn(contentScript["selectionHandler"], "getSelectedText")
+        .mockReturnValue("Hello selected");
+      const runSelectionTranslation = jest
+        .spyOn(contentScript["selectionHandler"], "runSelectionTranslation")
+        .mockResolvedValue(undefined);
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        sendResponse,
+      );
+
+      expect(getSelectedText).toHaveBeenCalled();
+      expect(runSelectionTranslation).toHaveBeenCalledWith("ja");
+      expect(mockSend).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            phase: 1,
+          }),
+        }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+      );
+      expect(sendResponse).toHaveBeenCalledWith({ success: true });
+    });
+
+    it("should run page translation when no text is selected", async () => {
+      jest
+        .spyOn(contentScript["selectionHandler"], "getSelectedText")
+        .mockReturnValue(null);
+
+      mockSend.mockResolvedValue({
+        success: true,
+        data: { translations: ["こんにちは世界"] },
+      });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        sendResponse,
+      );
+
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.REQUEST_TRANSLATION,
+          payload: expect.objectContaining({
+            targetLanguage: "ja",
+          }),
+        }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+      );
+    });
+  });
+
   describe("handleMessage - RESET", () => {
     it("should handle reset message", async () => {
       contentScript.initialize();
@@ -227,6 +300,34 @@ describe("ContentScript", () => {
       );
 
       expect(mockSend).toHaveBeenCalled();
+    });
+
+    it("should show the right-edge result panel instead of FloatingUI", async () => {
+      const range = document.createRange();
+      range.selectNodeContents(testContainer.querySelector("p")!);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      const runSelectionTranslation = jest
+        .spyOn(contentScript["selectionHandler"], "runSelectionTranslation")
+        .mockResolvedValue(undefined);
+      const floatingShow = jest.spyOn(contentScript["floatingUI"], "show");
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_SELECTION,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        jest.fn(),
+      );
+
+      expect(runSelectionTranslation).toHaveBeenCalledWith("ja");
+      expect(floatingShow).not.toHaveBeenCalled();
     });
   });
 
@@ -389,7 +490,7 @@ describe("ContentScript", () => {
       expect(sendResponse).toHaveBeenCalledWith({ success: true });
     });
 
-    it("should handle translation errors", async () => {
+    it("should complete page translation when send rejects", async () => {
       mockSend.mockRejectedValue(new Error("Translation failed"));
 
       contentScript.initialize();
@@ -406,10 +507,8 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      expect(sendResponse).toHaveBeenCalledWith({
-        success: false,
-        error: expect.any(String),
-      });
+      expect(sendResponse).toHaveBeenCalledWith({ success: true });
+      expect(mockProgressNotification.complete).toHaveBeenCalled();
     });
   });
 
@@ -504,6 +603,7 @@ describe("ContentScript", () => {
             phase: 1,
           }),
         }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
       );
     });
 
@@ -554,6 +654,7 @@ describe("ContentScript", () => {
               phase: 2,
             }),
           }),
+          API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
         );
       } else {
         // If Phase 2 wasn't called, verify Phase 1 was at least called correctly
@@ -569,6 +670,7 @@ describe("ContentScript", () => {
               phase: 1,
             }),
           }),
+          API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
         );
       }
     });
@@ -807,6 +909,50 @@ describe("ContentScript", () => {
       expect(mockSend).toHaveBeenCalledTimes(1);
     });
 
+    it("should continue Phase 2 when Phase 1 send rejects", async () => {
+      mockSend
+        .mockRejectedValueOnce(new Error("MessageBus timeout after 120000ms"))
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            translations: ["テストコンテンツ"],
+          },
+        });
+
+      contentScript.initialize();
+
+      const messageHandler = mockListen.mock.calls[0][0];
+      const sendResponse = jest.fn();
+
+      await messageHandler(
+        {
+          type: MessageType.TRANSLATE_PAGE,
+          payload: { targetLanguage: "ja" },
+        },
+        {},
+        sendResponse,
+      );
+
+      expect(mockSend).toHaveBeenCalledTimes(2);
+      expect(mockSend).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          type: MessageType.REQUEST_TRANSLATION,
+          payload: expect.objectContaining({
+            phase: 2,
+          }),
+        }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+      );
+      const completePhaseCalls =
+        mockProgressNotification.completePhase.mock.calls;
+      expect(completePhaseCalls.some((call) => call[0] === 1)).toBe(true);
+      expect(mockProgressNotification.complete).toHaveBeenCalled();
+      expect(mockSend.mock.calls[0][1]).toBe(
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+      );
+    });
+
     it("should call completePhase(2) even when Phase 2 fails (success: false)", async () => {
       // Phase 1 succeeds, Phase 2 returns failure response
       mockSend
@@ -1002,9 +1148,8 @@ describe("ContentScript", () => {
         expect(mockProgressNotification.complete).toHaveBeenCalled();
       });
 
-      it("should call progressNotification.error() when translation fails", async () => {
-        const errorMessage = "API rate limit exceeded";
-        mockSend.mockRejectedValue(new Error(errorMessage));
+      it("should complete phases instead of erroring when send rejects", async () => {
+        mockSend.mockRejectedValue(new Error("API rate limit exceeded"));
 
         contentScript.initialize();
 
@@ -1020,9 +1165,8 @@ describe("ContentScript", () => {
           sendResponse,
         );
 
-        expect(mockProgressNotification.error).toHaveBeenCalledWith(
-          expect.stringContaining(errorMessage),
-        );
+        expect(mockProgressNotification.error).not.toHaveBeenCalled();
+        expect(mockProgressNotification.complete).toHaveBeenCalled();
       });
 
       it("should not call show() when extractedNodes is empty", async () => {
@@ -2179,6 +2323,7 @@ describe("ContentScript", () => {
             phase: 1,
           }),
         }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
       );
     });
 
@@ -2318,6 +2463,7 @@ describe("ContentScript", () => {
             priorityCount: 0,
           }),
         }),
+        API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
       );
     });
 

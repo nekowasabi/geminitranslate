@@ -47,68 +47,18 @@ describe('IconBadge', () => {
       expect(badge.style.zIndex).toBe('10002');
     });
 
-    it('should apply offset to position', () => {
-      const position: Position = { x: 100, y: 200 };
-      const onClick = jest.fn();
-
-      iconBadge.show(position, onClick);
-
-      const badge = document.querySelector('.icon-badge') as HTMLElement;
-      expect(badge).not.toBeNull();
-
-      // Should have offset applied (UI_CONFIG.FLOATING_UI_OFFSET = 10)
-      const left = parseInt(badge.style.left);
-      const top = parseInt(badge.style.top);
-      expect(left).toBeGreaterThanOrEqual(100);
-      expect(top).toBeGreaterThanOrEqual(200);
-    });
-
-    it('should adjust position to stay within viewport (right edge)', () => {
-      // Simulate viewport width
+    it('should pin the badge to the viewport right-edge center', () => {
       Object.defineProperty(window, 'innerWidth', {
         writable: true,
         configurable: true,
-        value: 400,
+        value: 800,
       });
-
-      // Mock getBoundingClientRect on HTMLElement prototype
-      const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
-      HTMLElement.prototype.getBoundingClientRect = jest.fn().mockReturnValue({
-        width: 32,
-        height: 32,
-        top: 0,
-        left: 0,
-        bottom: 32,
-        right: 32,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      });
-
-      const position: Position = { x: 390, y: 100 };
-      const onClick = jest.fn();
-
-      iconBadge.show(position, onClick);
-
-      const badge = document.querySelector('.icon-badge') as HTMLElement;
-      const left = parseInt(badge.style.left);
-
-      // Should be adjusted to not overflow right edge
-      expect(left + 32).toBeLessThanOrEqual(400); // badge width = 32px
-
-      // Restore original
-      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
-    });
-
-    it('should adjust position to stay within viewport (bottom edge)', () => {
-      // Simulate viewport height
       Object.defineProperty(window, 'innerHeight', {
         writable: true,
         configurable: true,
         value: 600,
       });
 
-      // Mock getBoundingClientRect on HTMLElement prototype
       const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
       HTMLElement.prototype.getBoundingClientRect = jest.fn().mockReturnValue({
         width: 32,
@@ -122,18 +72,51 @@ describe('IconBadge', () => {
         toJSON: () => ({}),
       });
 
-      const position: Position = { x: 100, y: 590 };
-      const onClick = jest.fn();
-
-      iconBadge.show(position, onClick);
+      iconBadge.show({ x: 10, y: 20 }, jest.fn());
 
       const badge = document.querySelector('.icon-badge') as HTMLElement;
-      const top = parseInt(badge.style.top);
+      const left = parseInt(badge.style.left, 10);
+      const top = parseInt(badge.style.top, 10);
 
-      // Should be adjusted to not overflow bottom edge
-      expect(top + 32).toBeLessThanOrEqual(600); // badge height = 32px
+      expect(left).toBe(800 - 32 - 10);
+      expect(top).toBe(Math.round((600 - 32) / 2));
 
-      // Restore original
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+    });
+
+    it('should ignore selection coordinates when pinning to the viewport', () => {
+      Object.defineProperty(window, 'innerWidth', {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+      Object.defineProperty(window, 'innerHeight', {
+        writable: true,
+        configurable: true,
+        value: 600,
+      });
+
+      const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+      HTMLElement.prototype.getBoundingClientRect = jest.fn().mockReturnValue({
+        width: 32,
+        height: 32,
+        top: 0,
+        left: 0,
+        bottom: 32,
+        right: 32,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+
+      iconBadge.show({ x: 10, y: 20 }, jest.fn());
+      const firstLeft = (document.querySelector('.icon-badge') as HTMLElement).style.left;
+      iconBadge.hide();
+      iconBadge.show({ x: 400, y: 500 }, jest.fn());
+      const secondLeft = (document.querySelector('.icon-badge') as HTMLElement).style.left;
+
+      expect(firstLeft).toBe(secondLeft);
+
       HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     });
 

@@ -26,6 +26,7 @@ const mockIconBadgeShow = jest.fn();
 const mockIconBadgeHide = jest.fn();
 const mockSetLoading = jest.fn();
 const mockShowInlineError = jest.fn();
+const mockShowTranslationResult = jest.fn();
 jest.mock('@content/iconBadge', () => {
   return {
     IconBadge: Object.assign(
@@ -34,6 +35,7 @@ jest.mock('@content/iconBadge', () => {
         hide: mockIconBadgeHide,
         setLoading: mockSetLoading,
         showInlineError: mockShowInlineError,
+        showTranslationResult: mockShowTranslationResult,
       })),
       { CLASS_NAME: 'icon-badge' }
     ),
@@ -171,6 +173,20 @@ describe('SelectionHandler', () => {
 
       // Cleanup
       document.body.removeChild(div);
+    });
+
+    it('should read selection from input and textarea when getSelection is empty', () => {
+      window.getSelection()?.removeAllRanges();
+
+      const input = document.createElement('input');
+      input.value = 'Hello form field';
+      document.body.appendChild(input);
+      input.focus();
+      input.setSelectionRange(0, 5);
+
+      expect(selectionHandler.getSelectedText()).toBe('Hello');
+
+      document.body.removeChild(input);
     });
 
     it('should trim whitespace from selection', () => {
@@ -512,8 +528,44 @@ describe('SelectionHandler', () => {
           targetLanguage: 'Japanese',
         },
       });
+      expect(mockShowTranslationResult).toHaveBeenCalledWith(
+        'Click badge to translate',
+        '翻訳結果',
+        'Japanese',
+        expect.objectContaining({ x: window.innerWidth, y: 0 }),
+      );
 
       // Cleanup
+      document.body.removeChild(div);
+    });
+
+    it('should show the same right-edge panel from runSelectionTranslation', async () => {
+      mockSend.mockResolvedValue({
+        success: true,
+        data: {
+          translations: ['翻訳結果'],
+        },
+      });
+
+      const div = document.createElement('div');
+      div.textContent = 'Shortcut text';
+      document.body.appendChild(div);
+
+      const range = document.createRange();
+      range.selectNodeContents(div);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      await selectionHandler.runSelectionTranslation('ja');
+
+      expect(mockShowTranslationResult).toHaveBeenCalledWith(
+        'Shortcut text',
+        '翻訳結果',
+        'ja',
+        expect.objectContaining({ x: window.innerWidth, y: 0 }),
+      );
+
       document.body.removeChild(div);
     });
 

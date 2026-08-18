@@ -19,6 +19,7 @@ import { MessageBus } from "@shared/messages/MessageBus";
 import { MessageType, Message, TranslationPhase } from "@shared/messages/types";
 import { logger } from "@shared/utils";
 import { filterBatchTexts } from "@shared/utils/textFilter";
+import { API_CONFIG } from "@shared/constants";
 
 export class ContentScript {
   private domManipulator: DOMManipulator;
@@ -120,9 +121,15 @@ export class ContentScript {
                 "payload" in message ? message.payload.targetLanguage : "en",
             },
           );
-          await this.translatePage(
-            "payload" in message ? message.payload.targetLanguage : "en",
-          );
+          {
+            const targetLanguage =
+              "payload" in message ? message.payload.targetLanguage : "en";
+            if (this.selectionHandler.getSelectedText()) {
+              await this.translateSelection(targetLanguage);
+            } else {
+              await this.translatePage(targetLanguage);
+            }
+          }
           logger.log(
             `[Content:ContentScript] ${timestamp} - TRANSLATE_PAGE completed successfully`,
           );
@@ -322,52 +329,63 @@ export class ContentScript {
             },
           );
 
-          // Wait for Phase 1 completion before starting Phase 2
-          const response1 = await this.messageBus.send({
-            type: MessageType.REQUEST_TRANSLATION,
-            action: "requestTranslation",
-            payload: {
-              texts: textsToTranslate,
-              targetLanguage,
-              semiParallel: true,
-              priorityCount: 1,
-              phase: 1,
-            },
-          });
-
-          logger.log(
-            `[Content:ContentScript] ${timestamp} - Phase 1 response received:`,
-            {
-              success: response1?.success,
-              hasTranslations: !!response1?.data?.translations,
-            },
-          );
-
-          if (response1?.success && response1?.data?.translations) {
-            logger.log(
-              `[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`,
+          // Why: Phase 1 timeout/reject used to skip Phase 2. Catch and continue.
+          try {
+            const response1 = await this.messageBus.send(
+              {
+                type: MessageType.REQUEST_TRANSLATION,
+                action: "requestTranslation",
+                payload: {
+                  texts: textsToTranslate,
+                  targetLanguage,
+                  semiParallel: true,
+                  priorityCount: 1,
+                  phase: 1,
+                },
+              },
+              API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
             );
-            // Apply all translations including cache hits (same pattern as Phase 2)
-            const nodesToTranslate = originalIndices.map((i) => viewport[i]);
-            this.applyPhaseTranslationsAndTrack(
-              1,
-              nodesToTranslate,
-              response1.data.translations,
+
+            logger.log(
+              `[Content:ContentScript] ${timestamp} - Phase 1 response received:`,
+              {
+                success: response1?.success,
+                hasTranslations: !!response1?.data?.translations,
+              },
+            );
+
+            if (response1?.success && response1?.data?.translations) {
+              logger.log(
+                `[Content:ContentScript] ${timestamp} - Applying Phase 1 translations`,
+              );
+              const nodesToTranslate = originalIndices.map((i) => viewport[i]);
+              this.applyPhaseTranslationsAndTrack(
+                1,
+                nodesToTranslate,
+                response1.data.translations,
+              );
+              this.progressNotification.completePhase(1);
+              logger.log(
+                `[Content:ContentScript] ${timestamp} - Phase 1 completed with all translations applied`,
+              );
+            } else {
+              logger.warn(
+                `[Content:ContentScript] ${timestamp} - Phase 1 failed:`,
+                response1,
+              );
+              this.progressNotification.completePhase(1);
+            }
+
+            logger.log(
+              `[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`,
+            );
+          } catch (error) {
+            logger.error(
+              `[Content:ContentScript] ${timestamp} - Phase 1 translation error:`,
+              error,
             );
             this.progressNotification.completePhase(1);
-            logger.log(
-              `[Content:ContentScript] ${timestamp} - Phase 1 completed with all translations applied`,
-            );
-          } else {
-            logger.warn(
-              `[Content:ContentScript] ${timestamp} - Phase 1 failed:`,
-              response1,
-            );
           }
-
-          logger.log(
-            `[Content:ContentScript] ${timestamp} - Phase 1 request completed (batches were applied via BATCH_COMPLETED)`,
-          );
         }
       } else {
         logger.log(
@@ -410,17 +428,20 @@ export class ContentScript {
           // Why: try-catch を追加。BrowserAdapter.sendMessage が reject した場合（runtime.lastError 等）に
           // Promise が永久 pending になるのを防ぐ。Phase 1 長時間処理後にメッセージチャネルが不安定化する場合に有効。
           try {
-            const response2 = await this.messageBus.send({
-              type: MessageType.REQUEST_TRANSLATION,
-              action: "requestTranslation",
-              payload: {
-                texts: oovTexts,
-                targetLanguage,
-                semiParallel: true,
-                priorityCount: 0,
-                phase: 2,
+            const response2 = await this.messageBus.send(
+              {
+                type: MessageType.REQUEST_TRANSLATION,
+                action: "requestTranslation",
+                payload: {
+                  texts: oovTexts,
+                  targetLanguage,
+                  semiParallel: true,
+                  priorityCount: 0,
+                  phase: 2,
+                },
               },
-            });
+              API_CONFIG.TRANSLATION_MESSAGE_TIMEOUT_MS,
+            );
 
             logger.log(
               `[Content:ContentScript] ${timestamp} - Phase 2 response received:`,
@@ -507,27 +528,9 @@ export class ContentScript {
    */
   private async translateSelection(targetLanguage: string): Promise<void> {
     try {
-      const translation =
-        await this.selectionHandler.translateSelection(targetLanguage);
-
-      if (translation) {
-        // Get selection position
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          const rect = range.getBoundingClientRect();
-
-          // Show floating UI
-          this.floatingUI.show(translation, {
-            x: rect.left + window.scrollX,
-            y: rect.bottom + window.scrollY,
-          });
-
-          logger.log("Selection translation displayed");
-        }
-      } else {
-        logger.log("No selection to translate");
-      }
+      // Why: shortcut must use the same right-edge panel as the T button.
+      // FloatingUI sits near the selection and is hard to read.
+      await this.selectionHandler.runSelectionTranslation(targetLanguage);
     } catch (error) {
       logger.error("Failed to translate selection:", error);
       throw error;

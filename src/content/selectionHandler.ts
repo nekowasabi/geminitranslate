@@ -196,18 +196,32 @@ export class SelectionHandler {
    */
   getSelectedText(): string | null {
     const selection = window.getSelection();
-
-    if (!selection || selection.rangeCount === 0) {
-      return null;
+    const selectedText = selection?.toString().trim();
+    if (selectedText) {
+      return selectedText;
     }
 
-    const selectedText = selection.toString().trim();
-
-    if (!selectedText) {
-      return null;
+    // Why: window.getSelection() does not include <input>/<textarea> in Firefox
+    // (MDN Window.getSelection). Use the form-control selection APIs instead.
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement
+    ) {
+      const { selectionStart, selectionEnd, value } = active;
+      if (
+        typeof selectionStart === "number" &&
+        typeof selectionEnd === "number" &&
+        selectionStart !== selectionEnd
+      ) {
+        const formSelection = value.slice(selectionStart, selectionEnd).trim();
+        if (formSelection) {
+          return formSelection;
+        }
+      }
     }
 
-    return selectedText;
+    return null;
   }
 
   /**
@@ -284,6 +298,66 @@ export class SelectionHandler {
   }
 
   /**
+   * Translate the current (or captured) selection and show the right-edge result panel.
+   * Shared by IconBadge click and keyboard shortcuts.
+   */
+  async runSelectionTranslation(
+    targetLanguage?: string,
+    text?: string,
+  ): Promise<void> {
+    const selectedText = this.normalizeTranslatedText(
+      text || this.getSelectedText() || "",
+    );
+    if (!selectedText) {
+      logger.log("No text selected for translation");
+      return;
+    }
+
+    try {
+      this.iconBadge.setLoading(true);
+      this.showSelectionToast(TOAST_MESSAGES.LOADING, "loading");
+
+      const language =
+        targetLanguage || (await this.storageManager.getTargetLanguage());
+      if (!language) {
+        logger.warn("No target language configured");
+        this.iconBadge.hide();
+        return;
+      }
+
+      const translatedText = await this.translateSelection(
+        language,
+        selectedText,
+      );
+
+      if (translatedText && selectedText) {
+        this.hideSelectionToast();
+        await this.iconBadge.showTranslationResult(
+          selectedText,
+          translatedText,
+          language,
+          {
+            x: window.innerWidth,
+            y: 0,
+          },
+        );
+      } else if (this.lastTranslationErrored) {
+        this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, "error");
+        this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
+      } else {
+        this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_FAILED, "error");
+        this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_FAILED);
+      }
+    } catch (error) {
+      logger.error("Failed to handle selection translation:", error);
+      this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, "error");
+      this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
+    } finally {
+      this.iconBadge.setLoading(false);
+    }
+  }
+
+  /**
    * Handle mouseup event
    */
   private handleMouseUp(event: MouseEvent): void {
@@ -310,58 +384,7 @@ export class SelectionHandler {
 
           this.iconBadge.show(
             badgePosition,
-            async () => {
-              // IconBadge clicked - trigger translation
-              // Use captured selectedText from mouseup event to ensure full text is translated
-              // Why: try-finally で setLoading(false) を確実解除。成功/失敗/例外の全パスで解除漏れゼロを保証。
-              try {
-                this.iconBadge.setLoading(true);
-                this.showSelectionToast(TOAST_MESSAGES.LOADING, 'loading');
-
-                const targetLanguage = await this.storageManager.getTargetLanguage();
-
-                if (!targetLanguage) {
-                  logger.warn('No target language configured');
-                  this.iconBadge.hide();
-                  return;
-                }
-
-                // Pass selectedText explicitly to ensure full text is translated
-                // even if user has deselected the text before clicking IconBadge
-                const translatedText = await this.translateSelection(targetLanguage, selectedText);
-
-                // Show FloatingUI with translation result
-                if (translatedText && selectedText) {
-                  this.hideSelectionToast();
-                  await this.iconBadge.showTranslationResult(
-                    selectedText,
-                    translatedText,
-                    targetLanguage,
-                    {
-                      x: window.innerWidth,  // Right edge (position will be fixed by CSS)
-                      y: 0,                  // Top (position will be fixed by CSS)
-                    }
-                  );
-                } else {
-                  // Translation failed - show inline error
-                  // Why: distinguish exception path (lastTranslationErrored) from empty-response path
-                  // to show the correct user-facing message in each case.
-                  if (this.lastTranslationErrored) {
-                    this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, 'error');
-                    this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
-                  } else {
-                    this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_FAILED, 'error');
-                    this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_FAILED);
-                  }
-                }
-              } catch (error) {
-                logger.error('Failed to handle IconBadge click:', error);
-                this.showSelectionToast(TOAST_MESSAGES.TRANSLATION_ERROR, 'error');
-                this.iconBadge.showInlineError(TOAST_MESSAGES.TRANSLATION_ERROR);
-              } finally {
-                this.iconBadge.setLoading(false);
-              }
-            }
+            () => this.runSelectionTranslation(undefined, selectedText),
           );
         }
       } else {
