@@ -358,19 +358,16 @@ describe("TranslationEngine", () => {
       expect(mockApiClient.translate).toHaveBeenCalledTimes(3);
     });
 
-    it("should throw error after max retries exhausted", async () => {
-      // RED: Should throw after 3 retries (initial + 3 retries = 4 calls)
+    it("should return original text after max retries exhausted", async () => {
       await engine.initialize();
 
       mockApiClient.translate.mockRejectedValue(new Error("Persistent error"));
 
-      await expect(
-        engine.translateBatch(["Hello"], "Japanese"),
-      ).rejects.toThrow("Persistent error");
+      const result = await engine.translateBatch(["Hello"], "Japanese");
 
-      // Should have tried 4 times (initial + 3 retries)
+      expect(result).toEqual(["Hello"]);
       expect(mockApiClient.translate).toHaveBeenCalledTimes(4);
-    }, 10000); // 10 second timeout
+    }, 10000);
 
     it("should fallback to single-text translation on persistent count mismatch", async () => {
       await engine.initialize();
@@ -408,6 +405,31 @@ describe("TranslationEngine", () => {
         "Japanese",
       );
     });
+
+    it("should keep remaining batches when one batch fails", async () => {
+      await engine.initialize();
+
+      const batchSize = BATCH_CONFIG.BATCH_SIZE;
+      const texts = Array.from(
+        { length: batchSize + 2 },
+        (_, i) => `Text ${i}`,
+      );
+      const secondBatch = texts.slice(batchSize);
+
+      mockApiClient.translate.mockImplementation(async (batch: string[]) => {
+        if (batch[0] === texts[0]) {
+          throw new Error("first batch failed");
+        }
+        return batch.map((text) => `T-${text}`);
+      });
+
+      const result = await engine.translateBatch(texts, "Japanese");
+
+      expect(result.slice(0, batchSize)).toEqual(texts.slice(0, batchSize));
+      expect(result.slice(batchSize)).toEqual(
+        secondBatch.map((text) => `T-${text}`),
+      );
+    }, 15000);
 
     it("should use binary-split fallback for large mismatch batches to reduce API calls", async () => {
       await engine.initialize();
@@ -1116,12 +1138,10 @@ describe("TranslationEngine", () => {
 
       mockApiClient.translate.mockRejectedValue(new Error("Persistent error"));
 
-      await expect(
-        engine.translateBatch(["Hello"], "Japanese"),
-      ).rejects.toThrow("Persistent error");
+      const result = await engine.translateBatch(["Hello"], "Japanese");
 
+      expect(result).toEqual(["Hello"]);
       // MAX_RETRIES=3 → initial(1) + retries(3) = 4回
-      // 二重リトライになっていた場合はこれより多くなる
       expect(mockApiClient.translate).toHaveBeenCalledTimes(4);
     }, 30000);
 
@@ -1139,10 +1159,9 @@ describe("TranslationEngine", () => {
         new ParseCountMismatchError(1, 0),
       );
 
-      await expect(
-        engine.translateBatch(["Hello"], "Japanese"),
-      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+      const result = await engine.translateBatch(["Hello"], "Japanese");
 
+      expect(result).toEqual(["Hello"]);
       // ParseCountMismatchError はリトライしないので1回のみ（通常エラーなら MAX_RETRIES+1=4回）
       expect(mockApiClient.translate).toHaveBeenCalledTimes(1);
     });
@@ -1198,12 +1217,9 @@ describe("TranslationEngine", () => {
 
       mockApiClient.translate.mockRejectedValue(new ParseCountMismatchError(8, 1));
 
-      // 個別翻訳でも1テキストでParseCountMismatchErrorが発生 → そのまま上位にthrow
-      await expect(
-        engine.translateBatch(texts, "Japanese"),
-      ).rejects.toBeInstanceOf(ParseCountMismatchError);
+      const result = await engine.translateBatch(texts, "Japanese");
 
-      // 無限ループでなければ呼び出し回数は有界
+      expect(result).toEqual(texts);
       expect(mockApiClient.translate.mock.calls.length).toBeLessThanOrEqual(maxExpectedCalls);
     }, 30000);
   });

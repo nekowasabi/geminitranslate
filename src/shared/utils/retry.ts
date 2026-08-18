@@ -72,6 +72,17 @@ export interface RetryOptions {
    * shouldRetry: (error) => !(error instanceof ParseCountMismatchError)
    */
   shouldRetry?: (error: Error) => boolean;
+
+  /**
+   * Optional cap applied to the computed wait time
+   */
+  maxDelay?: number;
+
+  /**
+   * Optional per-error wait override (e.g. Retry-After).
+   * Why: maxDelay+callback instead of importing ApiError — keep retry.ts provider-agnostic
+   */
+  getDelayOverrideMs?: (error: Error) => number | undefined;
 }
 
 /**
@@ -111,7 +122,7 @@ export async function retry<T>(
   fn: () => Promise<T>,
   options: RetryOptions
 ): Promise<T> {
-  const { maxRetries, delay, backoff = 'exponential', onError, shouldRetry } = options;
+  const { maxRetries, delay, backoff = 'exponential', onError, shouldRetry, maxDelay, getDelayOverrideMs } = options;
   let lastError: Error;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -132,10 +143,19 @@ export async function retry<T>(
 
       // Don't wait after the last attempt
       if (attempt < maxRetries) {
-        const waitTime =
+        let waitTime =
           backoff === 'exponential'
             ? delay * Math.pow(2, attempt)
             : delay * (attempt + 1);
+
+        const overrideMs = getDelayOverrideMs?.(lastError);
+        if (typeof overrideMs === 'number' && Number.isFinite(overrideMs) && overrideMs >= 0) {
+          waitTime = overrideMs;
+        }
+
+        if (typeof maxDelay === 'number' && Number.isFinite(maxDelay)) {
+          waitTime = Math.min(waitTime, maxDelay);
+        }
 
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       }

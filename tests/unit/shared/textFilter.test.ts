@@ -236,5 +236,17 @@ describe("textFilter", () => {
 
       expect(results).toEqual(["123", "456"]);
     });
+
+    it("should fill missing translations with original texts", () => {
+      const results = reconstructResults(
+        ["こんにちは"],
+        [0],
+        new Map(),
+        2,
+        ["Hello", "World"],
+      );
+
+      expect(results).toEqual(["こんにちは", "World"]);
+    });
   });
 });

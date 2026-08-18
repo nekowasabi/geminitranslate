@@ -8,6 +8,7 @@ import {
   ParseCountMismatchError,
 } from "../../../src/background/apiClient";
 import StorageManager from "../../../src/shared/storage/StorageManager";
+import { BATCH_CONFIG } from "../../../src/shared/constants/config";
 
 // Mock fetch globally
 global.fetch = jest.fn() as jest.MockedFunction<typeof fetch>;
@@ -160,6 +161,63 @@ describe("OpenRouterClient", () => {
       expect(requestBody.messages[0].content).toContain("Hello");
       expect(requestBody.messages[0].content).toContain("Goodbye");
       expect(requestBody.provider).toEqual({ order: ["Google"] });
+      expect(requestBody.max_tokens).toBe(BATCH_CONFIG.MIN_MAX_TOKENS);
+    });
+
+    it("should set max_tokens using the per-text coefficient when above the minimum", async () => {
+      const mockResponse = {
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: "x" } }],
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      const texts = Array.from({ length: 20 }, (_, i) => `Text ${i}`);
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: texts.join("---NEXT-TEXT---"),
+              },
+            },
+          ],
+        }),
+      });
+
+      await client.translate(texts, "Japanese");
+
+      const requestBody = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(requestBody.max_tokens).toBe(
+        20 * BATCH_CONFIG.MAX_TOKENS_PER_TEXT,
+      );
+    });
+
+    it("should clamp max_tokens to MAX_TOKENS_CEILING", async () => {
+      const texts = Array.from({ length: 40 }, (_, i) => `Text ${i}`);
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: texts.join("---NEXT-TEXT---"),
+              },
+            },
+          ],
+        }),
+      });
+
+      await client.translate(texts, "Japanese");
+
+      const requestBody = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(requestBody.max_tokens).toBe(BATCH_CONFIG.MAX_TOKENS_CEILING);
     });
 
     it("should return translated texts", async () => {
@@ -203,11 +261,33 @@ describe("OpenRouterClient", () => {
       }
     });
 
+    it("should parse Retry-After seconds on 429", async () => {
+      const mockResponse = {
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: {
+          get: (name: string) => (name === "Retry-After" ? "5" : null),
+        },
+        json: jest.fn().mockResolvedValue({
+          error: { message: "Rate limit exceeded" },
+        }),
+      };
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
+
+      await expect(client.translate(["Hello"], "Japanese")).rejects.toMatchObject({
+        name: "ApiError",
+        isRateLimitError: true,
+        retryAfterMs: 5000,
+      });
+    });
+
     it("should handle rate limit errors", async () => {
       const mockResponse = {
         ok: false,
         status: 429,
         statusText: "Too Many Requests",
+        headers: { get: () => null },
         json: jest.fn().mockResolvedValue({
           error: { message: "Rate limit exceeded" },
         }),

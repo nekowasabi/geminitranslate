@@ -182,6 +182,7 @@ export function reconstructResults(
   originalIndices: number[],
   skippedIndices: Map<number, string>,
   totalLength: number,
+  originalTexts?: string[],
 ): string[] {
   const results: string[] = new Array(totalLength);
 
@@ -207,16 +208,11 @@ export function reconstructResults(
     }
   });
 
-  // Check for undefined values and fill with empty string as fallback
-  const undefinedCount = results.filter((r) => r === undefined).length;
-  if (undefinedCount > 0) {
-    console.error(
-      `[TextFilter] reconstructResults: ${undefinedCount} undefined values detected, filling with empty strings`,
-    );
-    for (let i = 0; i < results.length; i++) {
-      if (results[i] === undefined) {
-        results[i] = "";
-      }
+  // Why: Array.filter skips sparse holes, so walk by index.
+  // Prefer original text over empty string so applyTranslations does not drop nodes.
+  for (let i = 0; i < results.length; i++) {
+    if (results[i] === undefined) {
+      results[i] = originalTexts?.[i] ?? "";
     }
   }
 

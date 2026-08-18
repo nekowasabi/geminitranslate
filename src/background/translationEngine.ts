@@ -26,7 +26,7 @@
  * ```
  */
 
-import { OpenRouterClient, ParseCountMismatchError } from "./apiClient";
+import { ApiError, OpenRouterClient, ParseCountMismatchError } from "./apiClient";
 import { logger } from "../shared/utils/logger";
 import {
   BATCH_CONFIG,
@@ -317,20 +317,23 @@ export class TranslationEngine {
 
     // Store results and update cache in bulk
     // Why: setBulkCachedTranslations — memory update sync, storage write fire-and-forget
-    const cachePairsSemiParallel = uncachedIndices.map((originalIndex, i) => ({
-      text: texts[originalIndex],
-      targetLanguage,
-      translation: translatedTexts[i],
-    }));
+    const cachePairsSemiParallel = uncachedIndices
+      .map((originalIndex, i) => ({
+        text: texts[originalIndex],
+        targetLanguage,
+        translation: translatedTexts[i],
+      }))
+      .filter((pair) => pair.translation && pair.translation !== pair.text);
     for (let i = 0; i < uncachedIndices.length; i++) {
       results[uncachedIndices[i]] = translatedTexts[i];
     }
     this.cache.setBulkCachedTranslations(cachePairsSemiParallel);
 
-    this.assertCompleteResults(
+    const completeResults = this.assertCompleteResults(
       results,
       texts.length,
       "translateBatchSemiParallel",
+      texts,
     );
     this.logRequestDiagnostics(
       "translateBatchSemiParallel",
@@ -339,7 +342,7 @@ export class TranslationEngine {
       batchCount,
       requestBudget,
     );
-    return results;
+    return completeResults;
   }
 
   /**
@@ -468,11 +471,13 @@ export class TranslationEngine {
 
       // Store results and update cache in bulk
       // Why: setBulkCachedTranslations — memory update sync, storage write fire-and-forget
-      const cachePairsBatch = uncachedIndices.map((originalIndex, i) => ({
-        text: texts[originalIndex],
-        targetLanguage,
-        translation: translations[i],
-      }));
+      const cachePairsBatch = uncachedIndices
+        .map((originalIndex, i) => ({
+          text: texts[originalIndex],
+          targetLanguage,
+          translation: translations[i],
+        }))
+        .filter((pair) => pair.translation && pair.translation !== pair.text);
       for (let i = 0; i < uncachedIndices.length; i++) {
         results[uncachedIndices[i]] = translations[i];
       }
@@ -491,7 +496,12 @@ export class TranslationEngine {
       },
     );
 
-    this.assertCompleteResults(results, texts.length, "translateBatch");
+    const completeResults = this.assertCompleteResults(
+      results,
+      texts.length,
+      "translateBatch",
+      texts,
+    );
     this.logRequestDiagnostics(
       "translateBatch",
       texts.length,
@@ -499,7 +509,7 @@ export class TranslationEngine {
       batchCount,
       requestBudget,
     );
-    return results;
+    return completeResults;
   }
 
   /**
@@ -559,27 +569,47 @@ export class TranslationEngine {
           `Count mismatch persists (expected=${error.expectedCount}, actual=${error.actualCount}), ` +
             `falling back to ${shouldUseSplitFallback ? "binary-split" : "single-text"} translation for ${texts.length} texts`,
         );
-        const translations = shouldUseSplitFallback
-          ? await this.translateByBinarySplit(
-              texts,
-              targetLanguage,
-              requestBudget,
-              options,
-              0,
-            )
-          : await this.translateIndividually(
-              texts,
-              targetLanguage,
-              requestBudget,
-              options,
-            );
-        return {
-          translations,
-          fallbackUsed: true,
-        };
+        try {
+          const translations = shouldUseSplitFallback
+            ? await this.translateByBinarySplit(
+                texts,
+                targetLanguage,
+                requestBudget,
+                options,
+                0,
+              )
+            : await this.translateIndividually(
+                texts,
+                targetLanguage,
+                requestBudget,
+                options,
+              );
+          return {
+            translations,
+            fallbackUsed: true,
+          };
+        } catch (fallbackError) {
+          logger.warn(
+            "Batch fallback failed, returning original texts:",
+            fallbackError,
+          );
+          return {
+            translations: [...texts],
+            fallbackUsed: true,
+          };
+        }
       }
 
-      throw error;
+      // Why: throw (fail-fast) would abort remaining batches via Promise.all.
+      // Return originals so other batches can still finish.
+      logger.warn(
+        "Batch translation failed after retries, returning original texts:",
+        error,
+      );
+      return {
+        translations: [...texts],
+        fallbackUsed: true,
+      };
     }
   }
 
@@ -595,17 +625,25 @@ export class TranslationEngine {
 
     for (let i = 0; i < texts.length; i++) {
       const text = texts[i];
-      const translated = await this.executeTranslationWithRetry(
-        () => this._apiClient.translate([text], targetLanguage),
-        1,
-        "Single-text translation",
-        requestBudget,
-      );
-      const translatedText = translated[0];
+      try {
+        const translated = await this.executeTranslationWithRetry(
+          () => this._apiClient.translate([text], targetLanguage),
+          1,
+          "Single-text translation",
+          requestBudget,
+        );
+        const translatedText = translated[0];
 
-      results.push(translatedText);
-      if (options?.onItemTranslated) {
-        options.onItemTranslated(translatedText, i);
+        results.push(translatedText);
+        if (options?.onItemTranslated) {
+          options.onItemTranslated(translatedText, i);
+        }
+      } catch (error) {
+        logger.warn(
+          `Single-text translation failed at index ${i}, keeping original:`,
+          error,
+        );
+        results.push(text);
       }
     }
 
@@ -722,6 +760,17 @@ export class TranslationEngine {
         maxRetries: RETRY_CONFIG.MAX_RETRIES,
         delay: RETRY_CONFIG.INITIAL_DELAY,
         backoff: RETRY_CONFIG.BACKOFF as "exponential" | "linear",
+        maxDelay: RETRY_CONFIG.MAX_DELAY,
+        getDelayOverrideMs: (error) => {
+          if (
+            error instanceof ApiError &&
+            error.isRateLimitError &&
+            typeof error.retryAfterMs === "number"
+          ) {
+            return error.retryAfterMs;
+          }
+          return undefined;
+        },
         // Why: ParseCountMismatchError はリトライ対象外 —
         //      LLMの応答形式の問題はリトライでは改善せず、上位の fallback 処理（translateByBinarySplit 等）に委ねる
         shouldRetry: (error) => !(error instanceof ParseCountMismatchError),
@@ -740,25 +789,36 @@ export class TranslationEngine {
     results: string[],
     expectedLength: number,
     context: string,
-  ): void {
+    originalTexts: string[],
+  ): string[] {
+    // Why: fail-fast throw aborted the whole request after partial BATCH_COMPLETED
+    // applies. Warn and fill originals so the page always completes.
+    const normalized =
+      results.length === expectedLength
+        ? results.slice()
+        : Array.from({ length: expectedLength }, (_, i) => results[i]);
+
     if (results.length !== expectedLength) {
-      throw new Error(
-        `[${context}] Result length mismatch: expected ${expectedLength}, got ${results.length}`,
+      logger.warn(
+        `[${context}] Result length mismatch: expected ${expectedLength}, got ${results.length}. Normalizing with original-text fallback.`,
       );
     }
 
     const missingIndices: number[] = [];
     for (let i = 0; i < expectedLength; i++) {
-      if (typeof results[i] !== "string") {
+      if (typeof normalized[i] !== "string") {
         missingIndices.push(i);
+        normalized[i] = originalTexts[i] ?? "";
       }
     }
 
     if (missingIndices.length > 0) {
-      throw new Error(
-        `[${context}] Incomplete translation results at indices: ${missingIndices.join(", ")}`,
+      logger.warn(
+        `[${context}] Incomplete translation results at indices: ${missingIndices.join(", ")}. Filled with original text.`,
       );
     }
+
+    return normalized;
   }
 
   private createRequestBudgetContext(totalTexts: number): RequestBudgetContext {

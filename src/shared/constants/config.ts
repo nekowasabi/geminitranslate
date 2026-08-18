@@ -19,6 +19,12 @@ export const API_CONFIG = {
   TIMEOUT: 30000,
 
   /**
+   * Timeout for page-translation MessageBus.send calls (milliseconds).
+   * Selection/clipboard keep MessageBus.DEFAULT_TIMEOUT_MS.
+   */
+  TRANSLATION_MESSAGE_TIMEOUT_MS: 120000,
+
+  /**
    * HTTP Referer for OpenRouter API
    */
   REFERER: 'https://github.com/doganaylab/geminitranslate',
@@ -31,19 +37,33 @@ export const BATCH_CONFIG = {
   /**
    * Maximum number of concurrent translation requests
    */
-  CONCURRENCY_LIMIT: 10,
+  CONCURRENCY_LIMIT: 3,
 
   /**
    * Number of text elements per batch
-   * Optimized for 100k token models to reduce API calls
+   * Why: 100 caused truncated / count-mismatched responses and fallback storms
    */
-  BATCH_SIZE: 100,
+  BATCH_SIZE: 20,
 
   /**
    * Maximum text length per batch (characters)
-   * Optimized for 100k token models to reduce API calls
    */
   MAX_BATCH_LENGTH: 50000,
+
+  /**
+   * max_tokens coefficient per input text
+   */
+  MAX_TOKENS_PER_TEXT: 250,
+
+  /**
+   * Lower bound for request max_tokens
+   */
+  MIN_MAX_TOKENS: 2048,
+
+  /**
+   * Upper bound for request max_tokens
+   */
+  MAX_TOKENS_CEILING: 8192,
 
   /**
    * Minimum text length to translate (characters)
@@ -54,7 +74,7 @@ export const BATCH_CONFIG = {
    * Number of priority batches to process sequentially in viewport-priority translation
    *
    * @remarks
-   * - 1: Only first batch (100 texts) sequential, remaining parallel
+   * - 1: Only first batch sequential, remaining parallel
    * - Achieves fastest initial display (100ms target)
    * - Balances UX and performance optimally
    *
@@ -100,7 +120,7 @@ export const RETRY_CONFIG = {
   /**
    * Maximum delay for retry (milliseconds)
    */
-  MAX_DELAY: 10000,
+  MAX_DELAY: 30000,
 
   /**
    * Backoff strategy

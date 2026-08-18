@@ -149,6 +149,52 @@ describe('Retry Utility', () => {
       expect(fn).toHaveBeenCalledTimes(1); // no retries
     });
 
+    it('should honor getDelayOverrideMs instead of exponential backoff', async () => {
+      const fn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('429'))
+        .mockResolvedValue('success');
+
+      const promise = retry(fn, {
+        maxRetries: 1,
+        delay: 100,
+        getDelayOverrideMs: () => 500,
+      });
+
+      await Promise.resolve();
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(499);
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(fn).toHaveBeenCalledTimes(2);
+      await promise;
+    });
+
+    it('should clamp wait time to maxDelay', async () => {
+      const fn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('success');
+
+      const promise = retry(fn, {
+        maxRetries: 1,
+        delay: 1000,
+        maxDelay: 150,
+      });
+
+      await Promise.resolve();
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(149);
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(fn).toHaveBeenCalledTimes(2);
+      await promise;
+    });
+
     it('should handle very short delays', async () => {
       const fn = jest
         .fn()

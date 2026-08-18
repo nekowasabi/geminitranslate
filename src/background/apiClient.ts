@@ -22,7 +22,7 @@
 
 import storageManager from "../shared/storage/StorageManager";
 import { logger } from "../shared/utils/logger";
-import { API_CONFIG } from "../shared/constants/config";
+import { API_CONFIG, BATCH_CONFIG } from "../shared/constants/config";
 import { getLanguageName } from "../shared/constants/languages";
 
 /**
@@ -73,6 +73,7 @@ export class ApiError extends Error {
     message: string,
     public readonly statusCode?: number,
     public readonly isRateLimitError: boolean = false,
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "ApiError";
@@ -230,6 +231,9 @@ export class OpenRouterClient {
     const requestBody: Record<string, unknown> = {
       model: this.config!.model,
       messages: [{ role: "user", content: prompt }],
+      // Why: omitting max_tokens lets the provider default truncate the reply,
+      // which becomes ParseCountMismatchError and a fallback storm.
+      max_tokens: this.calculateMaxTokens(texts.length),
     };
 
     // Add provider if configured
@@ -270,6 +274,9 @@ export class OpenRouterClient {
     if (!response.ok) {
       const error = await response.json();
       const isRateLimit = response.status === 429;
+      const retryAfterMs = isRateLimit
+        ? this.parseRetryAfterMs(response.headers.get("Retry-After"))
+        : undefined;
 
       logger.error(
         `[Background:OpenRouterClient] ${timestamp} - API request failed:`,
@@ -278,6 +285,7 @@ export class OpenRouterClient {
           statusText: response.statusText,
           error,
           isRateLimit,
+          retryAfterMs,
         },
       );
 
@@ -286,6 +294,7 @@ export class OpenRouterClient {
         `API request failed: ${error.error?.message || response.statusText}`,
         response.status,
         isRateLimit,
+        retryAfterMs,
       );
     }
 
@@ -347,6 +356,29 @@ export class OpenRouterClient {
       }
       throw error;
     }
+  }
+
+  private calculateMaxTokens(textCount: number): number {
+    return Math.min(
+      BATCH_CONFIG.MAX_TOKENS_CEILING,
+      Math.max(
+        BATCH_CONFIG.MIN_MAX_TOKENS,
+        textCount * BATCH_CONFIG.MAX_TOKENS_PER_TEXT,
+      ),
+    );
+  }
+
+  private parseRetryAfterMs(headerValue: string | null): number | undefined {
+    if (!headerValue) {
+      return undefined;
+    }
+
+    const seconds = Number(headerValue);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return undefined;
+    }
+
+    return seconds * 1000;
   }
 
   /**
