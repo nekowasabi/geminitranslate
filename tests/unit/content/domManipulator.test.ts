@@ -602,10 +602,10 @@ describe("DOMManipulator", () => {
 
       const textNodes = domManipulator.extractTextNodes();
 
-      expect(textNodes.length).toBe(3);
-      expect(textNodes[0].node.textContent).toBe("First ");
-      expect(textNodes[1].node.textContent).toBe("bold");
-      expect(textNodes[2].node.textContent).toBe(" Last");
+      // Block with inline tags is translated as one unit with placeholders
+      expect(textNodes.length).toBe(1);
+      expect(textNodes[0].node).toBe(p);
+      expect(textNodes[0].text).toBe("First <1>bold</1> Last");
     });
   });
 
