@@ -11,6 +11,8 @@
  * @module utils/textFilter
  */
 
+import { detectLanguage } from "./languageDetector";
+
 /**
  * Result of text filter check
  */
@@ -53,6 +55,46 @@ export interface BatchFilterResult {
 const MIN_TEXT_LENGTH = 2;
 
 /**
+ * Target languages written in a non-Latin script. Only for these can
+ * detectLanguage() (Unicode-range based) tell "already in target" reliably;
+ * for Latin-script targets it falls back to 'en', so we never skip there.
+ */
+const SCRIPT_DETECTABLE_TARGETS = new Set([
+  "ja",
+  "ko",
+  "zh",
+  "ar",
+  "ru",
+  "el",
+  "th",
+  "he",
+]);
+
+/** Minimum share of letters that must be in the target script to skip. */
+const TARGET_SCRIPT_RATIO = 0.6;
+
+/**
+ * Whether text is already (predominantly) written in the target language.
+ * Conservative: only non-Latin-script targets, and the text must be mostly
+ * target-script letters, so mixed text like "Click ここ to start" is still sent.
+ */
+export function isAlreadyInTargetLanguage(
+  text: string,
+  targetLanguage?: string,
+): boolean {
+  if (!targetLanguage || !SCRIPT_DETECTABLE_TARGETS.has(targetLanguage)) {
+    return false;
+  }
+  // Placeholder markup such as <1>…</1> / <2/> carries no language information.
+  const body = text.replace(/<\/?\d+\/?>/g, "");
+  const letters = body.match(/\p{L}/gu);
+  if (!letters || letters.length === 0) return false;
+  if (detectLanguage(body) !== targetLanguage) return false;
+  const nonLatin = letters.filter((ch) => !/\p{Script=Latin}/u.test(ch));
+  return nonLatin.length / letters.length >= TARGET_SCRIPT_RATIO;
+}
+
+/**
  * Check if text should be translated
  *
  * @param text - Text to check
@@ -65,7 +107,10 @@ const MIN_TEXT_LENGTH = 2;
  * shouldTranslateText('https://example.com') // { shouldTranslate: false, reason: 'url_or_email' }
  * ```
  */
-export function shouldTranslateText(text: string): FilterResult {
+export function shouldTranslateText(
+  text: string,
+  targetLanguage?: string,
+): FilterResult {
   const trimmed = text.trim();
 
   // Check for CJK content first - CJK text should always be translated
@@ -124,6 +169,11 @@ export function shouldTranslateText(text: string): FilterResult {
     return { shouldTranslate: false, reason: "code_like" };
   }
 
+  // 7. Already in the target language (saves API calls and avoids rewrites)
+  if (isAlreadyInTargetLanguage(trimmed, targetLanguage)) {
+    return { shouldTranslate: false, reason: "already_target_language" };
+  }
+
   return { shouldTranslate: true };
 }
 
@@ -134,6 +184,7 @@ export function shouldTranslateText(text: string): FilterResult {
  * Skipped texts will be returned as-is in the final results.
  *
  * @param texts - Array of texts to filter
+ * @param targetLanguage - Target language code; texts already in it are skipped
  * @returns BatchFilterResult with separated texts and index mappings
  *
  * @example
@@ -145,13 +196,16 @@ export function shouldTranslateText(text: string): FilterResult {
  * // originalIndices: [0, 2]
  * ```
  */
-export function filterBatchTexts(texts: string[]): BatchFilterResult {
+export function filterBatchTexts(
+  texts: string[],
+  targetLanguage?: string,
+): BatchFilterResult {
   const textsToTranslate: string[] = [];
   const skippedIndices = new Map<number, string>();
   const originalIndices: number[] = [];
 
   texts.forEach((text, index) => {
-    const result = shouldTranslateText(text);
+    const result = shouldTranslateText(text, targetLanguage);
     if (result.shouldTranslate) {
       textsToTranslate.push(text);
       originalIndices.push(index);

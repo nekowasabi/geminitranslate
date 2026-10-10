@@ -10,6 +10,16 @@
 
 import { BATCH_CONFIG, EXCLUSION_SELECTORS } from "@shared/constants";
 import { classifyRect } from "./proximityClassifier";
+import {
+  BlockUnit,
+  applyBlockTranslation,
+  buildBlockUnit,
+  growsTooMuch,
+  isBlockTag,
+  isConstrained,
+  restoreBlock,
+  stripMarkup,
+} from "./blockTranslator";
 
 export interface TextNode {
   node: Node;
@@ -17,7 +27,23 @@ export interface TextNode {
   index: number;
   leadingWhitespace?: string;
   trailingWhitespace?: string;
+  /**
+   * Set when this unit is a whole block element (text + inline tags as
+   * placeholders). `node` is then the block element itself.
+   */
+  block?: BlockUnit;
+  /**
+   * Set when this unit is an attribute value (title/alt/placeholder/aria-label)
+   * or the document title. `node` is then the owning element.
+   */
+  attr?: { element: Element; name: string };
 }
+
+/** Attributes whose human-readable value is translated alongside the body text. */
+const TRANSLATABLE_ATTRIBUTES = ["title", "alt", "placeholder", "aria-label"];
+
+/** Pseudo attribute name used for the document title. */
+const DOCUMENT_TITLE_ATTR = "#document-title";
 
 /**
  * ビューポート内/外のキュー
@@ -57,6 +83,18 @@ export class DOMManipulator {
    */
   private extractedTextsSet: Set<string> = new Set();
 
+  /** Block units whose DOM was rewritten (restored on reset). */
+  private appliedBlocks: Set<BlockUnit> = new Set();
+
+  /** Original attribute values replaced by translations (restored on reset). */
+  private originalAttrs: Map<Element, Map<string, string>> = new Map();
+
+  /** Original `<html lang>` (undefined = untouched, null = attribute was absent). */
+  private originalLang: string | null | undefined = undefined;
+
+  /** Constrained elements left untranslated; maps element → original title. */
+  private titledElements: Map<Element, string | null> = new Map();
+
   constructor() {
     // Use default IGNORED_TAGS or extend from EXCLUSION_SELECTORS if needed
   }
@@ -82,11 +120,28 @@ export class DOMManipulator {
    * @returns Array of TextNode objects with node, text, and index
    */
   extractTextNodes(): TextNode[] {
+    const pendingBlocks = new Map<Element, BlockUnit>();
+    const excludedCache = new WeakMap<Element, boolean>();
     const walker = document.createTreeWalker(
       document.body,
-      NodeFilter.SHOW_TEXT,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: (node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as Element;
+            if (
+              isBlockTag(el) &&
+              !this.IGNORED_TAGS.includes(el.tagName) &&
+              !this.isExcludedElement(el)
+            ) {
+              const unit = buildBlockUnit(el, (e) => this.isExcludedElement(e));
+              if (unit) {
+                pendingBlocks.set(el, unit);
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
           const parent = node.parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
 
@@ -95,12 +150,16 @@ export class DOMManipulator {
             return NodeFilter.FILTER_REJECT;
           }
 
-          // Check if any ancestor matches exclusion selectors
-          if (
-            parent.closest(
-              'svg, [contenteditable="true"], [data-no-translate], .no-translate',
-            )
-          ) {
+          // Check if any ancestor matches exclusion selectors.
+          // Why: sibling text nodes share a parent, so memoize per parent to avoid
+          // repeating closest() for every node (isExcludedElement covers svg,
+          // contenteditable, data-no-translate, translate="no", .notranslate ...).
+          let excluded = excludedCache.get(parent);
+          if (excluded === undefined) {
+            excluded = this.isExcludedElement(parent);
+            excludedCache.set(parent, excluded);
+          }
+          if (excluded) {
             return NodeFilter.FILTER_REJECT;
           }
 
@@ -122,6 +181,20 @@ export class DOMManipulator {
     this.extractedTextsSet.clear();
 
     while ((node = walker.nextNode())) {
+      const unit =
+        node.nodeType === Node.ELEMENT_NODE
+          ? pendingBlocks.get(node as Element)
+          : undefined;
+      if (unit) {
+        textNodes.push({ node, text: unit.markup, index, block: unit });
+        this.extractedTextsSet.add(unit.markup);
+        index++;
+        // Skip the block's subtree: it is translated as one unit.
+        let last: Node = node;
+        while (last.lastChild) last = last.lastChild;
+        walker.currentNode = last;
+        continue;
+      }
       const rawText = node.textContent || "";
       const whitespace = this.extractWhitespaceMetadata(rawText);
 
@@ -139,7 +212,82 @@ export class DOMManipulator {
       index++;
     }
 
+    for (const attrNode of this.extractAttributeNodes(index)) {
+      textNodes.push(attrNode);
+    }
+
     return textNodes;
+  }
+
+  /**
+   * Collect translatable attribute values (title/alt/placeholder/aria-label)
+   * and the document title as translation units.
+   */
+  private extractAttributeNodes(startIndex: number): TextNode[] {
+    const result: TextNode[] = [];
+    let index = startIndex;
+    const add = (element: Element, name: string, value: string): void => {
+      const text = value.trim();
+      if (!text) return;
+      this.saveOriginalAttr(element, name, value);
+      result.push({
+        node: element,
+        text,
+        index: index++,
+        attr: { element, name },
+      });
+    };
+
+    const selector = TRANSLATABLE_ATTRIBUTES.map((a) => `[${a}]`).join(",");
+    document.body.querySelectorAll(selector).forEach((element) => {
+      if (this.isExcludedElement(element)) return;
+      for (const name of TRANSLATABLE_ATTRIBUTES) {
+        const value = element.getAttribute(name);
+        if (value) add(element, name, value);
+      }
+    });
+
+    const titleElement = document.head?.querySelector("title");
+    if (titleElement && document.title.trim()) {
+      add(titleElement, DOCUMENT_TITLE_ATTR, document.title);
+    }
+    return result;
+  }
+
+  private saveOriginalAttr(
+    element: Element,
+    name: string,
+    value: string,
+  ): void {
+    let attrs = this.originalAttrs.get(element);
+    if (!attrs) {
+      attrs = new Map();
+      this.originalAttrs.set(element, attrs);
+    }
+    if (!attrs.has(name)) attrs.set(name, value);
+  }
+
+  private applyAttribute(
+    attr: { element: Element; name: string },
+    value: string,
+  ): void {
+    if (attr.name === DOCUMENT_TITLE_ATTR) {
+      document.title = value;
+    } else {
+      attr.element.setAttribute(attr.name, value);
+    }
+  }
+
+  /**
+   * Set `<html lang>` to the target language so :lang() CSS, hyphenation and
+   * screen readers match the translated text. Restored on reset.
+   */
+  setDocumentLanguage(languageCode: string): void {
+    const root = document.documentElement;
+    if (this.originalLang === undefined) {
+      this.originalLang = root.getAttribute("lang");
+    }
+    root.setAttribute("lang", languageCode);
   }
 
   /**
@@ -150,6 +298,19 @@ export class DOMManipulator {
   applyTranslations(nodes: TextNode[], translations: string[]): void {
     nodes.forEach((textNode, index) => {
       if (translations[index] && translations[index].trim()) {
+        if (textNode.attr) {
+          this.applyAttribute(textNode.attr, translations[index].trim());
+          return;
+        }
+        if (textNode.block) {
+          this.applyBlock(textNode, translations[index].trim());
+          return;
+        }
+        const container = isConstrained(textNode.node.parentElement);
+        if (container && growsTooMuch(textNode.text, translations[index])) {
+          this.keepOriginal(container, translations[index].trim());
+          return;
+        }
         const currentText = textNode.node.textContent || "";
         const whitespace =
           textNode.leadingWhitespace !== undefined ||
@@ -165,10 +326,64 @@ export class DOMManipulator {
     });
   }
 
+  private applyBlock(textNode: TextNode, translation: string): void {
+    const unit = textNode.block!;
+    const container = isConstrained(unit.element);
+    if (
+      container &&
+      growsTooMuch(stripMarkup(unit.markup), stripMarkup(translation))
+    ) {
+      this.keepOriginal(container, stripMarkup(translation));
+      return;
+    }
+    if (applyBlockTranslation(unit, translation)) {
+      this.appliedBlocks.add(unit);
+    }
+  }
+
+  /**
+   * Safeguard: a translation that would overflow a fixed-size container
+   * (button, th, nav, ...) is not applied; it is exposed as a tooltip instead.
+   */
+  private keepOriginal(container: Element, translation: string): void {
+    if (!this.titledElements.has(container)) {
+      // Why: the title may already hold a translated value; keep the true original.
+      this.titledElements.set(
+        container,
+        this.originalAttrs.get(container)?.get("title") ??
+          container.getAttribute("title"),
+      );
+    }
+    container.setAttribute("title", translation);
+  }
+
   /**
    * Reset all text nodes to original content
    */
   reset(): void {
+    this.appliedBlocks.forEach((unit) => restoreBlock(unit));
+    this.appliedBlocks.clear();
+    this.titledElements.forEach((title, el) => {
+      if (title === null) el.removeAttribute("title");
+      else el.setAttribute("title", title);
+    });
+    this.titledElements.clear();
+    this.originalAttrs.forEach((attrs, el) => {
+      attrs.forEach((value, name) => {
+        if (name === DOCUMENT_TITLE_ATTR) document.title = value;
+        else el.setAttribute(name, value);
+      });
+    });
+    this.originalAttrs.clear();
+    if (this.originalLang !== undefined) {
+      if (this.originalLang === null) {
+        document.documentElement.removeAttribute("lang");
+      } else {
+        document.documentElement.setAttribute("lang", this.originalLang);
+      }
+      this.originalLang = undefined;
+    }
+
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -194,6 +409,12 @@ export class DOMManipulator {
   }
 
   createTextNode(node: Node, index: number): TextNode {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const unit = buildBlockUnit(node as Element, (e) =>
+        this.isExcludedElement(e),
+      );
+      if (unit) return { node, text: unit.markup, index, block: unit };
+    }
     const rawText = node.textContent || "";
     const whitespace = this.extractWhitespaceMetadata(rawText);
     this.saveOriginalText(node);

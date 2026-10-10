@@ -20,7 +20,7 @@ import { MessageBus } from "@shared/messages/MessageBus";
 import { MessageType, Message, TranslationPhase } from "@shared/messages/types";
 import { logger } from "@shared/utils";
 import { filterBatchTexts } from "@shared/utils/textFilter";
-import { API_CONFIG } from "@shared/constants";
+import { API_CONFIG, BATCH_CONFIG } from "@shared/constants";
 
 export class ContentScript {
   private domManipulator: DOMManipulator;
@@ -307,8 +307,10 @@ export class ContentScript {
         this.progressNotification.showPhase(1, immediateNodes.length);
 
         const immediateTexts = immediateNodes.map((node) => node.text);
-        const { textsToTranslate, originalIndices } =
-          filterBatchTexts(immediateTexts);
+        const { textsToTranslate, originalIndices } = filterBatchTexts(
+          immediateTexts,
+          targetLanguage,
+        );
 
         if (textsToTranslate.length === 0) {
           logger.log(
@@ -333,7 +335,7 @@ export class ContentScript {
               farIncludedInFirstRequest: true,
               targetLanguage,
               semiParallel: true,
-              priorityCount: 1,
+              priorityCount: BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
               phase: 1,
             },
           );
@@ -347,7 +349,7 @@ export class ContentScript {
                   texts: textsToTranslate,
                   targetLanguage,
                   semiParallel: true,
-                  priorityCount: 1,
+                  priorityCount: BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
                   phase: 1,
                 },
               },
@@ -402,6 +404,7 @@ export class ContentScript {
       }
 
       this.isTranslated = true;
+      this.domManipulator.setDocumentLanguage(targetLanguage);
       if (shouldAnnounceComplete) {
         this.progressNotification.complete();
       }
@@ -504,6 +507,11 @@ export class ContentScript {
   enableDynamicTranslation(targetLanguage: string): void {
     this.mutationObserver.observe((mutations) => {
       const detectedTextNodes = new Set<Node>();
+      // Why: one callback can carry hundreds of records for the same subtree
+      // (class/style animations); memoize visibility and de-duplicate attribute
+      // targets so each subtree is walked once with one getComputedStyle per element.
+      this.visibilityMemo = new WeakMap();
+      const attributeTargets = new Set<Element>();
 
       for (const mutation of mutations) {
         if (mutation.type === "childList") {
@@ -528,13 +536,25 @@ export class ContentScript {
         if (mutation.type === "attributes") {
           const target = mutation.target;
           if (target.nodeType === Node.ELEMENT_NODE) {
-            this.collectTextNodesFromElement(
-              target as Element,
-              detectedTextNodes,
-            );
+            attributeTargets.add(target as Element);
           }
         }
       }
+
+      for (const target of attributeTargets) {
+        // A target inside another changed target is covered by its ancestor's walk.
+        let covered = false;
+        for (let a = target.parentElement; a; a = a.parentElement) {
+          if (attributeTargets.has(a)) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          this.collectTextNodesFromElement(target, detectedTextNodes);
+        }
+      }
+      this.visibilityMemo = null;
 
       if (
         detectedTextNodes.size > 0 &&
@@ -720,7 +740,10 @@ export class ContentScript {
       );
 
       const texts = textNodes.map((n) => n.text);
-      const { textsToTranslate, originalIndices } = filterBatchTexts(texts);
+      const { textsToTranslate, originalIndices } = filterBatchTexts(
+        texts,
+        targetLanguage,
+      );
 
       if (textsToTranslate.length === 0) {
         changedNodes.forEach((node) => this.trackNodeText(node));
@@ -879,7 +902,8 @@ export class ContentScript {
     }
 
     // Why: setTimeout(50ms) instead of queueMicrotask — debounce for SPA high-frequency mutations
-    if (this.dynamicTranslationTimer) clearTimeout(this.dynamicTranslationTimer);
+    if (this.dynamicTranslationTimer)
+      clearTimeout(this.dynamicTranslationTimer);
     this.dynamicTranslationTimer = setTimeout(() => {
       this.dynamicTranslationTimer = null;
 
@@ -951,22 +975,40 @@ export class ContentScript {
     return true;
   }
 
+  /** Per-mutation-callback visibility cache (null outside a callback). */
+  private visibilityMemo: WeakMap<Element, boolean> | null = null;
+
   private isElementVisible(element: Element): boolean {
+    const memo = this.visibilityMemo;
+    const cached = memo?.get(element);
+    if (cached !== undefined) return cached;
+    const visible = this.computeElementVisible(element);
+    memo?.set(element, visible);
+    return visible;
+  }
+
+  private computeElementVisible(element: Element): boolean {
     // Fast path 1: hidden 属性チェック（低コスト）
     if (element.closest('[hidden], [aria-hidden="true"]')) return false;
 
     // Fast path 2: 対象要素自身の display:none を先に確認
     // Why: getComputedStyle を1回だけ呼び、display:none なら即リターン
     const selfStyle = window.getComputedStyle(element);
-    if (selfStyle.display === "none" || selfStyle.visibility === "hidden") return false;
+    if (selfStyle.display === "none" || selfStyle.visibility === "hidden")
+      return false;
 
     // 祖先トラバース（必要な場合のみ）
     let current: Element | null = element.parentElement;
     while (current) {
       // hidden 属性の簡易チェックを先行
-      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden") === "true") return false;
+      if (
+        current.hasAttribute("hidden") ||
+        current.getAttribute("aria-hidden") === "true"
+      )
+        return false;
       const style = window.getComputedStyle(current);
-      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (style.display === "none" || style.visibility === "hidden")
+        return false;
       current = current.parentElement;
     }
 

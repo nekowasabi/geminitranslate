@@ -615,6 +615,28 @@ describe("TranslationEngine", () => {
     });
   });
 
+  describe("translateBatchSemiParallel - duplicate text dedupe", () => {
+    it("sends each unique text once and fans results out to duplicates", async () => {
+      await engine.initialize();
+      const onBatchComplete = jest.fn();
+      mockApiClient.translate.mockResolvedValueOnce(["こんにちは", "さようなら"]);
+
+      const result = await engine.translateBatchSemiParallel(
+        ["Hello", "Bye", "Hello", "Hello"],
+        "Japanese",
+        0,
+        onBatchComplete,
+      );
+
+      expect(mockApiClient.translate).toHaveBeenCalledTimes(1);
+      expect((mockApiClient.translate.mock.calls[0][0] as string[]).length).toBe(2);
+      expect(result).toEqual(["こんにちは", "さようなら", "こんにちは", "こんにちは"]);
+      const [, translations, indices] = onBatchComplete.mock.calls[0];
+      expect(indices).toEqual([0, 2, 3, 1]);
+      expect(translations).toEqual(["こんにちは", "こんにちは", "こんにちは", "さようなら"]);
+    });
+  });
+
   describe("translateBatchSemiParallel - onBatchComplete callback", () => {
     it("should call onBatchComplete for each batch in sequential processing", async () => {
       await engine.initialize();

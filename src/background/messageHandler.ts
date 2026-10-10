@@ -36,6 +36,7 @@
 import { TranslationEngine, CacheLayer } from "./translationEngine";
 import { OpenRouterClient } from "./apiClient";
 import { logger } from "../shared/utils/logger";
+import { BATCH_CONFIG } from "../shared/constants";
 import {
   MessageType,
   BatchCompletedMessage,
@@ -382,7 +383,7 @@ export class MessageHandler {
         ? await this.engine.translateBatchSemiParallel(
             texts,
             targetLanguage,
-            priorityCount ?? 1,
+            priorityCount ?? BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
             onBatchComplete,
           )
         : await this.engine.translateBatch(texts, targetLanguage);

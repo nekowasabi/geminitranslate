@@ -170,7 +170,11 @@ describe("DOMManipulator", () => {
       while (beforeTextNodeCount.nextNode()) beforeTextNodes++;
 
       const textNodes = domManipulator.extractTextNodes();
-      domManipulator.applyTranslations(textNodes, ["こんにちは", "インライン", "世界"]);
+      domManipulator.applyTranslations(textNodes, [
+        "こんにちは",
+        "インライン",
+        "世界",
+      ]);
 
       const afterElementCount = testContainer.querySelectorAll("*").length;
       const afterTextNodeCount = document.createTreeWalker(
@@ -602,10 +606,10 @@ describe("DOMManipulator", () => {
 
       const textNodes = domManipulator.extractTextNodes();
 
-      expect(textNodes.length).toBe(3);
-      expect(textNodes[0].node.textContent).toBe("First ");
-      expect(textNodes[1].node.textContent).toBe("bold");
-      expect(textNodes[2].node.textContent).toBe(" Last");
+      // Block with inline tags is translated as one unit with placeholders
+      expect(textNodes.length).toBe(1);
+      expect(textNodes[0].node).toBe(p);
+      expect(textNodes[0].text).toBe("First <1>bold</1> Last");
     });
   });
 
@@ -1076,6 +1080,101 @@ describe("DOMManipulator", () => {
         expect(viewport[0].text).toBe("Visible text");
         expect(outOfViewport[0].text).toBe("Below fold text");
       });
+    });
+  });
+
+  describe("exclusion by translate=no / .notranslate", () => {
+    it('skips text under translate="no" and .notranslate', () => {
+      testContainer.innerHTML = `
+        <p>Keep me translatable</p>
+        <span translate="no">BrandName</span>
+        <div class="notranslate"><p>Do not touch</p></div>
+      `;
+      const texts = domManipulator.extractTextNodes().map((n) => n.text);
+      expect(texts.some((t) => t.includes("Keep me"))).toBe(true);
+      expect(texts.join("|")).not.toContain("BrandName");
+      expect(texts.join("|")).not.toContain("Do not touch");
+    });
+  });
+
+  describe("attribute, title and lang translation", () => {
+    afterEach(() => {
+      domManipulator.reset();
+      document.title = "";
+    });
+
+    it("extracts and applies title/alt/placeholder/aria-label, then restores them", () => {
+      testContainer.innerHTML = `
+        <input id="q" placeholder="Search here" />
+        <img id="i" alt="A cat" src="x.png" />
+        <button id="b" aria-label="Close dialog" title="Close">x</button>
+      `;
+      const nodes = domManipulator.extractTextNodes();
+      const attrNodes = nodes.filter((n) => n.attr);
+      expect(attrNodes.map((n) => `${n.attr!.name}:${n.text}`).sort()).toEqual(
+        [
+          "alt:A cat",
+          "aria-label:Close dialog",
+          "placeholder:Search here",
+          "title:Close",
+        ].sort(),
+      );
+
+      domManipulator.applyTranslations(
+        attrNodes,
+        attrNodes.map((n) => `JA(${n.text})`),
+      );
+      expect(
+        testContainer.querySelector("#q")!.getAttribute("placeholder"),
+      ).toBe("JA(Search here)");
+      expect(testContainer.querySelector("#i")!.getAttribute("alt")).toBe(
+        "JA(A cat)",
+      );
+
+      domManipulator.reset();
+      expect(
+        testContainer.querySelector("#q")!.getAttribute("placeholder"),
+      ).toBe("Search here");
+      expect(testContainer.querySelector("#i")!.getAttribute("alt")).toBe(
+        "A cat",
+      );
+      expect(testContainer.querySelector("#b")!.getAttribute("title")).toBe(
+        "Close",
+      );
+    });
+
+    it('does not extract attributes under translate="no"', () => {
+      testContainer.innerHTML = `<div translate="no"><img alt="Logo" src="x.png" /></div>`;
+      expect(
+        domManipulator.extractTextNodes().filter((n) => n.attr),
+      ).toHaveLength(0);
+    });
+
+    it("translates and restores document.title", () => {
+      document.title = "Original Title";
+      testContainer.innerHTML = `<p>Body</p>`;
+      const nodes = domManipulator.extractTextNodes();
+      const titleNode = nodes.find((n) => n.text === "Original Title")!;
+      expect(titleNode.attr).toBeDefined();
+
+      domManipulator.applyTranslations([titleNode], ["翻訳タイトル"]);
+      expect(document.title).toBe("翻訳タイトル");
+
+      domManipulator.reset();
+      expect(document.title).toBe("Original Title");
+    });
+
+    it("sets <html lang> and restores it on reset", () => {
+      document.documentElement.setAttribute("lang", "en");
+      domManipulator.setDocumentLanguage("ja");
+      expect(document.documentElement.getAttribute("lang")).toBe("ja");
+      domManipulator.reset();
+      expect(document.documentElement.getAttribute("lang")).toBe("en");
+
+      document.documentElement.removeAttribute("lang");
+      domManipulator.setDocumentLanguage("ja");
+      domManipulator.reset();
+      expect(document.documentElement.hasAttribute("lang")).toBe(false);
     });
   });
 });

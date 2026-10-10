@@ -234,6 +234,34 @@ export class OpenRouterClient {
       // Why: omitting max_tokens lets the provider default truncate the reply,
       // which becomes ParseCountMismatchError and a fallback storm.
       max_tokens: this.calculateMaxTokens(texts.length),
+      // Why: translation needs no deep thinking. Thinking models (e.g. Gemini 2.5)
+      // otherwise spend seconds of latency per batch, and reasoning tokens count
+      // against max_tokens, which can truncate the reply. Providers that do not
+      // support the parameter ignore it.
+      reasoning: { effort: "low" },
+      // Why: constrain the reply to {"translations": string[]} so the model is
+      // less likely to drop/merge items (ParseCountMismatchError -> fallback storm).
+      // Root must be an object for json_schema; unsupported models ignore it.
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "translations",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              translations: {
+                type: "array",
+                items: { type: "string" },
+                minItems: texts.length,
+                maxItems: texts.length,
+              },
+            },
+            required: ["translations"],
+            additionalProperties: false,
+          },
+        },
+      },
     };
 
     // Add provider if configured
@@ -399,7 +427,7 @@ export class OpenRouterClient {
 The texts are provided as a JSON array of strings.
 
 IMPORTANT INSTRUCTIONS:
-- Return ONLY a valid JSON string array
+- Return ONLY a valid JSON object of the form {"translations": [...]} (a bare JSON string array is also accepted)
 - The output array length MUST be exactly ${texts.length}
 - Keep the same order as the input array
 - Each output array item must contain only the translated text for the corresponding input item
@@ -409,6 +437,7 @@ IMPORTANT INSTRUCTIONS:
 - Preserve ALL information, sentences, and paragraphs
 - Maintain the original length and detail level
 - Each text is independent - translate them separately
+- Numbered tags such as <1>...</1> and <2/> are layout placeholders: keep every tag exactly as is (same numbers, each used once, properly nested), translate only the text between them, and never translate, add or drop tags
 - Legacy fallback only: texts are separated by "${this.TEXT_SEPARATOR}" if JSON parsing is unavailable
 
 Input JSON:
@@ -439,8 +468,8 @@ ${inputJson}`;
     /\s*\|[前後]へ\|/g,
     /\s*\|親\s*\|/g,
     /\s*\|root\|/gi,
-    /親\s*\|/g, // Orphaned pipe suffix
-    /\s*\|[^|]{1,10}\|\s*$/g, // Generic pipe-separated suffix like |親 | at end
+    // Why: generic pipe patterns (e.g. /\|[^|]{1,10}\|$/) were removed; they cut
+    // valid text such as table cells or "A | B |" at the end of a translation.
   ];
 
   /**
@@ -539,7 +568,15 @@ ${inputJson}`;
 
     for (const candidate of candidates) {
       try {
-        const parsed = JSON.parse(candidate);
+        let parsed = JSON.parse(candidate);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          Array.isArray((parsed as { translations?: unknown }).translations)
+        ) {
+          parsed = (parsed as { translations: unknown[] }).translations;
+        }
         if (
           Array.isArray(parsed) &&
           parsed.every((item) => typeof item === "string")
@@ -568,6 +605,12 @@ ${inputJson}`;
     const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (fencedJson?.[1]) {
       candidates.push(fencedJson[1].trim());
+    }
+
+    const objStart = trimmed.indexOf("{");
+    const objEnd = trimmed.lastIndexOf("}");
+    if (objStart !== -1 && objEnd > objStart) {
+      candidates.push(trimmed.slice(objStart, objEnd + 1));
     }
 
     const arrayText = this.extractBalancedJsonArray(trimmed);
@@ -631,16 +674,15 @@ ${inputJson}`;
    * @returns Array of translations
    */
   private parseResponse(content: string, expectedCount: number): string[] {
-    // Step 1: Remove any prompt artifacts from response
-    const cleanedContent = this.removePromptArtifacts(content);
-
-    const jsonTranslations = this.parseJsonArrayResponse(
-      cleanedContent,
-      expectedCount,
-    );
+    // Step 0: structured/JSON replies are parsed untouched; regex cleanup could
+    // corrupt valid translated strings inside the JSON.
+    const jsonTranslations = this.parseJsonArrayResponse(content, expectedCount);
     if (jsonTranslations) {
       return jsonTranslations;
     }
+
+    // Step 1: legacy path only - remove prompt artifacts from response
+    const cleanedContent = this.removePromptArtifacts(content);
 
     // Why: expectedCount===1 ではセパレータ分割不要。
     // LLMが翻訳文中にセパレータを含めることがあり、分割すると expected=1/got=2 の

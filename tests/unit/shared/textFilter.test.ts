@@ -6,6 +6,7 @@ import {
   shouldTranslateText,
   filterBatchTexts,
   reconstructResults,
+  isAlreadyInTargetLanguage,
 } from "../../../src/shared/utils/textFilter";
 
 describe("textFilter", () => {
@@ -238,15 +239,58 @@ describe("textFilter", () => {
     });
 
     it("should fill missing translations with original texts", () => {
-      const results = reconstructResults(
-        ["こんにちは"],
-        [0],
-        new Map(),
-        2,
-        ["Hello", "World"],
-      );
+      const results = reconstructResults(["こんにちは"], [0], new Map(), 2, [
+        "Hello",
+        "World",
+      ]);
 
       expect(results).toEqual(["こんにちは", "World"]);
+    });
+  });
+
+  describe("already in target language", () => {
+    it("skips Japanese text when the target is ja", () => {
+      expect(shouldTranslateText("これは日本語の文章です。", "ja")).toEqual({
+        shouldTranslate: false,
+        reason: "already_target_language",
+      });
+    });
+
+    it("does not skip English text when the target is ja", () => {
+      expect(
+        shouldTranslateText("This is an English sentence.", "ja")
+          .shouldTranslate,
+      ).toBe(true);
+    });
+
+    it("does not skip mixed text that is mostly Latin", () => {
+      expect(
+        isAlreadyInTargetLanguage("Click ここ to start the process now", "ja"),
+      ).toBe(false);
+    });
+
+    it("ignores placeholder markup when judging the language", () => {
+      expect(
+        isAlreadyInTargetLanguage("<1>これは</1>日本語です<2/>", "ja"),
+      ).toBe(true);
+    });
+
+    it("never skips for Latin-script targets or without a target", () => {
+      expect(isAlreadyInTargetLanguage("Hello there, friend", "en")).toBe(
+        false,
+      );
+      expect(isAlreadyInTargetLanguage("これは日本語です", undefined)).toBe(
+        false,
+      );
+    });
+
+    it("filterBatchTexts forwards the target language", () => {
+      const result = filterBatchTexts(
+        ["Hello world", "こんにちは世界です"],
+        "ja",
+      );
+      expect(result.textsToTranslate).toEqual(["Hello world"]);
+      expect(result.skippedIndices.get(1)).toBe("こんにちは世界です");
     });
   });
 });

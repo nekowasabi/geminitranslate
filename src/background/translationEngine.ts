@@ -185,6 +185,10 @@ export class TranslationEngine {
 
     const results: string[] = new Array(texts.length);
     const uncachedIndices: number[] = [];
+    // Why: identical texts (nav labels, "Read more", ...) cost one API slot, not N.
+    // Maps the first-occurrence index to the later indices sharing its text.
+    const duplicateIndices = new Map<number, number[]>();
+    const firstIndexByText = new Map<string, number>();
 
     const requestBudget = this.createRequestBudgetContext(texts.length);
     let batchCount = 0;
@@ -196,9 +200,28 @@ export class TranslationEngine {
         results[i] = cachedResults[i]!;
         this.cache.recordHit();
       } else {
+        const first = firstIndexByText.get(texts[i]);
+        if (first !== undefined) {
+          duplicateIndices.get(first)!.push(i);
+          continue;
+        }
+        firstIndexByText.set(texts[i], i);
+        duplicateIndices.set(i, []);
         uncachedIndices.push(i);
         this.cache.recordMiss();
       }
+    }
+    const expandIndices = (indices: number[]): number[] =>
+      indices.flatMap((idx) => [idx, ...(duplicateIndices.get(idx) ?? [])]);
+    const rawOnBatchComplete = onBatchComplete;
+    if (rawOnBatchComplete) {
+      onBatchComplete = (batchIndex, translations, nodeIndices) => {
+        const expanded = expandIndices(nodeIndices);
+        const expandedTranslations = nodeIndices.flatMap((idx, k) =>
+          [translations[k], ...(duplicateIndices.get(idx) ?? []).map(() => translations[k])],
+        );
+        rawOnBatchComplete(batchIndex, expandedTranslations, expanded);
+      };
     }
 
     if (uncachedIndices.length === 0) {
@@ -345,6 +368,9 @@ export class TranslationEngine {
       .filter((pair) => pair.translation && pair.translation !== pair.text);
     for (let i = 0; i < uncachedIndices.length; i++) {
       results[uncachedIndices[i]] = translatedTexts[i];
+      for (const dup of duplicateIndices.get(uncachedIndices[i]) ?? []) {
+        results[dup] = translatedTexts[i];
+      }
     }
     this.cache.setBulkCachedTranslations(cachePairsSemiParallel);
 

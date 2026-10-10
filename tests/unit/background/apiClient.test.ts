@@ -275,7 +275,9 @@ describe("OpenRouterClient", () => {
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
 
-      await expect(client.translate(["Hello"], "Japanese")).rejects.toMatchObject({
+      await expect(
+        client.translate(["Hello"], "Japanese"),
+      ).rejects.toMatchObject({
         name: "ApiError",
         isRateLimitError: true,
         retryAfterMs: 5000,
@@ -824,7 +826,8 @@ describe("OpenRouterClient", () => {
             {
               message: {
                 // LLM inserts ---NEXT-TEXT--- inside a single translation
-                content: "これは最初の部分です---NEXT-TEXT---これは2番目の部分です",
+                content:
+                  "これは最初の部分です---NEXT-TEXT---これは2番目の部分です",
               },
             },
           ],
@@ -851,7 +854,8 @@ describe("OpenRouterClient", () => {
             {
               message: {
                 // expected=2, but LLM returns 3 parts
-                content: "翻訳A---NEXT-TEXT---翻訳B前半---NEXT-TEXT---翻訳B後半",
+                content:
+                  "翻訳A---NEXT-TEXT---翻訳B前半---NEXT-TEXT---翻訳B後半",
               },
             },
           ],
@@ -911,6 +915,62 @@ describe("OpenRouterClient", () => {
       // Pipe-separated navigation should be cleaned
       expect(result[0]).not.toContain("|前へ|");
       expect(result[0]).not.toContain("|親 |");
+    });
+  });
+
+  describe("structured output", () => {
+    const respond = (content: string) =>
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content } }],
+        }),
+      });
+
+    it("sends a json_schema response_format sized to the input", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["a", "b"] }));
+
+      await client.translate(["x", "y"], "Japanese");
+
+      const body = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(body.response_format.type).toBe("json_schema");
+      const schema = body.response_format.json_schema.schema;
+      expect(schema.properties.translations.minItems).toBe(2);
+      expect(schema.properties.translations.maxItems).toBe(2);
+    });
+
+    it("requests low reasoning effort to avoid thinking latency", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["a"] }));
+
+      await client.translate(["x"], "Japanese");
+
+      const body = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(body.reasoning).toEqual({ effort: "low" });
+    });
+
+    it("parses the {translations: []} object form", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["こんにちは", "さようなら"] }));
+
+      await expect(
+        client.translate(["Hello", "Goodbye"], "Japanese"),
+      ).resolves.toEqual(["こんにちは", "さようなら"]);
+    });
+
+    it("does not strip pipe text from valid JSON translations", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["A | B |", "親 | 子"] }));
+
+      await expect(client.translate(["a", "b"], "Japanese")).resolves.toEqual([
+        "A | B |",
+        "親 | 子",
+      ]);
     });
   });
 
