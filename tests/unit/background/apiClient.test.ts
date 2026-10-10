@@ -914,6 +914,50 @@ describe("OpenRouterClient", () => {
     });
   });
 
+  describe("structured output", () => {
+    const respond = (content: string) =>
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          choices: [{ message: { content } }],
+        }),
+      });
+
+    it("sends a json_schema response_format sized to the input", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["a", "b"] }));
+
+      await client.translate(["x", "y"], "Japanese");
+
+      const body = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(body.response_format.type).toBe("json_schema");
+      const schema = body.response_format.json_schema.schema;
+      expect(schema.properties.translations.minItems).toBe(2);
+      expect(schema.properties.translations.maxItems).toBe(2);
+    });
+
+    it("parses the {translations: []} object form", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["こんにちは", "さようなら"] }));
+
+      await expect(
+        client.translate(["Hello", "Goodbye"], "Japanese"),
+      ).resolves.toEqual(["こんにちは", "さようなら"]);
+    });
+
+    it("does not strip pipe text from valid JSON translations", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["A | B |", "親 | 子"] }));
+
+      await expect(client.translate(["a", "b"], "Japanese")).resolves.toEqual([
+        "A | B |",
+        "親 | 子",
+      ]);
+    });
+  });
+
   describe("testConnection", () => {
     it("should return success when connection is valid", async () => {
       await client.initialize();
