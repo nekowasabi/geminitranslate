@@ -20,7 +20,7 @@ import { MessageBus } from "@shared/messages/MessageBus";
 import { MessageType, Message, TranslationPhase } from "@shared/messages/types";
 import { logger } from "@shared/utils";
 import { filterBatchTexts } from "@shared/utils/textFilter";
-import { API_CONFIG } from "@shared/constants";
+import { API_CONFIG, BATCH_CONFIG } from "@shared/constants";
 
 export class ContentScript {
   private domManipulator: DOMManipulator;
@@ -333,7 +333,7 @@ export class ContentScript {
               farIncludedInFirstRequest: true,
               targetLanguage,
               semiParallel: true,
-              priorityCount: 1,
+              priorityCount: BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
               phase: 1,
             },
           );
@@ -347,7 +347,7 @@ export class ContentScript {
                   texts: textsToTranslate,
                   targetLanguage,
                   semiParallel: true,
-                  priorityCount: 1,
+                  priorityCount: BATCH_CONFIG.VIEWPORT_PRIORITY_BATCHES,
                   phase: 1,
                 },
               },

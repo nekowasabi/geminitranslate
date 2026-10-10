@@ -40,7 +40,7 @@ export const BATCH_CONFIG = {
   /**
    * Maximum number of concurrent translation requests
    */
-  CONCURRENCY_LIMIT: 3,
+  CONCURRENCY_LIMIT: 6,
 
   /**
    * Number of text elements per batch
@@ -83,7 +83,7 @@ export const BATCH_CONFIG = {
    *
    * Changed from 3 → 1 for progressive rendering improvement
    */
-  VIEWPORT_PRIORITY_BATCHES: 1,
+  VIEWPORT_PRIORITY_BATCHES: 0,
 
   /**
    * Screens above/below the viewport treated as "near" (enqueued with the first job).
