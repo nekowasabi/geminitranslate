@@ -234,6 +234,11 @@ export class OpenRouterClient {
       // Why: omitting max_tokens lets the provider default truncate the reply,
       // which becomes ParseCountMismatchError and a fallback storm.
       max_tokens: this.calculateMaxTokens(texts.length),
+      // Why: translation needs no deep thinking. Thinking models (e.g. Gemini 2.5)
+      // otherwise spend seconds of latency per batch, and reasoning tokens count
+      // against max_tokens, which can truncate the reply. Providers that do not
+      // support the parameter ignore it.
+      reasoning: { effort: "low" },
       // Why: constrain the reply to {"translations": string[]} so the model is
       // less likely to drop/merge items (ParseCountMismatchError -> fallback storm).
       // Root must be an object for json_schema; unsupported models ignore it.

@@ -218,6 +218,9 @@ export const EXCLUSION_SELECTORS = [
   '[contenteditable="true"]',
   '[data-no-translate]',
   '.no-translate',
+  // Why: W3C standard `translate="no"` and the Google Translate convention `.notranslate`
+  '[translate="no"]',
+  '.notranslate',
 ] as const;
 
 /**

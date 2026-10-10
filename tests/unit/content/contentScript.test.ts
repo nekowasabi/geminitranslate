@@ -611,16 +611,18 @@ describe("ContentScript", () => {
 
     it("submits viewport-first remainder in one job without a second phase RPC", async () => {
       let sendsWhileFirstInFlight = 0;
-      mockSend.mockImplementation(async (message: { payload: { texts: string[] } }) => {
-        sendsWhileFirstInFlight = mockSend.mock.calls.length;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        return {
-          success: true,
-          data: {
-            translations: message.payload.texts.map((text) => `tr-${text}`),
-          },
-        };
-      });
+      mockSend.mockImplementation(
+        async (message: { payload: { texts: string[] } }) => {
+          sendsWhileFirstInFlight = mockSend.mock.calls.length;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return {
+            success: true,
+            data: {
+              translations: message.payload.texts.map((text) => `tr-${text}`),
+            },
+          };
+        },
+      );
 
       contentScript.initialize();
 
@@ -1467,7 +1469,11 @@ describe("ContentScript", () => {
         );
 
         expect(mockApplyTranslations).toHaveBeenCalledWith([], []);
-        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(1, 0, 1);
+        expect(mockProgressNotification.updatePhase).toHaveBeenCalledWith(
+          1,
+          0,
+          1,
+        );
       });
 
       it("should handle errors in applyTranslations gracefully", async () => {
@@ -1618,11 +1624,9 @@ describe("ContentScript", () => {
         // After filtering: textsToTranslate = ["Hello", "World", "Test"]
         // originalIndices = [0, 2, 4]
         // currentTranslationNodes should be [node0, node2, node4]
-        (contentScript as any).phaseNodes = new Map([[1, [
-          allViewportNodes[0],
-          allViewportNodes[2],
-          allViewportNodes[4],
-        ]]]);
+        (contentScript as any).phaseNodes = new Map([
+          [1, [allViewportNodes[0], allViewportNodes[2], allViewportNodes[4]]],
+        ]);
 
         const messageHandler = mockListen.mock.calls[0][0];
         const sendResponse = jest.fn();
@@ -1785,7 +1789,10 @@ describe("ContentScript", () => {
         );
 
         // Should apply to phase1Node, NOT phase2Node
-        expect(mockApply).toHaveBeenCalledWith([phase1Node], ["フェーズ1テキスト"]);
+        expect(mockApply).toHaveBeenCalledWith(
+          [phase1Node],
+          ["フェーズ1テキスト"],
+        );
         // phase2Node should NOT be in the apply call
         const applyCalls = mockApply.mock.calls;
         const phase2NodeApplied = applyCalls.some((call) =>
@@ -1838,7 +1845,10 @@ describe("ContentScript", () => {
         );
 
         // Should apply to phase2Node, NOT phase1Node
-        expect(mockApply).toHaveBeenCalledWith([phase2Node], ["フェーズ2テキスト"]);
+        expect(mockApply).toHaveBeenCalledWith(
+          [phase2Node],
+          ["フェーズ2テキスト"],
+        );
         const applyCalls = mockApply.mock.calls;
         const phase1NodeApplied = applyCalls.some((call) =>
           call[0].includes(phase1Node),
@@ -2230,13 +2240,10 @@ describe("ContentScript", () => {
         sendResponse,
       );
 
-      expect(mockFilterBatchTexts).toHaveBeenCalledWith([
-        "Hello World",
-        "123",
-        "Goodbye",
-        "Footer text",
-        "https://example.com",
-      ]);
+      expect(mockFilterBatchTexts).toHaveBeenCalledWith(
+        ["Hello World", "123", "Goodbye", "Footer text", "https://example.com"],
+        "ja",
+      );
     });
 
     it("should send only filtered texts to background in Phase 1", async () => {
@@ -2356,13 +2363,10 @@ describe("ContentScript", () => {
       );
 
       expect(mockFilterBatchTexts).toHaveBeenCalledTimes(1);
-      expect(mockFilterBatchTexts).toHaveBeenCalledWith([
-        "Hello World",
-        "123",
-        "Goodbye",
-        "Footer text",
-        "https://example.com",
-      ]);
+      expect(mockFilterBatchTexts).toHaveBeenCalledWith(
+        ["Hello World", "123", "Goodbye", "Footer text", "https://example.com"],
+        "ja",
+      );
     });
 
     it("should send only filtered immediate texts in the unified job", async () => {
@@ -2574,10 +2578,12 @@ describe("ContentScript", () => {
       }));
 
       let completeDuringSend = false;
-      let resolveSend: ((value: {
-        success: boolean;
-        data: { translations: string[] };
-      }) => void) | undefined;
+      let resolveSend:
+        | ((value: {
+            success: boolean;
+            data: { translations: string[] };
+          }) => void)
+        | undefined;
       mockSend.mockImplementation(
         () =>
           new Promise((resolve) => {

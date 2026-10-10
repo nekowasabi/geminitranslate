@@ -32,7 +32,18 @@ export interface TextNode {
    * placeholders). `node` is then the block element itself.
    */
   block?: BlockUnit;
+  /**
+   * Set when this unit is an attribute value (title/alt/placeholder/aria-label)
+   * or the document title. `node` is then the owning element.
+   */
+  attr?: { element: Element; name: string };
 }
+
+/** Attributes whose human-readable value is translated alongside the body text. */
+const TRANSLATABLE_ATTRIBUTES = ["title", "alt", "placeholder", "aria-label"];
+
+/** Pseudo attribute name used for the document title. */
+const DOCUMENT_TITLE_ATTR = "#document-title";
 
 /**
  * ビューポート内/外のキュー
@@ -75,6 +86,12 @@ export class DOMManipulator {
   /** Block units whose DOM was rewritten (restored on reset). */
   private appliedBlocks: Set<BlockUnit> = new Set();
 
+  /** Original attribute values replaced by translations (restored on reset). */
+  private originalAttrs: Map<Element, Map<string, string>> = new Map();
+
+  /** Original `<html lang>` (undefined = untouched, null = attribute was absent). */
+  private originalLang: string | null | undefined = undefined;
+
   /** Constrained elements left untranslated; maps element → original title. */
   private titledElements: Map<Element, string | null> = new Map();
 
@@ -104,6 +121,7 @@ export class DOMManipulator {
    */
   extractTextNodes(): TextNode[] {
     const pendingBlocks = new Map<Element, BlockUnit>();
+    const excludedCache = new WeakMap<Element, boolean>();
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
@@ -114,10 +132,7 @@ export class DOMManipulator {
             if (
               isBlockTag(el) &&
               !this.IGNORED_TAGS.includes(el.tagName) &&
-              !this.isExcludedElement(el) &&
-              !el.closest(
-                'svg, [contenteditable="true"], [data-no-translate], .no-translate',
-              )
+              !this.isExcludedElement(el)
             ) {
               const unit = buildBlockUnit(el, (e) => this.isExcludedElement(e));
               if (unit) {
@@ -135,12 +150,16 @@ export class DOMManipulator {
             return NodeFilter.FILTER_REJECT;
           }
 
-          // Check if any ancestor matches exclusion selectors
-          if (
-            parent.closest(
-              'svg, [contenteditable="true"], [data-no-translate], .no-translate',
-            )
-          ) {
+          // Check if any ancestor matches exclusion selectors.
+          // Why: sibling text nodes share a parent, so memoize per parent to avoid
+          // repeating closest() for every node (isExcludedElement covers svg,
+          // contenteditable, data-no-translate, translate="no", .notranslate ...).
+          let excluded = excludedCache.get(parent);
+          if (excluded === undefined) {
+            excluded = this.isExcludedElement(parent);
+            excludedCache.set(parent, excluded);
+          }
+          if (excluded) {
             return NodeFilter.FILTER_REJECT;
           }
 
@@ -193,7 +212,82 @@ export class DOMManipulator {
       index++;
     }
 
+    for (const attrNode of this.extractAttributeNodes(index)) {
+      textNodes.push(attrNode);
+    }
+
     return textNodes;
+  }
+
+  /**
+   * Collect translatable attribute values (title/alt/placeholder/aria-label)
+   * and the document title as translation units.
+   */
+  private extractAttributeNodes(startIndex: number): TextNode[] {
+    const result: TextNode[] = [];
+    let index = startIndex;
+    const add = (element: Element, name: string, value: string): void => {
+      const text = value.trim();
+      if (!text) return;
+      this.saveOriginalAttr(element, name, value);
+      result.push({
+        node: element,
+        text,
+        index: index++,
+        attr: { element, name },
+      });
+    };
+
+    const selector = TRANSLATABLE_ATTRIBUTES.map((a) => `[${a}]`).join(",");
+    document.body.querySelectorAll(selector).forEach((element) => {
+      if (this.isExcludedElement(element)) return;
+      for (const name of TRANSLATABLE_ATTRIBUTES) {
+        const value = element.getAttribute(name);
+        if (value) add(element, name, value);
+      }
+    });
+
+    const titleElement = document.head?.querySelector("title");
+    if (titleElement && document.title.trim()) {
+      add(titleElement, DOCUMENT_TITLE_ATTR, document.title);
+    }
+    return result;
+  }
+
+  private saveOriginalAttr(
+    element: Element,
+    name: string,
+    value: string,
+  ): void {
+    let attrs = this.originalAttrs.get(element);
+    if (!attrs) {
+      attrs = new Map();
+      this.originalAttrs.set(element, attrs);
+    }
+    if (!attrs.has(name)) attrs.set(name, value);
+  }
+
+  private applyAttribute(
+    attr: { element: Element; name: string },
+    value: string,
+  ): void {
+    if (attr.name === DOCUMENT_TITLE_ATTR) {
+      document.title = value;
+    } else {
+      attr.element.setAttribute(attr.name, value);
+    }
+  }
+
+  /**
+   * Set `<html lang>` to the target language so :lang() CSS, hyphenation and
+   * screen readers match the translated text. Restored on reset.
+   */
+  setDocumentLanguage(languageCode: string): void {
+    const root = document.documentElement;
+    if (this.originalLang === undefined) {
+      this.originalLang = root.getAttribute("lang");
+    }
+    root.setAttribute("lang", languageCode);
   }
 
   /**
@@ -204,6 +298,10 @@ export class DOMManipulator {
   applyTranslations(nodes: TextNode[], translations: string[]): void {
     nodes.forEach((textNode, index) => {
       if (translations[index] && translations[index].trim()) {
+        if (textNode.attr) {
+          this.applyAttribute(textNode.attr, translations[index].trim());
+          return;
+        }
         if (textNode.block) {
           this.applyBlock(textNode, translations[index].trim());
           return;
@@ -249,7 +347,12 @@ export class DOMManipulator {
    */
   private keepOriginal(container: Element, translation: string): void {
     if (!this.titledElements.has(container)) {
-      this.titledElements.set(container, container.getAttribute("title"));
+      // Why: the title may already hold a translated value; keep the true original.
+      this.titledElements.set(
+        container,
+        this.originalAttrs.get(container)?.get("title") ??
+          container.getAttribute("title"),
+      );
     }
     container.setAttribute("title", translation);
   }
@@ -265,6 +368,21 @@ export class DOMManipulator {
       else el.setAttribute("title", title);
     });
     this.titledElements.clear();
+    this.originalAttrs.forEach((attrs, el) => {
+      attrs.forEach((value, name) => {
+        if (name === DOCUMENT_TITLE_ATTR) document.title = value;
+        else el.setAttribute(name, value);
+      });
+    });
+    this.originalAttrs.clear();
+    if (this.originalLang !== undefined) {
+      if (this.originalLang === null) {
+        document.documentElement.removeAttribute("lang");
+      } else {
+        document.documentElement.setAttribute("lang", this.originalLang);
+      }
+      this.originalLang = undefined;
+    }
 
     const walker = document.createTreeWalker(
       document.body,

@@ -275,7 +275,9 @@ describe("OpenRouterClient", () => {
       };
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse);
 
-      await expect(client.translate(["Hello"], "Japanese")).rejects.toMatchObject({
+      await expect(
+        client.translate(["Hello"], "Japanese"),
+      ).rejects.toMatchObject({
         name: "ApiError",
         isRateLimitError: true,
         retryAfterMs: 5000,
@@ -824,7 +826,8 @@ describe("OpenRouterClient", () => {
             {
               message: {
                 // LLM inserts ---NEXT-TEXT--- inside a single translation
-                content: "これは最初の部分です---NEXT-TEXT---これは2番目の部分です",
+                content:
+                  "これは最初の部分です---NEXT-TEXT---これは2番目の部分です",
               },
             },
           ],
@@ -851,7 +854,8 @@ describe("OpenRouterClient", () => {
             {
               message: {
                 // expected=2, but LLM returns 3 parts
-                content: "翻訳A---NEXT-TEXT---翻訳B前半---NEXT-TEXT---翻訳B後半",
+                content:
+                  "翻訳A---NEXT-TEXT---翻訳B前半---NEXT-TEXT---翻訳B後半",
               },
             },
           ],
@@ -936,6 +940,18 @@ describe("OpenRouterClient", () => {
       const schema = body.response_format.json_schema.schema;
       expect(schema.properties.translations.minItems).toBe(2);
       expect(schema.properties.translations.maxItems).toBe(2);
+    });
+
+    it("requests low reasoning effort to avoid thinking latency", async () => {
+      await client.initialize();
+      respond(JSON.stringify({ translations: ["a"] }));
+
+      await client.translate(["x"], "Japanese");
+
+      const body = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body,
+      );
+      expect(body.reasoning).toEqual({ effort: "low" });
     });
 
     it("parses the {translations: []} object form", async () => {
