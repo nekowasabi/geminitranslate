@@ -1,12 +1,12 @@
 {
   "name": "doganaylab-api-translate",
   "private": true,
-  "version": "3.1.1",
+  "version": "3.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:ext": "web-ext build --overwrite-dest",
+    "build:ext": "npm run build:firefox && web-ext build --overwrite-dest",
     "build:ext:firefox": "web-ext build --source-dir=dist-firefox --overwrite-dest",
     "build:ext:chrome": "node -e \"const {version} = require('./package.json'); const {execSync} = require('child_process'); execSync('cd dist-chrome && zip -r ../web-ext-artifacts/chrome-v' + version + '.zip .', {stdio: 'inherit'});\"",
     "build:chrome-old": "bash build-chrome.sh",
