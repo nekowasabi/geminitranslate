@@ -409,6 +409,7 @@ IMPORTANT INSTRUCTIONS:
 - Preserve ALL information, sentences, and paragraphs
 - Maintain the original length and detail level
 - Each text is independent - translate them separately
+- Numbered tags such as <1>...</1> and <2/> are layout placeholders: keep every tag exactly as is (same numbers, each used once, properly nested), translate only the text between them, and never translate, add or drop tags
 - Legacy fallback only: texts are separated by "${this.TEXT_SEPARATOR}" if JSON parsing is unavailable
 
 Input JSON:

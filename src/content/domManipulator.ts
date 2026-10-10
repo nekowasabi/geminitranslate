@@ -10,6 +10,16 @@
 
 import { BATCH_CONFIG, EXCLUSION_SELECTORS } from "@shared/constants";
 import { classifyRect } from "./proximityClassifier";
+import {
+  BlockUnit,
+  applyBlockTranslation,
+  buildBlockUnit,
+  growsTooMuch,
+  isBlockTag,
+  isConstrained,
+  restoreBlock,
+  stripMarkup,
+} from "./blockTranslator";
 
 export interface TextNode {
   node: Node;
@@ -17,6 +27,11 @@ export interface TextNode {
   index: number;
   leadingWhitespace?: string;
   trailingWhitespace?: string;
+  /**
+   * Set when this unit is a whole block element (text + inline tags as
+   * placeholders). `node` is then the block element itself.
+   */
+  block?: BlockUnit;
 }
 
 /**
@@ -57,6 +72,12 @@ export class DOMManipulator {
    */
   private extractedTextsSet: Set<string> = new Set();
 
+  /** Block units whose DOM was rewritten (restored on reset). */
+  private appliedBlocks: Set<BlockUnit> = new Set();
+
+  /** Constrained elements left untranslated; maps element → original title. */
+  private titledElements: Map<Element, string | null> = new Map();
+
   constructor() {
     // Use default IGNORED_TAGS or extend from EXCLUSION_SELECTORS if needed
   }
@@ -82,11 +103,30 @@ export class DOMManipulator {
    * @returns Array of TextNode objects with node, text, and index
    */
   extractTextNodes(): TextNode[] {
+    const pendingBlocks = new Map<Element, BlockUnit>();
     const walker = document.createTreeWalker(
       document.body,
-      NodeFilter.SHOW_TEXT,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
       {
         acceptNode: (node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as Element;
+            if (
+              isBlockTag(el) &&
+              !this.IGNORED_TAGS.includes(el.tagName) &&
+              !this.isExcludedElement(el) &&
+              !el.closest(
+                'svg, [contenteditable="true"], [data-no-translate], .no-translate',
+              )
+            ) {
+              const unit = buildBlockUnit(el, (e) => this.isExcludedElement(e));
+              if (unit) {
+                pendingBlocks.set(el, unit);
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            }
+            return NodeFilter.FILTER_SKIP;
+          }
           const parent = node.parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
 
@@ -122,6 +162,20 @@ export class DOMManipulator {
     this.extractedTextsSet.clear();
 
     while ((node = walker.nextNode())) {
+      const unit =
+        node.nodeType === Node.ELEMENT_NODE
+          ? pendingBlocks.get(node as Element)
+          : undefined;
+      if (unit) {
+        textNodes.push({ node, text: unit.markup, index, block: unit });
+        this.extractedTextsSet.add(unit.markup);
+        index++;
+        // Skip the block's subtree: it is translated as one unit.
+        let last: Node = node;
+        while (last.lastChild) last = last.lastChild;
+        walker.currentNode = last;
+        continue;
+      }
       const rawText = node.textContent || "";
       const whitespace = this.extractWhitespaceMetadata(rawText);
 
@@ -150,6 +204,15 @@ export class DOMManipulator {
   applyTranslations(nodes: TextNode[], translations: string[]): void {
     nodes.forEach((textNode, index) => {
       if (translations[index] && translations[index].trim()) {
+        if (textNode.block) {
+          this.applyBlock(textNode, translations[index].trim());
+          return;
+        }
+        const container = isConstrained(textNode.node.parentElement);
+        if (container && growsTooMuch(textNode.text, translations[index])) {
+          this.keepOriginal(container, translations[index].trim());
+          return;
+        }
         const currentText = textNode.node.textContent || "";
         const whitespace =
           textNode.leadingWhitespace !== undefined ||
@@ -165,10 +228,44 @@ export class DOMManipulator {
     });
   }
 
+  private applyBlock(textNode: TextNode, translation: string): void {
+    const unit = textNode.block!;
+    const container = isConstrained(unit.element);
+    if (
+      container &&
+      growsTooMuch(stripMarkup(unit.markup), stripMarkup(translation))
+    ) {
+      this.keepOriginal(container, stripMarkup(translation));
+      return;
+    }
+    if (applyBlockTranslation(unit, translation)) {
+      this.appliedBlocks.add(unit);
+    }
+  }
+
+  /**
+   * Safeguard: a translation that would overflow a fixed-size container
+   * (button, th, nav, ...) is not applied; it is exposed as a tooltip instead.
+   */
+  private keepOriginal(container: Element, translation: string): void {
+    if (!this.titledElements.has(container)) {
+      this.titledElements.set(container, container.getAttribute("title"));
+    }
+    container.setAttribute("title", translation);
+  }
+
   /**
    * Reset all text nodes to original content
    */
   reset(): void {
+    this.appliedBlocks.forEach((unit) => restoreBlock(unit));
+    this.appliedBlocks.clear();
+    this.titledElements.forEach((title, el) => {
+      if (title === null) el.removeAttribute("title");
+      else el.setAttribute("title", title);
+    });
+    this.titledElements.clear();
+
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
@@ -194,6 +291,12 @@ export class DOMManipulator {
   }
 
   createTextNode(node: Node, index: number): TextNode {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const unit = buildBlockUnit(node as Element, (e) =>
+        this.isExcludedElement(e),
+      );
+      if (unit) return { node, text: unit.markup, index, block: unit };
+    }
     const rawText = node.textContent || "";
     const whitespace = this.extractWhitespaceMetadata(rawText);
     this.saveOriginalText(node);
